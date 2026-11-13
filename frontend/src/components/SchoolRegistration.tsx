@@ -23,7 +23,11 @@ export function SchoolRegistration() {
         let detail = "Pendaftaran belum dapat disimpan. Pastikan server berjalan dan coba lagi.";
         if (response.headers.get("content-type")?.includes("application/json")) {
           const data: unknown = await response.json();
-          if (typeof data === "object" && data !== null && "error" in data && typeof data.error === "string") detail = data.error;
+          if (typeof data === "object" && data !== null && "error" in data && typeof data.error === "string") {
+            detail = data.error;
+            if ("code" in data && typeof data.code === "string" && /^REGISTRATION_[A-Z_]+$/.test(data.code)) detail += ` (${data.code})`;
+            if ("reference" in data && typeof data.reference === "string" && /^[a-f0-9-]{36}$/.test(data.reference)) detail += ` Referensi: ${data.reference}`;
+          }
         }
         throw new Error(detail);
       }

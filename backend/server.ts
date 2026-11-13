@@ -2,7 +2,7 @@ import express from "express";
 import { createHash, randomBytes } from "crypto";
 import { loginPool, prisma } from "./db.js";
 import { generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
-import { parseRegistration } from "./school-registration.js";
+import { registrationRateLimit, registrationRoutes } from "./registration-routes.js";
 import { parseStudentImport } from "./student-import.js";
 import { parseApplicant, parseTeacher } from "./school-input.js";
 import { parseClass, parsePlacement } from "./class-input.js";
@@ -19,7 +19,6 @@ const cookieName = "armilla_session";
 const schoolCookieName = "sekolah_session";
 const lmsCookieName = "lms_session";
 const sessionDurationMs = 8 * 60 * 60 * 1000;
-const registrationAttempts = new Map<string, { count: number; until: number }>();
 const ppdbAttempts = new Map<string, { count: number; until: number }>();
 const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 
@@ -29,7 +28,8 @@ app.use(httpSecurity({ production, origin: production ? productionOrigin(process
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
-const limitLogin = loginRateLimit(loginPool, production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex"));
+const limitSecret = production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex");
+const limitLogin = loginRateLimit(loginPool, limitSecret);
 app.use("/api/auth/master", productionMasterGate(production));
 app.use("/api/master", productionMasterGate(production));
 
@@ -47,27 +47,12 @@ function cookieOptions() {
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
-app.post("/api/pendaftaran-sekolah", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Pendaftaran sekolah belum tersedia untuk produksi." });
-  const ip = req.ip || "unknown";
-  const now = Date.now();
-  for (const [key, value] of registrationAttempts) if (value.until <= now) registrationAttempts.delete(key);
-  const current = registrationAttempts.get(ip);
-  if (current && current.count >= 5) {
-    res.setHeader("Retry-After", String(Math.ceil((current.until - now) / 1000)));
-    return res.status(429).json({ error: "Terlalu banyak permintaan. Coba lagi nanti." });
-  }
-  registrationAttempts.set(ip, { count: (current?.count || 0) + 1, until: current?.until || now + 60 * 60 * 1000 });
-  const data = parseRegistration(req.body);
-  if (!data) return res.status(400).json({ error: "Periksa kembali nama sekolah, kontak, email, telepon, dan NPSN (8 angka atau huruf P/K diikuti 7 angka jika diisi)." });
-  try {
-    await prisma.pendaftaranSekolah.create({ data });
-    return res.status(201).json({ message: "Pendaftaran diterima dan menunggu pemeriksaan master admin." });
-  } catch (error) {
-    console.error("Gagal menyimpan pendaftaran sekolah:", error);
-    return res.status(503).json({ error: "Pendaftaran belum dapat disimpan. Coba lagi nanti." });
-  }
-});
+app.use("/api/pendaftaran-sekolah", registrationRoutes({
+  production,
+  vercel: !!process.env.VERCEL,
+  limit: registrationRateLimit(loginPool, limitSecret),
+  save: async (data) => { await prisma.pendaftaranSekolah.create({ data }); },
+}));
 
 app.post("/api/auth/master/login", async (req, res) => {
   const { email, password } = req.body || {};

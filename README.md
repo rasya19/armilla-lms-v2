@@ -14,7 +14,7 @@ tetapi fitur administrasi, login sekolah, PPDB dan pembelajaran belum siap.
 Semua endpoint master sekarang juga ditolak pada `NODE_ENV=production` sampai
 perlindungan login terpusat dan deployment selesai diuji. Akses lokal tetap ada.
 Rute dan API lama dinonaktifkan, termasuk form PPDB; jangan masukkan data
-sungguhan atau publikasikan aplikasi sebelum implementasi dan pengujian selesai.
+sungguhan sebelum implementasi dan pengujian selesai.
 Data contoh lokal dan komponen prototipe yang tidak dipakai telah dihapus.
 
 ## Akun master admin
@@ -40,14 +40,19 @@ Menu Kelola Tenant menampilkan daftar sekolah tersimpan, tetapi belum dapat
 menambah, mengubah, menghapus, atau mengaktifkan sekolah. Menu pengelolaan
 lainnya belum tersedia dan belum terhubung ke data.
 
-Formulir `/daftar` dan menu Verifikasi Sekolah/Rekap Pendaftar tersedia untuk
-pengujian lokal: pendaftaran disimpan dan master dapat mencatat persetujuan,
+Formulir `/daftar` tersedia untuk pengujian di Vercel; menu Verifikasi
+Sekolah/Rekap Pendaftar hanya tersedia lokal. Pendaftaran disimpan dan master
+lokal dapat mencatat persetujuan,
 penolakan, atau menghapus pendaftaran secara permanen setelah konfirmasi.
 Penghapusan hanya menghapus pendaftaran, bukan data sekolah atau akun.
 Persetujuan **belum** membuat sekolah atau akun dan tidak
-mengirim undangan SMTP. Jangan gunakan data sungguhan atau publikasikan alur
-ini. Pembatasan pendaftaran masih per proses dan bukan perlindungan terpusat.
-API pendaftaran menolak permintaan saat `NODE_ENV=production`.
+mengirim undangan SMTP. Jangan gunakan data sungguhan: alur verifikasi,
+pembuatan sekolah, dan pembuatan admin belum tersedia di produksi.
+Pendaftaran dibatasi lima permintaan per IP per jam di PostgreSQL, termasuk
+permintaan tidak valid; IP disimpan sebagai HMAC. Di Vercel diperlukan alamat
+IP dari `x-vercel-forwarded-for`; bila IP atau database tidak tersedia,
+permintaan ditolak. Respons kesalahan dapat berisi kode dan ID referensi
+untuk dicocokkan dengan log Vercel tanpa menampilkan detail database.
 
 Untuk pengujian lokal, setelah pendaftaran disetujui, salin ID pendaftaran
 dari menu Verifikasi Sekolah dan jalankan `npm run create:school-admin` di
@@ -168,7 +173,8 @@ Build Vercel tidak menjalankan migrasi. Jika menggunakan satu database untuk uji
 dan produksi, pengujian dan migrasi memengaruhi database yang sama; buat backup
 dan jangan gunakan data sungguhan sebelum siap. Konfigurasi ini belum diuji
 melalui deployment Vercel nyata. Endpoint master, sekolah, PPDB dan LMS tetap
-ditolak dalam mode produksi; jangan hapus pembatas sebelum pengujian end-to-end,
+ditolak dalam mode produksi; pendaftaran sekolah saja diaktifkan untuk uji.
+Jangan hapus pembatas lain sebelum pengujian end-to-end,
 keamanan multi-tenant, audit, pemantauan, backup, dan deployment selesai.
 
 ## Menjalankan lokal

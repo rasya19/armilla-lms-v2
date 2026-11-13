@@ -1,0 +1,6 @@
+{
+  "name": "PKBM Armilla",
+  "description": "Sistem Informasi Manajemen Institusi Pendidikan PKBM Armilla yang mengelola data siswa, guru, pendaftaran PPDB, dan rekap nilai simulasi UNBK.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

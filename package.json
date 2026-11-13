@@ -1,0 +1,18 @@
+{
+  "name": "armilla-lms",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "scripts": {
+    "dev": "npm run dev -w frontend",
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "npm run dev -w backend",
+    "build": "npm run build -w frontend && npm run build -w backend",
+    "build:frontend": "npm run build -w frontend",
+    "build:backend": "npm run build -w backend",
+    "lint": "npm run lint -w frontend && npm run lint -w backend",
+    "db:generate": "npm run db:generate -w backend",
+    "create:master": "npm run create:master -w backend",
+    "create:school-admin": "npm run create:school-admin -w backend",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w backend"
+  }
+}

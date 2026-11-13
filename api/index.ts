@@ -1,3 +1,3 @@
-import app from "../backend/server.js";
+import { createVercelHandler } from "../backend/vercel-handler.js";
 
-export default app;
+export default createVercelHandler(async () => (await import("../backend/server.js")).default);

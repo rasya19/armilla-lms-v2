@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from "crypto";
 import { Router } from "express";
+import type { ErrorRequestHandler, Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import type { Pool } from "pg";
 import { loginClientIp } from "./login-rate-limit.js";
@@ -54,7 +55,7 @@ export function registrationRoutes(options: {
   save: (data: Registration) => Promise<void>;
 }) {
   const router = Router();
-  router.post("/", async (req, res) => {
+  async function processRegistration(req: Request, res: Response) {
     let ip: string;
     try {
       ip = loginClientIp(options.production, options.vercel, req.ip, req.get("x-vercel-forwarded-for"));
@@ -85,6 +86,16 @@ export function registrationRoutes(options: {
       console.error("Pendaftaran sekolah: penyimpanan database gagal", { reference, code, prismaCode, errorType: error instanceof Error ? error.name : "UnknownError" });
       return res.status(code === "REGISTRATION_CONFLICT" ? 409 : 503).json({ error: "Pendaftaran belum dapat disimpan. Coba lagi nanti.", code, reference });
     }
+  }
+  router.post("/", (req, res, next) => {
+    void processRegistration(req, res).catch(next);
   });
+  const unexpectedError: ErrorRequestHandler = (error: unknown, _req, res, next) => {
+    const reference = randomUUID();
+    console.error("Pendaftaran sekolah: kesalahan tidak terduga", { reference, errorType: error instanceof Error ? error.name : "UnknownError" });
+    if (res.headersSent) return next(error);
+    return res.status(503).json({ error: "Pendaftaran belum dapat diproses.", code: "REGISTRATION_UNEXPECTED_ERROR", reference });
+  };
+  router.use(unexpectedError);
   return router;
 }

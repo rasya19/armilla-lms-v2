@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/start.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test password.test.ts school-registration.test.ts registration-routes.test.ts student-import.test.ts school-input.test.ts class-input.test.ts academic-input.test.ts http-security.test.ts learning-input.test.ts login-session-validation.test.ts login-rate-limit.test.ts",
+    "test": "tsx --test password.test.ts school-registration.test.ts registration-routes.test.ts vercel-handler.test.ts student-import.test.ts school-input.test.ts class-input.test.ts academic-input.test.ts http-security.test.ts learning-input.test.ts login-session-validation.test.ts login-rate-limit.test.ts",
     "test:login-integration": "tsx --test login-rate-limit.test.ts",
     "test:registration-integration": "tsx --test registration-routes.test.ts",
     "create:master": "tsx create-master.ts",

@@ -166,6 +166,14 @@ dan simpan langsung di pengaturan Vercel, jangan bagikan lewat chat. Setiap
 environment yang dapat diakses publik harus punya konfigurasi dan origin yang
 sesuai; preview URL dinamis tidak otomatis cocok dengan `APP_ORIGIN`.
 Jangan masukkan kredensial ke variabel `VITE_`.
+Setelah mengubah environment variable, redeploy agar function menggunakan
+nilai terbaru. Jika startup gagal karena konfigurasi, API mengembalikan HTTP
+503 dengan kode seperti `DATABASE_URL_MISSING`, `APP_ORIGIN_INVALID`, atau
+`LOGIN_RATE_LIMIT_SECRET_INVALID`. Kesalahan inisialisasi lainnya menghasilkan
+`API_INITIALIZATION_FAILED` dan ID referensi pada log, tanpa menampilkan nilai
+secret. Kegagalan import modul dapat tetap tersimpan pada instance yang sama;
+perbaiki penyebabnya dan redeploy. Proteksi ini tidak menangani error yang
+terjadi sebelum runtime dapat memuat entrypoint atau proses dihentikan platform.
 
 Migrasi baru menambahkan tabel `LoginRateLimit`; jalankan migrasi dengan
 `npm run db:migrate:deploy` secara terpisah setelah backup dan pemeriksaan target.

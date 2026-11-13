@@ -60,7 +60,7 @@ app.post("/api/auth/master/login", async (req, res) => {
     return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
   }
   try {
-    const result = await limitLogin(loginIp(req), email, async () => {
+    const result = await limitLogin<{ token: string; nama: string; peran: "MASTER_ADMIN" }>(loginIp(req), email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       if (!account || !valid || !account.aktif || account.peran !== "MASTER_ADMIN") return { kind: "failure" };
@@ -97,7 +97,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
   try {
-    const result = await limitLogin(loginIp(req), email, async () => {
+    const result = await limitLogin<{ token: string; nama: string }>(loginIp(req), email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       if (!account || !valid || !account.aktif || account.peran !== "ADMIN" || !account.sekolahId) return { kind: "failure" };
@@ -226,7 +226,7 @@ app.post("/api/auth/lms/login", async (req, res) => {
   const { identitas, password, peran } = req.body || {};
   if (typeof identitas !== "string" || identitas.length > 254 || typeof password !== "string" || password.length > 1024 || (peran !== "SISWA" && peran !== "GURU")) return res.status(400).json({ error: "Periksa identitas, peran, dan kata sandi." });
   try {
-    const result = await limitLogin(loginIp(req), identitas, async () => {
+    const result = await limitLogin<{ token: string; wajibGantiPassword: boolean }>(loginIp(req), identitas, async () => {
       const identity = identitas.trim().toLowerCase();
       const account = peran === "SISWA"
         ? await prisma.akun.findFirst({ where: { peran: "SISWA", siswa: { nisn: identity } }, include: { siswa: true, guru: true } })

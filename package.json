@@ -1,6 +1,7 @@
 {
   "name": "armilla-lms",
   "private": true,
+  "type": "module",
   "workspaces": ["frontend", "backend"],
   "scripts": {
     "dev": "npm run dev -w frontend",

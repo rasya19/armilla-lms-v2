@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Platform Pendidikan Rasyatech Digital Zenith
 
 ## Struktur dan status
@@ -215,3 +216,25 @@ Model sekolah merupakan dasar pengembangan multi-sekolah, bukan isolasi yang
 sudah siap pakai. Sebagian model lama masih mengizinkan `sekolahId` kosong;
 otorisasi dan isolasi harus diselesaikan sebelum menambah sekolah. Model berkas
 hanya menyimpan metadata; penyimpanan file dan kontrol akses belum tersedia.
+=======
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
+
+# Run and deploy your AI Studio app
+
+This contains everything you need to run your app locally.
+
+View your app in AI Studio: https://ai.studio/apps/fd318b3e-ef1e-48c1-a064-3a263cd2278e
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
+>>>>>>> eb7f514afbddb9f44e712523e0df6434020cd4a5

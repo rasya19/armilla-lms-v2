@@ -4,9 +4,14 @@ dist/
 coverage/
 .DS_Store
 *.log
+<<<<<<< HEAD
 .vercel/
 .env*
 !.env.example
 
 legacy/cloudflare/.wrangler/
 legacy/cloudflare/dev.db
+=======
+.env*
+!.env.example
+>>>>>>> eb7f514afbddb9f44e712523e0df6434020cd4a5

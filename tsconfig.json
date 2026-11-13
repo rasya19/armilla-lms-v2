@@ -22,6 +22,10 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
+<<<<<<< HEAD
   },
   "exclude": ["backend", "frontend"]
+=======
+  }
+>>>>>>> eb7f514afbddb9f44e712523e0df6434020cd4a5
 }

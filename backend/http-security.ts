@@ -42,10 +42,3 @@ export function httpSecurity(options: { production: boolean; origin?: string }):
     return next();
   };
 }
-
-export function productionMasterGate(production: boolean): RequestHandler {
-  return (_req, res, next) => {
-    if (production) return res.status(503).json({ error: "Akses master belum tersedia untuk produksi hingga pengamanan login terpusat selesai." });
-    return next();
-  };
-}

@@ -7,7 +7,7 @@ import { parseStudentImport } from "./student-import.js";
 import { parseApplicant, parseTeacher } from "./school-input.js";
 import { parseClass, parsePlacement } from "./class-input.js";
 import { academicRoutes } from "./academic-routes.js";
-import { httpSecurity, productionMasterGate, productionOrigin } from "./http-security.js";
+import { httpSecurity, productionOrigin } from "./http-security.js";
 import { learningRoutes } from "./learning-routes.js";
 import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
@@ -30,8 +30,6 @@ app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
 const limitSecret = production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex");
 const limitLogin = loginRateLimit(loginPool, limitSecret);
-app.use("/api/auth/master", productionMasterGate(production));
-app.use("/api/master", productionMasterGate(production));
 
 function loginIp(req: express.Request): string {
   return loginClientIp(production, !!process.env.VERCEL, req.ip, req.get("x-vercel-forwarded-for"));

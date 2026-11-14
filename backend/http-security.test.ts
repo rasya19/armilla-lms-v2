@@ -2,29 +2,7 @@ import { strict as assert } from "node:assert";
 import { once } from "node:events";
 import { test } from "node:test";
 import express from "express";
-import { httpSecurity, productionMasterGate, productionOrigin } from "./http-security.js";
-
-test("master endpoints fail closed in production while remaining available locally", async () => {
-  for (const production of [true, false]) {
-    const app = express();
-    app.use("/api/auth/master", productionMasterGate(production));
-    app.use("/api/master", productionMasterGate(production));
-    app.get("/api/master/summary", (_req, res) => res.sendStatus(204));
-    app.post("/api/auth/master/login", (_req, res) => res.sendStatus(204));
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const address = server.address();
-    assert.ok(address && typeof address !== "string");
-    try {
-      const base = `http://127.0.0.1:${address.port}`;
-      assert.equal((await fetch(`${base}/api/master/summary`)).status, production ? 503 : 204);
-      assert.equal((await fetch(`${base}/api/auth/master/login`, { method: "POST" })).status, production ? 503 : 204);
-    } finally {
-      server.close();
-      await once(server, "close");
-    }
-  }
-});
+import { httpSecurity, productionOrigin } from "./http-security.js";
 
 test("production requires an exact HTTPS origin", () => {
   assert.equal(productionOrigin("https://lms.example.com"), "https://lms.example.com");

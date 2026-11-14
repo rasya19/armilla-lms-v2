@@ -9,10 +9,10 @@ Kedua workspace menggunakan satu repositori, lockfile, dan proses `npm install`,
 tetapi dijalankan dan dibangun terpisah. Pemisahan ini tidak menjamin kompatibilitas
 API jika kontraknya diubah; frontend tetap membutuhkan backend untuk data nyata.
 
-**Belum siap produksi:** akses master sudah memakai akun database dan sesi,
-tetapi fitur administrasi, login sekolah, PPDB dan pembelajaran belum siap.
-Semua endpoint master sekarang juga ditolak pada `NODE_ENV=production` sampai
-perlindungan login terpusat dan deployment selesai diuji. Akses lokal tetap ada.
+**Belum siap produksi:** akses master memakai akun database, sesi, dan
+pembatas login terpusat, tetapi login sekolah, PPDB dan pembelajaran belum siap.
+Akses master dan pendaftaran sekolah diaktifkan untuk pengujian produksi;
+deployment dan operasional masih memerlukan pengujian lebih lanjut.
 Rute dan API lama dinonaktifkan, termasuk form PPDB; jangan masukkan data
 sungguhan sebelum implementasi dan pengujian selesai.
 Data contoh lokal dan komponen prototipe yang tidak dipakai telah dihapus.
@@ -40,9 +40,8 @@ Menu Kelola Tenant menampilkan daftar sekolah tersimpan, tetapi belum dapat
 menambah, mengubah, menghapus, atau mengaktifkan sekolah. Menu pengelolaan
 lainnya belum tersedia dan belum terhubung ke data.
 
-Formulir `/daftar` tersedia untuk pengujian di Vercel; menu Verifikasi
-Sekolah/Rekap Pendaftar hanya tersedia lokal. Pendaftaran disimpan dan master
-lokal dapat mencatat persetujuan,
+Formulir `/daftar` dan menu master Verifikasi Sekolah/Rekap Pendaftar tersedia
+untuk pengujian di Vercel. Pendaftaran disimpan dan master dapat mencatat persetujuan,
 penolakan, atau menghapus pendaftaran secara permanen setelah konfirmasi.
 Penghapusan hanya menghapus pendaftaran, bukan data sekolah atau akun.
 Persetujuan **belum** membuat sekolah atau akun dan tidak
@@ -180,8 +179,8 @@ Migrasi baru menambahkan tabel `LoginRateLimit`; jalankan migrasi dengan
 Build Vercel tidak menjalankan migrasi. Jika menggunakan satu database untuk uji
 dan produksi, pengujian dan migrasi memengaruhi database yang sama; buat backup
 dan jangan gunakan data sungguhan sebelum siap. Konfigurasi ini belum diuji
-melalui deployment Vercel nyata. Endpoint master, sekolah, PPDB dan LMS tetap
-ditolak dalam mode produksi; pendaftaran sekolah saja diaktifkan untuk uji.
+melalui deployment Vercel nyata. Endpoint sekolah, PPDB dan LMS tetap
+ditolak dalam mode produksi; master dan pendaftaran sekolah diaktifkan untuk uji.
 Jangan hapus pembatas lain sebelum pengujian end-to-end,
 keamanan multi-tenant, audit, pemantauan, backup, dan deployment selesai.
 

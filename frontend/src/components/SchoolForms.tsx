@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useGlassConfirm } from "./GlassConfirm";
 
 const fieldClass = "mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal";
 const buttonClass = "rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
@@ -73,7 +74,7 @@ export function PublicPPDB() {
       setError(error instanceof TypeError ? "Koneksi terputus. Hubungi admin sekolah sebelum mengirim ulang." : error instanceof Error ? error.message : "Pendaftaran gagal.");
     } finally { setBusy(false); }
   }
-  return <main className="min-h-screen bg-[#f7f6f1] px-5 py-12 text-[#142137]"><div className="mx-auto max-w-xl rounded-3xl border border-[#e6dfd0] bg-white p-8"><h1 className="text-2xl font-bold">PPDB {school}</h1><p className="mt-3 text-sm text-slate-600">Hanya untuk pengujian lokal. Jangan masukkan data asli; akun siswa dan pemberitahuan belum tersedia.</p>
+  return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8"><h1 className="text-2xl font-bold">PPDB {school}</h1><p className="mt-3 text-sm text-slate-600">Hanya untuk pengujian lokal. Jangan masukkan data asli; akun siswa dan pemberitahuan belum tersedia.</p>
     {error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-4 text-sm text-green-700">{message}</p>}
     {school && !message && <form onSubmit={submit} className="mt-6 space-y-3">
       <label className="block text-sm font-semibold">Nama calon siswa<input className={fieldClass} required minLength={2} maxLength={200} value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} /></label>
@@ -86,13 +87,14 @@ export function PublicPPDB() {
 }
 
 export function ReviewPPDB({ id, nama, onSaved }: { id: string; nama: string; onSaved: () => void }) {
+  const confirm = useGlassConfirm();
   const [catatan, setCatatan] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   async function review(keputusan: "Diterima" | "Ditolak") {
     if (keputusan === "Ditolak" && !catatan.trim()) { setError("Isi catatan penolakan."); return; }
-    if (!window.confirm(`${keputusan === "Diterima" ? "Terima" : "Tolak"} pendaftaran ${nama}? Keputusan belum membuat akun siswa.`)) return;
+    if (!await confirm(`${keputusan === "Diterima" ? "Terima" : "Tolak"} pendaftaran ${nama}? Keputusan belum membuat akun siswa.`)) return;
     setBusy(true); setError(""); setMessage("");
     try {
       await postJson(`/api/sekolah/ppdb/${encodeURIComponent(id)}/tinjau`, { keputusan, catatan });

@@ -163,6 +163,7 @@ model PendaftaranSekolah {
   id              String                    @id @default(uuid())
   namaSekolah     String
   npsn            String?
+  wilayah         String?
   namaKontak      String
   emailKontak     String
   teleponKontak   String

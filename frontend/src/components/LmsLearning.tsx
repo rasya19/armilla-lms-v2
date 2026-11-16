@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useGlassConfirm } from "./GlassConfirm";
 
 type Named = { nama: string };
 type Assignment = { id: string; hari: number; jamMulai: string; jamSelesai: string; kelas: Named; mapel: Named; tahunAjaran: Named & { semester: string } };
@@ -47,6 +48,7 @@ function Link({ value }: { value: string | null | undefined }) {
 }
 
 export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
+  const confirm = useGlassConfirm();
   const [kind, setKind] = useState<Kind>("materi");
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
@@ -114,7 +116,7 @@ export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
   }
   async function submitAnswer(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !window.confirm("Kumpulkan jawaban ini? Pada tahap ini jawaban tidak dapat diubah setelah dikumpulkan.")) return;
+    if (!selected || !await confirm("Kumpulkan jawaban ini? Pada tahap ini jawaban tidak dapat diubah setelah dikumpulkan.")) return;
     if (await mutate(`/tugas/${encodeURIComponent(selected.id)}/pengumpulan`, "POST", { jawaban: answerText, tautan: answerLink }, "Jawaban dikumpulkan.")) { setSelected(null); setAnswerText(""); setAnswerLink(""); }
   }
   async function grade(id: string, nilai: string, catatanGuru: string) {

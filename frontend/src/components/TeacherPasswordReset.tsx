@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useGlassConfirm } from "./GlassConfirm";
 
 type Student = { id: string; nama: string; nisn: string };
 
@@ -11,6 +12,7 @@ async function responseError(response: Response): Promise<string> {
 }
 
 export function TeacherPasswordReset() {
+  const confirm = useGlassConfirm();
   const [nisn, setNisn] = useState("");
   const [student, setStudent] = useState<Student | null>(null);
   const [error, setError] = useState("");
@@ -35,7 +37,7 @@ export function TeacherPasswordReset() {
   }
 
   async function reset() {
-    if (!student || temporaryPassword || !window.confirm(`Reset password ${student.nama} (NISN ${student.nisn}) dengan password sementara unik? Semua sesi siswa akan berakhir.`)) return;
+    if (!student || temporaryPassword || !await confirm(`Reset password ${student.nama} (NISN ${student.nisn}) dengan password sementara unik? Semua sesi siswa akan berakhir.`)) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const response = await fetch(`/api/lms/guru/siswa/${encodeURIComponent(student.id)}/reset-password`, { method: "POST" });

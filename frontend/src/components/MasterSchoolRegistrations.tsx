@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useGlassConfirm } from "./GlassConfirm";
 
 type Registration = {
   id: string;
   namaSekolah: string;
   npsn: string | null;
+  wilayah: string | null;
   namaKontak: string;
   emailKontak: string;
   teleponKontak: string;
@@ -18,7 +20,7 @@ function isRegistrationPage(data: unknown): data is RegistrationPage {
   return data.pendaftaran.every((item: unknown) => {
     if (typeof item !== "object" || item === null) return false;
     const row = item as Record<string, unknown>;
-    return typeof row.id === "string" && typeof row.namaSekolah === "string" && (row.npsn === null || typeof row.npsn === "string") &&
+    return typeof row.id === "string" && typeof row.namaSekolah === "string" && (row.npsn === null || typeof row.npsn === "string") && (row.wilayah === null || typeof row.wilayah === "string") &&
       typeof row.namaKontak === "string" && typeof row.emailKontak === "string" && typeof row.teleponKontak === "string" &&
       (row.status === "MENUNGGU" || row.status === "DISETUJUI" || row.status === "DITOLAK") &&
       (row.catatanTinjauan === null || typeof row.catatanTinjauan === "string") &&
@@ -27,6 +29,7 @@ function isRegistrationPage(data: unknown): data is RegistrationPage {
 }
 
 export function MasterSchoolRegistrations() {
+  const confirm = useGlassConfirm();
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
   const [result, setResult] = useState<RegistrationPage | null>(null);
@@ -87,7 +90,7 @@ export function MasterSchoolRegistrations() {
   }
 
   async function deleteRegistration(item: Registration) {
-    if (!window.confirm(`Hapus pendaftaran "${item.namaSekolah}" secara permanen? Data sekolah dan akun tidak akan dihapus.`)) return;
+    if (!await confirm(`Hapus pendaftaran "${item.namaSekolah}" secara permanen? Data sekolah dan akun tidak akan dihapus.`)) return;
     setBusy(item.id);
     setError("");
     setMessage("");
@@ -112,7 +115,7 @@ export function MasterSchoolRegistrations() {
     }
   }
 
-  return <section className="mt-6 rounded-2xl border border-[#e6dfd0] bg-white p-6 shadow-sm">
+  return <section className="master-section p-6 text-slate-900">
     <h2 className="text-lg font-bold">Pendaftaran sekolah</h2>
     <p className="mt-2 text-sm leading-6 text-slate-600">Persetujuan hanya mencatat hasil pemeriksaan. Sekolah dan akun admin dapat dibuat terpisah melalui terminal untuk uji lokal; undangan belum dikirim.</p>
     {message && <p role="status" className="mt-4 text-sm text-green-700">{message}</p>}
@@ -120,15 +123,16 @@ export function MasterSchoolRegistrations() {
     {!result && !error && <p className="mt-5 text-sm text-slate-600">Memuat daftar pendaftaran...</p>}
     {result && <>
       {result.pendaftaran.length === 0 && <p className="mt-5 text-sm text-slate-600">Tidak ada pendaftaran pada halaman ini.</p>}
-      <div className="mt-5 space-y-4">{result.pendaftaran.map((item) => <article key={item.id} className="rounded-xl border border-[#e6dfd0] p-4">
+      <div className="mt-5 space-y-4">{result.pendaftaran.map((item) => <article key={item.id} className="master-record p-4">
         <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-bold">{item.namaSekolah}</h3><span className="text-xs font-bold text-[#80643a]">{item.status === "MENUNGGU" ? "Menunggu" : item.status === "DISETUJUI" ? "Disetujui" : "Ditolak"}</span></div>
         <p className="mt-2 text-sm text-slate-600">NPSN: {item.npsn || "Belum diisi"}</p>
+        <p className="mt-1 text-sm text-slate-600">Wilayah: {item.wilayah || "Belum diisi"}</p>
         <p className="mt-1 break-all text-sm text-slate-600">ID pendaftaran: {item.id}</p>
         {item.sekolahId && <p className="mt-1 text-sm text-slate-600">Sekolah dan akun admin sudah dibuat.</p>}
         <p className="mt-1 break-words text-sm text-slate-600">Kontak: {item.namaKontak} · {item.emailKontak} · {item.teleponKontak}</p>
         {item.catatanTinjauan && <p className="mt-2 break-words text-sm text-slate-600">Catatan: {item.catatanTinjauan}</p>}
         {item.status === "MENUNGGU" && <div className="mt-4">
-          <label className="block text-sm font-semibold">Catatan internal untuk {item.namaSekolah} (wajib saat menolak; tidak dikirim ke sekolah)<textarea maxLength={500} value={notes[item.id] || ""} onChange={(event) => setNotes({ ...notes, [item.id]: event.target.value })} className="mt-2 block w-full rounded-xl border border-slate-300 p-3 font-normal" /></label>
+          <label className="block text-sm font-semibold">Catatan internal untuk {item.namaSekolah} (wajib saat menolak; tidak dikirim ke sekolah)<textarea maxLength={500} value={notes[item.id] || ""} onChange={(event) => setNotes({ ...notes, [item.id]: event.target.value })} className="master-field mt-2 block w-full rounded-xl border p-3 font-normal" /></label>
           <div className="mt-3 flex flex-wrap gap-3"><button type="button" disabled={busy !== null} onClick={() => review(item, "DISETUJUI")} className="rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Setujui pemeriksaan</button><button type="button" disabled={busy !== null} onClick={() => review(item, "DITOLAK")} className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50">Tolak</button></div>
         </div>}
         {!item.sekolahId && <button type="button" disabled={busy !== null} onClick={() => deleteRegistration(item)} aria-label={`Hapus pendaftaran ${item.namaSekolah}`} className="mt-4 rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50">{busy === item.id ? "Memproses..." : "Hapus pendaftaran"}</button>}

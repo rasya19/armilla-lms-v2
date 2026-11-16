@@ -2,9 +2,13 @@
   "name": "armilla-lms",
   "private": true,
   "type": "module",
-  "workspaces": ["frontend", "backend"],
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev": "npm run dev -w frontend",
+    "dev:all": "concurrently --kill-others-on-fail --names BE,FE --prefix-colors blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:frontend": "npm run dev -w frontend",
     "dev:backend": "npm run dev -w backend",
     "build": "npm run build -w frontend && npm run build -w backend",
@@ -15,5 +19,8 @@
     "create:master": "npm run create:master -w backend",
     "create:school-admin": "npm run create:school-admin -w backend",
     "db:migrate:deploy": "npm run db:migrate:deploy -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
   }
 }

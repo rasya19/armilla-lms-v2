@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useGlassConfirm } from "./GlassConfirm";
 
 type ClassItem = { id: string; nama: string; waliGuruId: string };
 type Teacher = { id: string; nama: string };
@@ -30,6 +31,7 @@ const field = "mt-2 w-full rounded-xl border border-slate-300 bg-white p-3";
 const action = "mt-3 rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
 
 export function SchoolClasses() {
+  const confirm = useGlassConfirm();
   const [data, setData] = useState<ClassData | null>(null);
   const [version, setVersion] = useState(0);
   const [nama, setNama] = useState("");
@@ -79,7 +81,7 @@ export function SchoolClasses() {
 
   async function savePlacement(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!student || !window.confirm(`Ubah kelas ${student.nama}? Penempatan lama akan diganti dan riwayat kelas belum disimpan.`)) return;
+    if (!student || !await confirm(`Ubah kelas ${student.nama}? Penempatan lama akan diganti dan riwayat kelas belum disimpan.`)) return;
     setBusy(true); setError(""); setMessage("");
     try {
       await request(`/api/sekolah/siswa/${encodeURIComponent(student.id)}/kelas`, "PATCH", { kelasId: placement || null, expectedKelasId: student.kelasId });

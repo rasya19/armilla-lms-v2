@@ -5,9 +5,10 @@
 - `frontend/`: aplikasi React/Vite, dengan dependensi dan konfigurasi sendiri.
 - `backend/`: API Express, skema Prisma PostgreSQL dan migrasi Neon.
 
-Kedua workspace menggunakan satu repositori, lockfile, dan proses `npm install`,
-tetapi dijalankan dan dibangun terpisah. Pemisahan ini tidak menjamin kompatibilitas
-API jika kontraknya diubah; frontend tetap membutuhkan backend untuk data nyata.
+Kedua workspace menggunakan satu repositori, lockfile, dan proses `npm install`.
+Keduanya dapat dijalankan bersama atau terpisah, dan dibangun terpisah.
+Pemisahan ini tidak menjamin kompatibilitas API jika kontraknya diubah;
+frontend tetap membutuhkan backend untuk data nyata.
 
 **Belum siap produksi:** akses master memakai akun database, sesi, dan
 pembatas login terpusat, tetapi login sekolah, PPDB dan pembelajaran belum siap.
@@ -188,26 +189,36 @@ keamanan multi-tenant, audit, pemantauan, backup, dan deployment selesai.
 
 Di root proyek, jalankan `npm install` dan `npm run db:generate`. Isi
 `DATABASE_URL` dan `DIRECT_URL` di `.env` root atau `backend/.env`; jangan
-membagikan atau menyimpan kredensial dalam repositori.
+membagikan atau menyimpan kredensial dalam repositori. Terapkan migrasi dengan
+`npm run db:migrate:deploy` pada database yang memang ditujukan untuk proyek ini
+sebelum menggunakan pendaftaran sekolah.
 
-Jalankan di dua terminal:
-
-```powershell
-npm run dev:backend
-```
+Jalankan kedua server dalam satu terminal:
 
 ```powershell
-npm run dev:frontend
+npm run dev:all
 ```
+
+Log backend ditandai `[BE]` dan frontend `[FE]`. Tekan Ctrl+C untuk menghentikan
+keduanya. Server juga dapat dijalankan terpisah dengan `npm run dev:backend` dan
+`npm run dev:frontend`.
 
 API secara default mendengarkan pada `127.0.0.1:4000`; frontend pada port 3000
 atau port berikutnya jika sedang dipakai. Vite meneruskan permintaan `/api` ke
 API. Untuk mengubah target proxy, atur `VITE_API_PROXY_TARGET` di
 `frontend/.env`; jangan taruh kredensial database di file frontend.
 `PORT` dan `HOST` dapat diatur di environment backend.
-Jika login melaporkan server tidak dapat dihubungi, pastikan terminal backend
-masih berjalan dan buka URL `Local` yang ditampilkan terminal frontend. Mengisi
+Jika login melaporkan server tidak dapat dihubungi, pastikan backend
+masih berjalan dan buka URL `Local` yang ditampilkan frontend. Mengisi
 email di `.env` tidak mengubah akun atau kata sandi yang sudah ada di database.
+
+### Instalasi PWA
+
+Aplikasi dapat dipasang melalui menu instalasi browser yang mendukung PWA saat
+diakses melalui HTTPS atau `localhost`. Di iOS, gunakan **Bagikan → Tambah ke
+Layar Utama**. Fitur dan data tetap memerlukan internet; saat offline aplikasi
+menampilkan pemberitahuan, bukan data yang tersimpan. Service worker hanya
+didaftarkan pada build produksi dan tidak menyimpan respons API atau data sesi.
 
 `npm run build` membangun frontend ke `frontend/dist` dan backend ke
 `backend/dist`; masing-masing juga dapat dibangun dengan `npm run build:frontend`

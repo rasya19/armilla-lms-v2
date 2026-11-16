@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useGlassConfirm } from "./GlassConfirm";
 
 type Named = { id: string; nama: string };
 type Year = Named & { semester: string; mulai: string; selesai: string };
@@ -29,6 +30,7 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
 }
 
 export function SchoolAcademics() {
+  const confirm = useGlassConfirm();
   const [data, setData] = useState<Data | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -65,7 +67,7 @@ export function SchoolAcademics() {
   }
   async function saveYear(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (yearId && !window.confirm("Mengubah tanggal tahun ajaran dapat mengubah akses guru untuk reset password siswa. Lanjutkan?")) return;
+    if (yearId && !await confirm("Mengubah tanggal tahun ajaran dapat mengubah akses guru untuk reset password siswa. Lanjutkan?")) return;
     if (await mutate(yearId ? `/tahun/${encodeURIComponent(yearId)}` : "/tahun", yearId ? "PATCH" : "POST", year, "Tahun ajaran disimpan.")) {
       setYearId(null); setYear({ nama: "", semester: "Ganjil", mulai: "", selesai: "" });
     }
@@ -78,11 +80,11 @@ export function SchoolAcademics() {
   }
   async function saveSchedule(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!window.confirm("Jadwal pada tahun ajaran aktif memberi guru izin reset password siswa di kelas ini. Lanjutkan?")) return;
+    if (!await confirm("Jadwal pada tahun ajaran aktif memberi guru izin reset password siswa di kelas ini. Lanjutkan?")) return;
     if (await mutate("/jadwal", "POST", { ...schedule, hari: Number(schedule.hari) }, "Jadwal disimpan.")) setSchedule({ tahunAjaranId: "", kelasId: "", mapelId: "", guruId: "", hari: "1", jamMulai: "", jamSelesai: "" });
   }
   async function deleteSchedule(item: Schedule) {
-    if (!window.confirm("Hapus jadwal ini? Guru bisa kehilangan izin reset siswa di kelas terkait. Untuk koreksi, buat ulang jadwal yang benar.")) return;
+    if (!await confirm("Hapus jadwal ini? Guru bisa kehilangan izin reset siswa di kelas terkait. Untuk koreksi, buat ulang jadwal yang benar.")) return;
     await mutate(`/jadwal/${encodeURIComponent(item.id)}`, "DELETE", undefined, "Jadwal dihapus.");
   }
   const name = (items: Named[], id: string) => {

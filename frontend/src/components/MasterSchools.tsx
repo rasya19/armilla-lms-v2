@@ -35,12 +35,12 @@ export function MasterSchools() {
     return () => controller.abort();
   }, [page]);
 
-  return <section className="mt-6 rounded-2xl border border-[#e6dfd0] bg-white p-6 shadow-sm">
+  return <section className="master-section p-6 text-slate-900">
     <h2 className="text-lg font-bold">Sekolah tercatat</h2>
     <p className="mt-2 text-sm text-slate-600">Daftar sekolah yang tersimpan di database. Pendaftaran dan pengelolaan sekolah masih disiapkan.</p>
     {error ? <p role="alert" className="mt-5 text-sm text-rose-700">{error}</p> : !result ? <p className="mt-5 text-sm text-slate-600">Memuat daftar sekolah...</p> : <>
       {result.sekolah.length === 0 ? <p className="mt-5 text-sm text-slate-600">Tidak ada sekolah pada halaman ini.</p> :
-        <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[32rem] text-left text-sm"><thead className="border-b border-[#e6dfd0] text-slate-600"><tr><th className="py-3 pr-4">Nama sekolah</th><th className="py-3 pr-4">Slug</th><th className="py-3">NPSN</th></tr></thead><tbody>{result.sekolah.map((school) => <tr key={school.id} className="border-b border-[#e6dfd0]"><td className="py-3 pr-4 font-semibold">{school.nama}</td><td className="py-3 pr-4">{school.slug}</td><td className="py-3">{school.npsn ?? "Belum diisi"}</td></tr>)}</tbody></table></div>}
+        <div className="mt-5"><table className="master-schools-table w-full text-left text-sm"><thead className="border-b border-[#e6dfd0] text-slate-600"><tr><th className="py-3 pr-4">Nama sekolah</th><th className="py-3 pr-4">Slug</th><th className="py-3">NPSN</th></tr></thead><tbody>{result.sekolah.map((school) => <tr key={school.id} className="border-b border-[#e6dfd0]"><td data-label="Nama sekolah" className="py-3 pr-4 font-semibold">{school.nama}</td><td data-label="Slug" className="py-3 pr-4">{school.slug}</td><td data-label="NPSN" className="py-3">{school.npsn ?? "Belum diisi"}</td></tr>)}</tbody></table></div>}
       <div className="mt-5 flex items-center gap-4 text-sm"><button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)} className="font-bold text-[#80643a] disabled:text-slate-400">Sebelumnya</button><span>Halaman {page}</span><button type="button" disabled={!result.hasNext} onClick={() => setPage((value) => value + 1)} className="font-bold text-[#80643a] disabled:text-slate-400">Berikutnya</button></div>
     </>}
   </section>;

@@ -716,7 +716,7 @@ app.get("/api/master/pendaftaran-sekolah", async (req, res) => {
     const page = pageValue === undefined ? 1 : Number(pageValue);
     const pageSize = 25;
     const items = await prisma.pendaftaranSekolah.findMany({
-      select: { id: true, namaSekolah: true, npsn: true, namaKontak: true, emailKontak: true, teleponKontak: true, status: true, catatanTinjauan: true, dibuatPada: true, sekolahId: true },
+      select: { id: true, namaSekolah: true, npsn: true, wilayah: true, namaKontak: true, emailKontak: true, teleponKontak: true, status: true, catatanTinjauan: true, dibuatPada: true, sekolahId: true },
       orderBy: [{ dibuatPada: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize + 1,

@@ -3,6 +3,7 @@ import { StudentImport } from "./StudentImport";
 import { ReviewPPDB, TeacherForm } from "./SchoolForms";
 import { SchoolClasses } from "./SchoolClasses";
 import { SchoolAcademics } from "./SchoolAcademics";
+import { useGlassConfirm } from "./GlassConfirm";
 
 type Row = { id: string; nama: string; keterangan: string; status: string; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null };
 type Result = { rows: Row[]; page: number; hasNext: boolean };
@@ -15,6 +16,7 @@ function isResult(data: unknown): data is Result {
 }
 
 export function SchoolData({ slug }: { slug: string }) {
+  const confirm = useGlassConfirm();
   const [kind, setKind] = useState<Kind>("siswa");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Result | null>(null);
@@ -37,7 +39,7 @@ export function SchoolData({ slug }: { slug: string }) {
     return () => controller.abort();
   }, [kind, page, version]);
   async function manageAccount(row: Row, role: "siswa" | "guru", reset: boolean) {
-    if (credential || !window.confirm(reset ? `Reset password akun ${row.nama}? Semua sesi akun akan berakhir.` : `Buat akun ${role} untuk ${row.nama} dengan password sementara unik?`)) return;
+    if (credential || !await confirm(reset ? `Reset password akun ${row.nama}? Semua sesi akun akan berakhir.` : `Buat akun ${role} untuk ${row.nama} dengan password sementara unik?`)) return;
     setAccountBusy(true); setAccountError("");
     try {
       const response = await fetch(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/${reset ? "reset-password" : "akun"}`, { method: "POST" });

@@ -77,7 +77,7 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/pendaftaran-sekolah", registrationRoutes({
   production,
   vercel: !!process.env.VERCEL,
-  limit: registrationRateLimit(loginPool, limitSecret),
+  limit: registrationRateLimit(loginPool, limitSecret, !!process.env.VERCEL && process.env.VERCEL_ENV === "preview"),
   save: async (data, registrationId) => {
     await forwardRegistrationToMaster(registrationId, data);
     await prisma.pendaftaranSekolah.create({ data: { ...data, id: registrationId } });

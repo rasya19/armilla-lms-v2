@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { randomBytes, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import express from "express";
+import { Pool } from "pg";
 import { Prisma } from "@prisma/client";
 import { httpSecurity } from "./http-security.js";
 import { registrationLimitKey, registrationRateLimit, registrationRoutes } from "./registration-routes.js";
@@ -10,6 +11,36 @@ import { registrationLimitKey, registrationRateLimit, registrationRoutes } from 
 const valid = { namaSekolah: "Sekolah Uji", npsn: "P1234567", namaKontak: "Penguji", emailKontak: "test@example.invalid", teleponKontak: "0123456789" };
 const origin = "https://school.example.invalid";
 const headers = { origin, "content-type": "application/json", "x-vercel-forwarded-for": "192.0.2.1" };
+
+test("preview registration limit is isolated and uses a five-minute window", async () => {
+  const pool = new Pool();
+  const counts = new Map<string, number>();
+  const windows: number[] = [];
+  Object.defineProperty(pool, "query", {
+    value: async (sql: string, values?: [string, number]) => {
+      if (!values) return { rows: [] };
+      assert.match(sql, /\$2 \* interval '1 second'/);
+      const [key, window] = values;
+      windows.push(window);
+      const count = (counts.get(key) || 0) + 1;
+      counts.set(key, count);
+      return { rows: [{ count, remaining: window }] };
+    },
+  });
+  const secret = randomBytes(32).toString("hex");
+  const ip = "192.0.2.1";
+  const preview = registrationRateLimit(pool, secret, true);
+  const production = registrationRateLimit(pool, secret);
+  try {
+    for (let i = 0; i < 5; i++) assert.equal((await preview(ip)).allowed, true);
+    assert.deepEqual(await preview(ip), { allowed: false, retryAfter: 300 });
+    assert.deepEqual(await production(ip), { allowed: true, retryAfter: 3600 });
+    assert.deepEqual(windows, [300, 300, 300, 300, 300, 300, 3600]);
+    assert.notEqual(registrationLimitKey(secret, ip, true), registrationLimitKey(secret, ip));
+  } finally {
+    await pool.end();
+  }
+});
 
 test("production registration validates origin and input, saves, and reports safe errors", async () => {
   let mode = "ok";
@@ -71,6 +102,7 @@ test("database saves test registration and enforces a shared limit", { skip: pro
   const secret = randomBytes(32).toString("hex");
   const ip = "192.0.2.55";
   const key = registrationLimitKey(secret, ip);
+  const previewKey = registrationLimitKey(secret, ip, true);
   const routeIp = "192.0.2.56";
   const routeKey = registrationLimitKey(secret, routeIp);
   const limits = [registrationRateLimit(pool, secret), registrationRateLimit(loginPool, secret)];
@@ -92,6 +124,11 @@ test("database saves test registration and enforces a shared limit", { skip: pro
     const results = await Promise.all(Array.from({ length: 10 }, (_, i) => limits[i % 2](ip)));
     assert.equal(results.filter((item) => item.allowed).length, 5);
     assert.equal(results.filter((item) => !item.allowed).length, 5);
+    const previewLimit = registrationRateLimit(pool, secret, true);
+    const previewResults = await Promise.all(Array.from({ length: 6 }, () => previewLimit(ip)));
+    assert.equal(previewResults.filter((item) => item.allowed).length, 5);
+    assert.equal(previewResults.filter((item) => !item.allowed).length, 1);
+    assert.ok(previewResults.every((item) => item.retryAfter <= 300 && item.retryAfter > 0));
     const response = await fetch(`http://127.0.0.1:${address.port}/api/pendaftaran-sekolah`, {
       method: "POST",
       headers: { ...headers, "x-vercel-forwarded-for": routeIp },
@@ -106,7 +143,7 @@ test("database saves test registration and enforces a shared limit", { skip: pro
     server.close();
     await once(server, "close");
     await prisma.pendaftaranSekolah.deleteMany({ where: { id: testId } });
-    await pool.query('DELETE FROM "LoginRateLimit" WHERE "key" = ANY($1::text[])', [[key, routeKey]]);
+    await pool.query('DELETE FROM "LoginRateLimit" WHERE "key" = ANY($1::text[])', [[key, previewKey, routeKey]]);
     await prisma.$disconnect();
     await Promise.all([pool.end(), loginPool.end()]);
   }

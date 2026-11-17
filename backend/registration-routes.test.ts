@@ -7,13 +7,14 @@ import { Prisma } from "@prisma/client";
 import { httpSecurity } from "./http-security.js";
 import { registrationLimitKey, registrationRateLimit, registrationRoutes } from "./registration-routes.js";
 
-const valid = { namaSekolah: "Sekolah Uji", namaKontak: "Penguji", emailKontak: "test@example.invalid", teleponKontak: "0123456789" };
+const valid = { namaSekolah: "Sekolah Uji", npsn: "P1234567", namaKontak: "Penguji", emailKontak: "test@example.invalid", teleponKontak: "0123456789" };
 const origin = "https://school.example.invalid";
 const headers = { origin, "content-type": "application/json", "x-vercel-forwarded-for": "192.0.2.1" };
 
 test("production registration validates origin and input, saves, and reports safe errors", async () => {
   let mode = "ok";
   let saved = 0;
+  let savedId = "";
   const app = express();
   app.use(httpSecurity({ production: true, origin }));
   app.use(express.json());
@@ -24,9 +25,10 @@ test("production registration validates origin and input, saves, and reports saf
       if (mode === "limit-error") throw new Error("sensitive database detail");
       return { allowed: mode !== "limited", retryAfter: 120 };
     },
-    save: async () => {
+    save: async (_data, registrationId) => {
       if (mode === "save-error") throw new Prisma.PrismaClientKnownRequestError("sensitive database detail", { code: "P2021", clientVersion: "test" });
       saved++;
+      savedId = registrationId;
     },
   }));
   const server = app.listen(0, "127.0.0.1");
@@ -39,8 +41,10 @@ test("production registration validates origin and input, saves, and reports saf
     assert.equal((await post(valid, { ...headers, origin: "https://evil.invalid" })).status, 403);
     assert.equal((await post(valid, { ...headers, "x-vercel-forwarded-for": "" })).status, 503);
     assert.equal((await post({ ...valid, emailKontak: "invalid" })).status, 400);
+    assert.equal((await post({ ...valid, npsn: undefined })).status, 400);
     assert.equal((await post(valid)).status, 201);
     assert.equal(saved, 1);
+    assert.match(savedId, /^[0-9a-f-]{36}$/);
     mode = "limited";
     const limited = await post(valid);
     assert.equal(limited.status, 429);

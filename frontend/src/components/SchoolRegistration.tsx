@@ -25,13 +25,13 @@ export function SchoolRegistration() {
           const data: unknown = await response.json();
           if (typeof data === "object" && data !== null && "error" in data && typeof data.error === "string") {
             detail = data.error;
-            if ("code" in data && typeof data.code === "string" && /^REGISTRATION_[A-Z_]+$/.test(data.code)) detail += ` (${data.code})`;
+            if ("code" in data && typeof data.code === "string" && /^(?:REGISTRATION|MASTER_ADMIN_REGISTRATION)_[A-Z_]+$/.test(data.code)) detail += ` (${data.code})`;
             if ("reference" in data && typeof data.reference === "string" && /^[a-f0-9-]{36}$/.test(data.reference)) detail += ` Referensi: ${data.reference}`;
           }
         }
         throw new Error(detail);
       }
-      setMessage("Pendaftaran diterima dan menunggu pemeriksaan master admin. Undangan dan akun admin sekolah belum tersedia.");
+      setMessage("Pendaftaran terkirim ke Rasyatech Admin dan menunggu verifikasi. Akun LMS dibuat setelah disetujui.");
       setForm({ namaSekolah: "", npsn: "", wilayah: "", namaKontak: "", emailKontak: "", teleponKontak: "" });
     } catch (error) {
       console.error("Gagal mengirim pendaftaran sekolah:", error);
@@ -44,11 +44,11 @@ export function SchoolRegistration() {
   return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8">
     <p className="text-xs font-bold uppercase tracking-widest text-[#80643a]">Rasyatech Digital Zenith</p>
     <h1 className="mt-3 text-3xl font-bold">Pendaftaran sekolah</h1>
-    <p className="mt-3 text-sm leading-6 text-slate-600">Pendaftaran sedang diuji secara lokal. Persetujuan belum membuat akun sekolah atau mengirim undangan; jangan kirim data sungguhan dulu.</p>
+    <p className="mt-3 text-sm leading-6 text-slate-600">Pendaftaran diteruskan ke Rasyatech Admin. Akun sekolah dan admin LMS baru dibuat setelah verifikasi disetujui.</p>
     {message ? <div role="status" className="mt-6 rounded-xl bg-[#f8f6ef] p-5 text-sm leading-6">{message}</div> :
       <form onSubmit={submit} className="mt-6 space-y-4">
         <label className="block text-sm font-semibold">Nama sekolah<input className={inputClass} required minLength={2} maxLength={200} value={form.namaSekolah} onChange={(e) => setForm({ ...form, namaSekolah: e.target.value })} /></label>
-        <label className="block text-sm font-semibold">NPSN (opsional)<input className={inputClass} autoCapitalize="characters" pattern="([0-9]{8}|[PpKk][0-9]{7})" title="Masukkan 8 angka atau huruf P/K diikuti 7 angka." aria-describedby="npsn-help" maxLength={8} value={form.npsn} onChange={(e) => setForm({ ...form, npsn: e.target.value.toUpperCase() })} /><span id="npsn-help" className="mt-2 block text-xs font-normal text-slate-600">8 angka, atau huruf P/K diikuti 7 angka. Kosongkan jika belum memiliki NPSN.</span></label>
+        <label className="block text-sm font-semibold">NPSN<input className={inputClass} required autoCapitalize="characters" pattern="([0-9]{8}|[PpKk][0-9]{7})" title="Masukkan 8 angka atau huruf P/K diikuti 7 angka." aria-describedby="npsn-help" maxLength={8} value={form.npsn} onChange={(e) => setForm({ ...form, npsn: e.target.value.toUpperCase() })} /><span id="npsn-help" className="mt-2 block text-xs font-normal text-slate-600">Wajib untuk pencocokan pendaftaran dan provisioning. Gunakan 8 angka, atau huruf P/K diikuti 7 angka.</span></label>
         <label className="block text-sm font-semibold">Wilayah (opsional)<input className={inputClass} maxLength={200} value={form.wilayah} onChange={(e) => setForm({ ...form, wilayah: e.target.value })} /></label>
         <label className="block text-sm font-semibold">Nama penanggung jawab<input className={inputClass} required minLength={2} maxLength={120} value={form.namaKontak} onChange={(e) => setForm({ ...form, namaKontak: e.target.value })} /></label>
         <label className="block text-sm font-semibold">Email penanggung jawab<input className={inputClass} type="email" required maxLength={254} value={form.emailKontak} onChange={(e) => setForm({ ...form, emailKontak: e.target.value })} /></label>

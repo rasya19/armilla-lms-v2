@@ -41,24 +41,101 @@ Menu Kelola Tenant menampilkan daftar sekolah tersimpan, tetapi belum dapat
 menambah, mengubah, menghapus, atau mengaktifkan sekolah. Menu pengelolaan
 lainnya belum tersedia dan belum terhubung ke data.
 
-Formulir `/daftar` dan menu master Verifikasi Sekolah/Rekap Pendaftar tersedia
-untuk pengujian di Vercel. Pendaftaran disimpan dan master dapat mencatat persetujuan,
-penolakan, atau menghapus pendaftaran secara permanen setelah konfirmasi.
-Penghapusan hanya menghapus pendaftaran, bukan data sekolah atau akun.
-Persetujuan **belum** membuat sekolah atau akun dan tidak
-mengirim undangan SMTP. Jangan gunakan data sungguhan: alur verifikasi,
-pembuatan sekolah, dan pembuatan admin belum tersedia di produksi.
+Formulir `/daftar` meneruskan pendaftaran LMS ke antrean tenant Rasyatech Admin.
+Verifikasi dan aktivasi dilakukan dari Rasyatech Admin, bukan dari menu LMS.
+Setelah provisioning berhasil, LMS membuat sekolah dan akun admin lalu menautkan
+pendaftaran. Akun hanya dibuat sesudah persetujuan; undangan SMTP belum tersedia.
+Integrasi end-to-end ini ditujukan untuk pengujian lokal dan belum siap produksi.
 Pendaftaran dibatasi lima permintaan per IP per jam di PostgreSQL, termasuk
 permintaan tidak valid; IP disimpan sebagai HMAC. Di Vercel diperlukan alamat
 IP dari `x-vercel-forwarded-for`; bila IP atau database tidak tersedia,
 permintaan ditolak. Respons kesalahan dapat berisi kode dan ID referensi
 untuk dicocokkan dengan log Vercel tanpa menampilkan detail database.
 
-Untuk pengujian lokal, setelah pendaftaran disetujui, salin ID pendaftaran
-dari menu Verifikasi Sekolah dan jalankan `npm run create:school-admin` di
-terminal interaktif. Perintah membuat sekolah dan akun admin memakai email
-kontak pendaftaran, lalu meminta kata sandi secara tersembunyi dua kali.
-Perintah tidak mengirim undangan dan tidak mengubah akun yang sudah ada.
+### Integrasi provisioning internal (khusus uji)
+
+Endpoint internal **belum siap produksi** dan menolak permintaan pada
+`NODE_ENV=production`; pembatas login sekolah/LMS di produksi tidak diubah.
+Terapkan migrasi pada database uji yang tepat dengan `npm run db:migrate:deploy`,
+lalu atur `MASTER_PROVISION_SECRET` sebagai token acak yang panjang dan unik
+serta `APP_ORIGIN` sebagai origin aplikasi tanpa slash penutup, misalnya
+`http://localhost:3000` untuk uji lokal atau origin HTTPS. Atur keduanya hanya
+di environment backend, jangan di frontend, repositori, atau log. Backend lokal
+default hanya mendengarkan loopback. Untuk komunikasi antar-host gunakan TLS,
+jaringan privat, dan batasi akses; jangan mengekspos token atau password.
+
+### Integrasi pendaftaran LMS ke Rasyatech Admin (uji lokal)
+
+Gunakan database uji dan data sekolah uji. Kedua aplikasi harus berjalan pada
+mesin yang sama untuk alamat loopback di bawah. Di environment backend
+Rasyatech Admin, atur `LMS_REGISTRATION_TOKEN` ke token acak panjang. Di
+`backend/.env` LMS, atur:
+
+```dotenv
+MASTER_ADMIN_REGISTRATION_URL=http://127.0.0.1:3100/api/lms-registrations
+MASTER_ADMIN_REGISTRATION_TOKEN=<token-yang-sama-dengan-LMS_REGISTRATION_TOKEN>
+```
+
+Jangan gunakan token `MASTER_PROVISION_SECRET` untuk integrasi ini. Token itu
+tetap khusus webhook provisioning pada gambar: `LMS_WEBHOOK_URL` di Rasyatech
+Admin harus menunjuk ke `http://127.0.0.1:4000/api/internal/provision`, dan
+`LMS_BEARER_TOKEN` harus sama dengan `MASTER_PROVISION_SECRET` di backend LMS.
+Jangan menaruh token rahasia di frontend atau membagikannya.
+
+Jalankan LMS dengan `npm run dev:all` (frontend port 3000, backend port 4000).
+Jalankan Master Admin di terminal terpisah pada port 3100 dengan
+`$env:PORT='3100'; npm run dev`. Kirim pendaftaran dengan NPSN valid dari halaman LMS;
+sekolah akan muncul sebagai `LMS / PENDING` di antrean Verifikasi Rasyatech
+Admin. Pilih **Setujui & Aktifkan** di Admin. Jika webhook provisioning
+berhasil, sekolah dan akun admin dibuat di LMS dan halaman pendaftaran LMS
+menampilkan bahwa sekolah telah dibuat. Jika konfigurasi atau koneksi gagal,
+Admin menampilkan error dan tenant tetap pending; jangan menghapus atau
+mengirim ulang data sebelum memeriksa antrean Admin.
+
+Portal mengirim `Authorization: Bearer <MASTER_PROVISION_SECRET>` dan JSON ke
+`POST /api/internal/provision`:
+
+```json
+{
+  "institutionName": "Sekolah Uji",
+  "npsn": "P1234567",
+  "subdomain": "sekolah-uji",
+  "adminName": "Admin Uji",
+  "adminEmail": "admin@example.invalid",
+  "adminPhone": "08123456789",
+  "plan": "Tahunan",
+  "expiresAt": "2099-12-31T23:59:59Z"
+}
+```
+
+`subdomain` disimpan sebagai slug saja, bukan domain yang otomatis diarahkan.
+`expiresAt` wajib timestamp UTC ISO 8601 (`Z`, detik dan opsional tiga digit
+milidetik) dan harus di masa depan. Respons 201 berisi `success`, `tenantId`,
+`loginUrl` (login bersama `APP_ORIGIN/login`), `initialUsername`, dan
+`temporaryPassword`. Password hanya ditampilkan dalam respons tersebut;
+simpan dan sampaikan melalui kanal aman. Akun admin sekolah saat ini belum
+memiliki alur wajib ganti/reset password, jadi kredensial ini hanya untuk uji.
+`GET /api/internal/health` memakai autentikasi yang sama dan hanya untuk menguji
+koneksi lokal/staging; endpoint provisioning dan health-check tetap menolak
+permintaan pada `NODE_ENV=production`.
+NPSN, slug, dan email admin harus unik; duplikasi menghasilkan 409. Provisioning
+tidak otomatis menautkan atau mengubah pendaftaran yang sudah ada, dan tidak
+membuat invoice. Bila respons hilang setelah transaksi berhasil, jangan ulangi
+secara buta: periksa tenant terlebih dahulu; password tidak dapat dipulihkan.
+
+`PATCH /api/internal/tenants/:npsn/status` memakai autentikasi yang sama dan
+body `{"status":"SUSPENDED","expiresAt":"2099-12-31T23:59:59Z"}`.
+Status yang diterima `ACTIVE` atau `SUSPENDED`; aktivasi membutuhkan tanggal
+masa depan. Status suspend atau kedaluwarsa memblokir login dan sesi admin,
+guru, dan siswa; setiap perubahan status/tanggal mencabut sesi tenant. Sekolah
+lama tetap aktif tanpa tanggal kedaluwarsa sampai diperbarui. Tidak ada
+perubahan hak akses pada permintaan yang sudah diproses sebelum perubahan.
+Endpoint tidak ditujukan untuk pemanggilan browser.
+
+Untuk pengujian lokal, setujui dan provisioning tenant dari Rasyatech Admin;
+langkah tersebut membuat sekolah dan akun admin LMS serta menautkan
+pendaftarannya. Jangan jalankan `npm run create:school-admin` untuk tenant
+yang sudah diprovision dari Rasyatech Admin karena NPSN dan email harus unik.
 Admin dapat masuk melalui `/login`; sesi admin dan master terpisah.
 Daftar siswa, guru, dan PPDB dibatasi berdasarkan sekolah akun. Impor siswa
 tersedia untuk uji lokal melalui Data Siswa: pilih file `.xlsx` berukuran

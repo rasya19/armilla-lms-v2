@@ -62,7 +62,9 @@ test("production master login enforces session, role, origin, and shared failure
       assert.equal((await get(path, cookie)).status, 200);
     }
     assert.equal((await post(`/api/master/pendaftaran-sekolah/${registrationId}/tinjau`, { keputusan: "DISETUJUI", catatan: "" }, cookie, "https://evil.invalid")).status, 403);
-    assert.equal((await post(`/api/master/pendaftaran-sekolah/${registrationId}/tinjau`, { keputusan: "DISETUJUI", catatan: "" }, cookie)).status, 200);
+    const review = await post(`/api/master/pendaftaran-sekolah/${registrationId}/tinjau`, { keputusan: "DISETUJUI", catatan: "" }, cookie);
+    assert.equal(review.status, 409);
+    assert.equal((await review.json()).error, "Verifikasi pendaftaran dilakukan melalui Rasyatech Admin.");
     assert.equal((await post("/api/auth/master/logout", {}, cookie)).status, 204);
     assert.equal((await get("/api/master/summary", cookie)).status, 401);
     const secondLogin = await post("/api/auth/master/login", { email, password });

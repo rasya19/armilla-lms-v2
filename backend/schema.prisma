@@ -159,6 +159,11 @@ enum StatusPendaftaranSekolah {
   DITOLAK
 }
 
+enum StatusTenant {
+  ACTIVE
+  SUSPENDED
+}
+
 model PendaftaranSekolah {
   id              String                    @id @default(uuid())
   namaSekolah     String
@@ -184,6 +189,10 @@ model Sekolah {
   nama        String
   slug        String            @unique
   npsn        String?           @unique
+  status      StatusTenant      @default(ACTIVE)
+  expiresAt   DateTime?
+  plan        String?
+  adminPhone  String?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   akun        Akun[]

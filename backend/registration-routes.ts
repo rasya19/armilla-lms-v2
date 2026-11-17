@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import type { Pool } from "pg";
 import { loginClientIp } from "./login-rate-limit.js";
 import { parseRegistration } from "./school-registration.js";
+import { RegistrationDeliveryError } from "./registration-delivery-error.js";
 
 type Registration = NonNullable<ReturnType<typeof parseRegistration>>;
 type LimitResult = { allowed: boolean; retryAfter: number };
@@ -52,7 +53,7 @@ export function registrationRoutes(options: {
   production: boolean;
   vercel: boolean;
   limit: (ip: string) => Promise<LimitResult>;
-  save: (data: Registration) => Promise<void>;
+  save: (data: Registration, registrationId: string) => Promise<void>;
 }) {
   const router = Router();
   async function processRegistration(req: Request, res: Response) {
@@ -75,11 +76,23 @@ export function registrationRoutes(options: {
       return res.status(503).json({ error: "Perlindungan pendaftaran tidak tersedia.", code: "REGISTRATION_LIMIT_UNAVAILABLE", reference });
     }
     const data = parseRegistration(req.body);
-    if (!data) return res.status(400).json({ error: "Periksa kembali nama sekolah, kontak, email, telepon, dan NPSN (8 angka atau huruf P/K diikuti 7 angka jika diisi).", code: "REGISTRATION_INVALID" });
+    if (!data) return res.status(400).json({ error: "Periksa kembali nama sekolah, kontak, email, telepon, dan NPSN (wajib: 8 angka atau huruf P/K diikuti 7 angka).", code: "REGISTRATION_INVALID" });
+    const registrationId = randomUUID();
     try {
-      await options.save(data);
-      return res.status(201).json({ message: "Pendaftaran diterima dan menunggu pemeriksaan master admin." });
+      await options.save(data, registrationId);
+      return res.status(201).json({ message: "Pendaftaran diterima Rasyatech Admin dan menunggu verifikasi.", registrationId });
     } catch (error) {
+      if (error instanceof RegistrationDeliveryError) {
+        console.error("Pendaftaran sekolah: penerusan ke Rasyatech Admin gagal", {
+          registrationId,
+          code: error.code,
+        });
+        return res.status(error.statusCode).json({
+          error: error.message,
+          code: error.code,
+          registrationId,
+        });
+      }
       const reference = randomUUID();
       const code = databaseErrorCode(error);
       const prismaCode = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : undefined;

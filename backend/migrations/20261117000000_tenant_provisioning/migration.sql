@@ -1,0 +1,7 @@
+CREATE TYPE "StatusTenant" AS ENUM ('ACTIVE', 'SUSPENDED');
+
+ALTER TABLE "Sekolah"
+ADD COLUMN "status" "StatusTenant" NOT NULL DEFAULT 'ACTIVE',
+ADD COLUMN "expiresAt" TIMESTAMP(3),
+ADD COLUMN "plan" TEXT,
+ADD COLUMN "adminPhone" TEXT;

@@ -12,6 +12,9 @@ import { learningRoutes } from "./learning-routes.js";
 import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
 import { Prisma } from "@prisma/client";
+import { internalProvisionRoutes } from "./internal-provision.js";
+import { forwardRegistrationToMaster } from "./master-admin-registration.js";
+import { tenantAccessible } from "./tenant-access.js";
 
 const app = express();
 export default app;
@@ -24,6 +27,7 @@ const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 
 app.disable("x-powered-by");
 const production = process.env.NODE_ENV === "production";
+app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use(httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
@@ -49,7 +53,10 @@ app.use("/api/pendaftaran-sekolah", registrationRoutes({
   production,
   vercel: !!process.env.VERCEL,
   limit: registrationRateLimit(loginPool, limitSecret),
-  save: async (data) => { await prisma.pendaftaranSekolah.create({ data }); },
+  save: async (data, registrationId) => {
+    await forwardRegistrationToMaster(registrationId, data);
+    await prisma.pendaftaranSekolah.create({ data: { ...data, id: registrationId } });
+  },
 }));
 
 app.post("/api/auth/master/login", async (req, res) => {
@@ -85,8 +92,9 @@ async function getSession(cookieHeader: string | undefined, role: "MASTER_ADMIN"
   const token = sessionToken(cookieHeader, role === "ADMIN" ? schoolCookieName : cookieName);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const session = await prisma.sesiAkun.findUnique({ where: { tokenHash }, include: { akun: true } });
+  const session = await prisma.sesiAkun.findUnique({ where: { tokenHash }, include: { akun: { include: { sekolah: true } } } });
   if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.akun.aktif || session.akun.peran !== role || (role === "ADMIN" && !session.akun.sekolahId)) return null;
+  if (role === "ADMIN" && !tenantAccessible(session.akun.sekolah)) return null;
   return session;
 }
 
@@ -210,9 +218,10 @@ async function getLmsSession(cookieHeader: string | undefined) {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const session = await prisma.sesiAkun.findUnique({
     where: { tokenHash: createHash("sha256").update(token).digest("hex") },
-    include: { akun: { include: { siswa: true, guru: true } } },
+    include: { akun: { include: { siswa: true, guru: true, sekolah: true } } },
   });
   if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.akun.aktif || !session.akun.sekolahId) return null;
+  if (!tenantAccessible(session.akun.sekolah)) return null;
   const account = session.akun;
   if (account.peran === "SISWA" && account.siswa?.sekolahId === account.sekolahId && account.siswa.status === "Aktif" && !account.guruId) return session;
   if (account.peran === "GURU" && account.guru?.sekolahId === account.sekolahId && account.guru.status === "Aktif" && !account.siswaId) return session;
@@ -732,16 +741,7 @@ app.post("/api/master/pendaftaran-sekolah/:id/tinjau", async (req, res) => {
   try {
     const session = await getSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    const { keputusan, catatan } = req.body || {};
-    if ((keputusan !== "DISETUJUI" && keputusan !== "DITOLAK") || typeof catatan !== "string" || catatan.trim().length > 500 || (keputusan === "DITOLAK" && !catatan.trim())) {
-      return res.status(400).json({ error: "Keputusan tidak valid atau catatan penolakan belum diisi." });
-    }
-    const result = await prisma.pendaftaranSekolah.updateMany({
-      where: { id: req.params.id, status: "MENUNGGU" },
-      data: { status: keputusan, catatanTinjauan: catatan.trim() || null, ditinjauPada: new Date(), ditinjauOlehId: session.akunId },
-    });
-    if (result.count === 0) return res.status(409).json({ error: "Pendaftaran tidak ditemukan atau sudah ditinjau. Muat ulang daftar." });
-    return res.json({ message: "Keputusan disimpan. Sekolah dan akun belum dibuat secara otomatis; undangan belum tersedia." });
+    return res.status(409).json({ error: "Verifikasi pendaftaran dilakukan melalui Rasyatech Admin." });
   } catch (error) {
     console.error("Gagal meninjau pendaftaran sekolah:", error);
     return res.status(503).json({ error: "Keputusan belum dapat disimpan. Coba lagi nanti." });

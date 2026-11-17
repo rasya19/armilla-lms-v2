@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { SchoolData } from "./SchoolData";
+import { PasswordChangeForm } from "./PasswordChangeForm";
 
 export function SchoolLogin() {
   const [email, setEmail] = useState("");
@@ -8,6 +9,7 @@ export function SchoolLogin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -29,7 +31,7 @@ export function SchoolLogin() {
       setError(error instanceof TypeError ? "Server tidak dapat dihubungi." : error instanceof Error ? error.message : "Login gagal.");
     } finally { setBusy(false); }
   }
-  return <main className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6"><p className="master-eyebrow">KESETARAAN LMS / SEKOLAH</p><h1 className="mt-3 text-2xl font-bold">Login Admin Sekolah</h1><p className="mt-3 text-sm text-slate-700">Akses sementara untuk pengujian lokal. Akun dibuat melalui terminal.</p><form onSubmit={submit} className="mt-6 space-y-4"><label className="block text-sm font-semibold">Email<input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className="glass-input mt-2 w-full rounded-xl px-4 py-3" /></label><label className="block text-sm font-semibold">Kata sandi<input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="glass-input mt-2 w-full rounded-xl px-4 py-3" /></label>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}<button disabled={busy} className="master-primary w-full py-3 disabled:opacity-50">{busy ? "Memeriksa..." : "Masuk"}</button></form><Link to="/lms/login" className="mt-6 block text-sm font-semibold text-indigo-800 underline">Login guru dan siswa</Link><Link to="/" className="mt-4 inline-block text-sm font-semibold text-indigo-800 underline">Kembali ke beranda</Link></div></main>;
+  return <main className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6"><p className="master-eyebrow">KESETARAAN LMS / SEKOLAH</p><h1 className="mt-3 text-2xl font-bold">Login Admin Sekolah</h1><p className="mt-3 text-sm text-slate-700">Akses sementara untuk pengujian lokal. Akun dibuat melalui terminal.</p>{location.state?.passwordChanged === true && <p role="status" className="mt-4 text-sm text-green-700">Password berhasil diganti. Silakan masuk kembali.</p>}<form onSubmit={submit} className="mt-6 space-y-4"><label className="block text-sm font-semibold">Email<input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className="glass-input mt-2 w-full rounded-xl px-4 py-3" /></label><label className="block text-sm font-semibold">Kata sandi<input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="glass-input mt-2 w-full rounded-xl px-4 py-3" /></label>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}<button disabled={busy} className="master-primary w-full py-3 disabled:opacity-50">{busy ? "Memeriksa..." : "Masuk"}</button></form><Link to="/lms/login" className="mt-6 block text-sm font-semibold text-indigo-800 underline">Login guru dan siswa</Link><Link to="/" className="mt-4 inline-block text-sm font-semibold text-indigo-800 underline">Kembali ke beranda</Link></div></main>;
 }
 
 export function SchoolHome() {
@@ -60,5 +62,5 @@ export function SchoolHome() {
   }
   if (status === "unauthorized") return <Navigate to="/login" replace />;
   if (status !== "ready") return <main className="school-dashboard min-h-screen p-8 text-white">{status === "loading" ? "Memeriksa sesi..." : "Sesi tidak tersedia. Muat ulang halaman."}</main>;
-  return <main className="school-dashboard glass-area min-h-screen p-4 sm:p-6"><div className="mx-auto max-w-4xl"><div className="glass-panel flex justify-between gap-4 rounded-3xl p-5 sm:p-7"><div><p className="master-eyebrow">ADMIN SEKOLAH · UJI LOKAL</p><h1 className="mt-2 break-words text-2xl font-bold sm:text-3xl">{school}</h1></div><button onClick={logout} className="master-primary self-start">Keluar</button></div>{error && <p role="alert" className="glass-panel mt-4 rounded-xl p-4 text-rose-700">{error}</p>}<SchoolData slug={slug} /></div></main>;
+  return <main className="school-dashboard glass-area min-h-screen p-4 sm:p-6"><div className="mx-auto max-w-4xl"><div className="glass-panel flex justify-between gap-4 rounded-3xl p-5 sm:p-7"><div><p className="master-eyebrow">ADMIN SEKOLAH · UJI LOKAL</p><h1 className="mt-2 break-words text-2xl font-bold sm:text-3xl">{school}</h1></div><button onClick={logout} className="master-primary self-start">Keluar</button></div>{error && <p role="alert" className="glass-panel mt-4 rounded-xl p-4 text-rose-700">{error}</p>}<PasswordChangeForm endpoint="/api/auth/sekolah/ganti-password" onChanged={() => navigate("/login", { state: { passwordChanged: true }, replace: true })} description="Verifikasi password saat ini sebelum membuat password baru." className="glass-panel mt-4 rounded-2xl p-5" inputClassName="glass-input mt-2 w-full rounded-xl px-4 py-3" buttonClassName="master-primary py-3 disabled:opacity-50" /><SchoolData slug={slug} /></div></main>;
 }

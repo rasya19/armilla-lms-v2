@@ -43,6 +43,31 @@ function sessionToken(cookieHeader: string | undefined, name: string): string | 
   return cookieHeader?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
+async function savePasswordChange(account: {
+  id: string;
+  passwordHash: string;
+  peran: "MASTER_ADMIN" | "ADMIN" | "GURU" | "SISWA";
+  sekolahId: string | null;
+  wajibGantiPassword: boolean;
+}, passwordHash: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.akun.updateMany({
+      where: {
+        id: account.id,
+        passwordHash: account.passwordHash,
+        peran: account.peran,
+        sekolahId: account.sekolahId,
+        aktif: true,
+        wajibGantiPassword: account.wajibGantiPassword,
+      },
+      data: { passwordHash, wajibGantiPassword: false },
+    });
+    if (updated.count !== 1) return false;
+    await tx.sesiAkun.updateMany({ where: { akunId: account.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    return true;
+  });
+}
+
 function cookieOptions() {
   return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/" };
 }
@@ -146,6 +171,32 @@ app.post("/api/auth/sekolah/logout", async (req, res) => {
   } catch (error) {
     console.error("Gagal mengakhiri sesi sekolah:", error);
     return res.status(503).json({ error: "Gagal mengakhiri sesi." });
+  }
+});
+
+app.post("/api/auth/sekolah/ganti-password", async (req, res) => {
+  try {
+    const session = await getSession(req.headers.cookie, "ADMIN");
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const { currentPassword, password } = req.body || {};
+    if (typeof currentPassword !== "string" || currentPassword.length > 1024 || typeof password !== "string" || !isValidPasswordLength(password)) {
+      return res.status(400).json({ error: "Password saat ini wajib diisi. Password baru harus 6–1024 karakter." });
+    }
+    if (!await verifyPassword(currentPassword, session.akun.passwordHash)) {
+      return res.status(400).json({ error: "Password saat ini salah." });
+    }
+    if (await verifyPassword(password, session.akun.passwordHash)) {
+      return res.status(400).json({ error: "Password baru harus berbeda dari password saat ini." });
+    }
+    const passwordHash = await hashPassword(password);
+    if (!await savePasswordChange(session.akun, passwordHash)) {
+      return res.status(409).json({ error: "Akun telah berubah. Silakan masuk kembali." });
+    }
+    res.clearCookie(schoolCookieName, cookieOptions());
+    return res.json({ message: "Password berhasil diganti. Silakan masuk kembali." });
+  } catch (error) {
+    console.error("Gagal mengganti password admin sekolah:", error);
+    return res.status(503).json({ error: "Password belum dapat diganti." });
   }
 });
 
@@ -275,16 +326,25 @@ app.post("/api/auth/lms/ganti-password", async (req, res) => {
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    if (!session.akun.wajibGantiPassword) return res.status(409).json({ error: "Password awal sudah diganti. Silakan masuk kembali." });
-    const { password } = req.body || {};
-    if (typeof password !== "string" || !isValidPasswordLength(password) || await verifyPassword(password, session.akun.passwordHash)) return res.status(400).json({ error: "Password baru harus 6–1024 karakter dan berbeda dari password awal." });
+    const forcedChange = session.akun.wajibGantiPassword;
+    if (!forcedChange && session.akun.peran !== "GURU") return res.status(403).json({ error: "Fitur ganti password tidak tersedia untuk peran ini." });
+    const { currentPassword, password } = req.body || {};
+    if (typeof password !== "string" || !isValidPasswordLength(password)) {
+      return res.status(400).json({ error: "Password baru harus 6–1024 karakter." });
+    }
+    if (!forcedChange) {
+      if (typeof currentPassword !== "string" || currentPassword.length > 1024) {
+        return res.status(400).json({ error: "Password saat ini wajib diisi." });
+      }
+      if (!await verifyPassword(currentPassword, session.akun.passwordHash)) {
+        return res.status(400).json({ error: "Password saat ini salah." });
+      }
+    }
+    if (await verifyPassword(password, session.akun.passwordHash)) {
+      return res.status(400).json({ error: "Password baru harus berbeda dari password saat ini." });
+    }
     const passwordHash = await hashPassword(password);
-    const changed = await prisma.$transaction(async (tx) => {
-      const updated = await tx.akun.updateMany({ where: { id: session.akun.id, wajibGantiPassword: true, passwordHash: session.akun.passwordHash, aktif: true }, data: { passwordHash, wajibGantiPassword: false } });
-      if (updated.count !== 1) return false;
-      await tx.sesiAkun.updateMany({ where: { akunId: session.akun.id, revokedAt: null }, data: { revokedAt: new Date() } });
-      return true;
-    });
+    const changed = await savePasswordChange(session.akun, passwordHash);
     if (!changed) return res.status(409).json({ error: "Akun telah berubah. Silakan masuk kembali." });
     res.clearCookie(lmsCookieName, cookieOptions());
     return res.json({ message: "Password berhasil diganti. Silakan masuk kembali." });

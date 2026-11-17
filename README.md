@@ -40,6 +40,11 @@ Dashboard menampilkan jumlah sekolah dan akun admin sekolah yang tercatat.
 Menu Kelola Tenant menampilkan daftar sekolah tersimpan, tetapi belum dapat
 menambah, mengubah, menghapus, atau mengaktifkan sekolah. Menu pengelolaan
 lainnya belum tersedia dan belum terhubung ke data.
+Untuk pengujian lokal, Admin Sekolah dan Guru dapat mengganti password dari
+halaman masing-masing dengan memasukkan password saat ini. Setelah berhasil,
+semua sesi akun berakhir dan pengguna harus masuk kembali. Master Admin tidak
+termasuk karena pengelolaan akunnya akan dipindahkan ke Rasyatech Admin; alur
+ganti password awal siswa tetap tersedia.
 
 Formulir `/daftar` meneruskan pendaftaran LMS ke antrean tenant Rasyatech Admin.
 Verifikasi dan aktivasi dilakukan dari Rasyatech Admin, bukan dari menu LMS.

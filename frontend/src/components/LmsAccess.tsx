@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { TeacherPasswordReset } from "./TeacherPasswordReset";
 import { LmsSchedule } from "./LmsSchedule";
 import { LmsLearning } from "./LmsLearning";
+import { PasswordChangeForm } from "./PasswordChangeForm";
 
 type Session = { nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean };
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
@@ -49,8 +50,6 @@ export function LmsLogin() {
 export function LmsHome() {
   const [session, setSession] = useState<Session | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">("loading");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -65,14 +64,6 @@ export function LmsHome() {
     }).catch((error: unknown) => { if (!controller.signal.aborted) { console.error(error); setStatus("error"); } });
     return () => controller.abort();
   }, []);
-  async function changePassword(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError("");
-    if (password !== confirm) { setError("Konfirmasi password tidak cocok."); return; }
-    setBusy(true);
-    try { await post("/api/auth/lms/ganti-password", { password }); setPassword(""); setConfirm(""); navigate("/lms/login", { state: { changed: true }, replace: true }); }
-    catch (error) { console.error("Gagal mengganti password:", error); setError(error instanceof TypeError ? "Koneksi terputus. Coba masuk kembali untuk memeriksa hasilnya." : error instanceof Error ? error.message : "Password belum dapat diganti."); }
-    finally { setBusy(false); }
-  }
   async function logout() {
     setBusy(true); setError("");
     try { await post("/api/auth/lms/logout"); navigate("/lms/login", { replace: true }); }
@@ -83,7 +74,8 @@ export function LmsHome() {
   if (status !== "ready" || !session) return <main className="p-8">{status === "loading" ? "Memeriksa sesi..." : "Layanan sesi tidak tersedia. Muat ulang halaman."}</main>;
   return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8">
     <h1 className="text-2xl font-bold">{session.wajibGantiPassword ? "Wajib ganti password" : `Selamat datang, ${session.nama}`}</h1>
-    {session.wajibGantiPassword ? <form onSubmit={changePassword} className="mt-5 space-y-4"><p className="text-sm text-slate-600">Buat password baru minimal 6 karakter, berbeda dari password awal. Setelah itu masuk kembali.</p><label className="block text-sm font-semibold">Password baru<input className="mt-2 w-full rounded-xl border border-slate-300 p-3" type="password" required minLength={6} maxLength={1024} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label><label className="block text-sm font-semibold">Konfirmasi password<input className="mt-2 w-full rounded-xl border border-slate-300 p-3" type="password" required minLength={6} maxLength={1024} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label><button disabled={busy} className={button}>Simpan password</button></form> : <><p className="mt-4 text-sm text-slate-600">Login {session.peran.toLowerCase()} aktif untuk uji lokal.</p><LmsSchedule role={session.peran} /><LmsLearning role={session.peran} /></>}
+    {session.wajibGantiPassword ? <PasswordChangeForm endpoint="/api/auth/lms/ganti-password" requireCurrentPassword={false} title="Buat password baru" description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali." onChanged={() => navigate("/lms/login", { state: { changed: true }, replace: true })} buttonClassName={button} /> : <><p className="mt-4 text-sm text-slate-600">Login {session.peran.toLowerCase()} aktif untuk uji lokal.</p><LmsSchedule role={session.peran} /><LmsLearning role={session.peran} /></>}
+    {!session.wajibGantiPassword && session.peran === "GURU" && <PasswordChangeForm endpoint="/api/auth/lms/ganti-password" onChanged={() => navigate("/lms/login", { state: { changed: true }, replace: true })} />}
     {!session.wajibGantiPassword && session.peran === "GURU" && <TeacherPasswordReset />}
     {error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}<button disabled={busy} type="button" onClick={logout} className="mt-5 text-sm font-semibold text-[#80643a] underline">Keluar</button>
   </div></main>;

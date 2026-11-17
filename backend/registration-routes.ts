@@ -11,7 +11,7 @@ type Registration = NonNullable<ReturnType<typeof parseRegistration>>;
 type LimitResult = { allowed: boolean; retryAfter: number };
 
 export function registrationLimitKey(secret: string, ip: string, preview = false): string {
-  const namespace = preview ? "registration-preview-v1" : "registration-v1";
+  const namespace = preview ? "registration-preview-v1" : "registration-short-v1";
   return createHmac("sha256", secret).update(`${namespace}\0${ip}`).digest("hex");
 }
 
@@ -25,7 +25,7 @@ export function registrationRateLimit(pool: Pool, secret: string, preview = fals
         "count" = CASE WHEN "LoginRateLimit"."expiresAt" <= clock_timestamp() THEN 1 ELSE LEAST("LoginRateLimit"."count" + 1, 2147483647) END,
         "expiresAt" = CASE WHEN "LoginRateLimit"."expiresAt" <= clock_timestamp() THEN clock_timestamp() + $2 * interval '1 second' ELSE "LoginRateLimit"."expiresAt" END
       RETURNING "count", GREATEST(1, CEIL(EXTRACT(EPOCH FROM ("expiresAt" - clock_timestamp()))))::integer AS remaining
-    `, [key, preview ? 300 : 3600]);
+    `, [key, 300]);
     const row = result.rows[0];
     if (!row) throw new Error("Pembatas pendaftaran tidak mengembalikan hasil.");
     if (Math.random() < 0.01) {

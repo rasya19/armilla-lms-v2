@@ -34,8 +34,9 @@ test("preview registration limit is isolated and uses a five-minute window", asy
   try {
     for (let i = 0; i < 5; i++) assert.equal((await preview(ip)).allowed, true);
     assert.deepEqual(await preview(ip), { allowed: false, retryAfter: 300 });
-    assert.deepEqual(await production(ip), { allowed: true, retryAfter: 3600 });
-    assert.deepEqual(windows, [300, 300, 300, 300, 300, 300, 3600]);
+    for (let i = 0; i < 5; i++) assert.deepEqual(await production(ip), { allowed: true, retryAfter: 300 });
+    assert.deepEqual(await production(ip), { allowed: false, retryAfter: 300 });
+    assert.deepEqual(windows, Array(12).fill(300));
     assert.notEqual(registrationLimitKey(secret, ip, true), registrationLimitKey(secret, ip));
   } finally {
     await pool.end();
@@ -124,6 +125,7 @@ test("database saves test registration and enforces a shared limit", { skip: pro
     const results = await Promise.all(Array.from({ length: 10 }, (_, i) => limits[i % 2](ip)));
     assert.equal(results.filter((item) => item.allowed).length, 5);
     assert.equal(results.filter((item) => !item.allowed).length, 5);
+    assert.ok(results.every((item) => item.retryAfter <= 300 && item.retryAfter > 0));
     const previewLimit = registrationRateLimit(pool, secret, true);
     const previewResults = await Promise.all(Array.from({ length: 6 }, () => previewLimit(ip)));
     assert.equal(previewResults.filter((item) => item.allowed).length, 5);

@@ -81,9 +81,10 @@ MASTER_ADMIN_REGISTRATION_URL=http://127.0.0.1:3100/api/lms-registrations
 MASTER_ADMIN_REGISTRATION_TOKEN=<token-yang-sama-dengan-LMS_REGISTRATION_TOKEN>
 ```
 
-Untuk pengujian di Vercel Preview, batas pendaftaran adalah 5 permintaan per
-IP per 5 menit; Production tetap 5 permintaan per IP per jam. Batas Preview
-terpisah dari Production, tetapi gunakan database dan Rasyatech Admin uji yang
+Untuk pengujian sementara, batas pendaftaran di Vercel Preview dan Production
+adalah 5 permintaan per IP per 5 menit. Kembalikan batas Production ke 5
+permintaan per IP per jam setelah pengujian selesai dan deploy ulang.
+Batas Preview terpisah dari Production, tetapi gunakan database dan Rasyatech Admin uji yang
 terpisah agar data uji tidak masuk ke layanan produksi. Aktifkan eksposur
 system environment variables Vercel agar `VERCEL_ENV` tersedia, dan atur
 `APP_ORIGIN` Preview ke origin HTTPS yang tepat (URL preview dinamis tidak

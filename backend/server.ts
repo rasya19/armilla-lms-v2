@@ -812,8 +812,49 @@ app.delete("/api/master/pendaftaran-sekolah/:id", async (req, res) => {
   try {
     const session = await getSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    const result = await prisma.pendaftaranSekolah.deleteMany({ where: { id: req.params.id, sekolahId: null } });
-    if (result.count === 0) return res.status(409).json({ error: "Pendaftaran tidak ditemukan atau sudah terhubung ke sekolah. Muat ulang daftar." });
+    const result = await prisma.$transaction(async (tx) => {
+      const registration = await tx.pendaftaranSekolah.findUnique({
+        where: { id: req.params.id },
+        select: { sekolahId: true },
+      });
+      if (!registration) return "not-found";
+      if (registration.sekolahId) {
+        const sekolahId = registration.sekolahId;
+        const school = await tx.sekolah.findUnique({
+          where: { id: sekolahId },
+          select: {
+            _count: {
+              select: {
+                siswa: true, guru: true, mapel: true, kelas: true, ppdb: true, nilai: true,
+                tahunAjaran: true, jadwal: true, agenda: true, presensi: true, materi: true,
+                tugas: true, berkas: true, ujian: true,
+              },
+            },
+          },
+        });
+        if (!school) return "not-found";
+        const settings = await tx.websiteSettings.findUnique({ where: { school_id: sekolahId }, select: { school_id: true } });
+        const accounts = await tx.akun.findMany({
+          where: { sekolahId },
+          select: {
+            peran: true, siswaId: true, guruId: true,
+            _count: { select: { tinjauan: true, tinjauanSekolah: true, berkas: true } },
+          },
+        });
+        if (settings || Object.values(school._count).some((count) => count > 0) ||
+          accounts.some((account) => account.peran !== "ADMIN" || account.siswaId || account.guruId ||
+            Object.values(account._count).some((count) => count > 0))) return "has-data";
+
+        await tx.pendaftaranSekolah.delete({ where: { id: req.params.id } });
+        await tx.akun.deleteMany({ where: { sekolahId } });
+        await tx.sekolah.delete({ where: { id: sekolahId } });
+      } else {
+        await tx.pendaftaranSekolah.delete({ where: { id: req.params.id } });
+      }
+      return "deleted";
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    if (result === "not-found") return res.status(404).json({ error: "Pendaftaran tidak ditemukan. Muat ulang daftar." });
+    if (result === "has-data") return res.status(409).json({ error: "Sekolah memiliki data terkait dan tidak dapat dihapus melalui menu ini." });
     return res.status(204).end();
   } catch (error) {
     console.error("Gagal menghapus pendaftaran sekolah:", error);

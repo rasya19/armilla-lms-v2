@@ -54,13 +54,16 @@ export function MasterSchoolRegistrations() {
   }, [page, refreshKey]);
 
   async function deleteRegistration(item: Registration) {
-    if (item.sekolahId || !window.confirm(`Hapus pendaftaran ${item.namaSekolah} (NPSN ${item.npsn || "belum diisi"})? Pendaftaran yang sudah terhubung ke sekolah tidak dapat dihapus.`)) return;
+    const warning = item.sekolahId
+      ? "Sekolah dan semua akun adminnya di LMS juga akan dihapus permanen. Sekolah yang memiliki data terkait tidak dapat dihapus. Data di Rasyatech Admin tidak ikut dihapus."
+      : "Pendaftaran akan dihapus permanen dari LMS. Data di Rasyatech Admin tidak ikut dihapus.";
+    if (!window.confirm(`Hapus pendaftaran ${item.namaSekolah} (NPSN ${item.npsn || "belum diisi"})? ${warning}`)) return;
     setDeletingId(item.id);
     setDeleteError("");
     try {
       const response = await fetch(`/api/master/pendaftaran-sekolah/${encodeURIComponent(item.id)}`, { method: "DELETE" });
       if (!response.ok) {
-        throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : response.status === 409 ? "Pendaftaran sudah terhubung ke sekolah atau tidak ditemukan. Muat ulang daftar." : "Pendaftaran belum dapat dihapus. Coba lagi nanti.");
+        throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : response.status === 404 ? "Pendaftaran tidak ditemukan. Muat ulang daftar." : response.status === 409 ? "Sekolah memiliki data terkait dan tidak dapat dihapus melalui menu ini." : "Pendaftaran belum dapat dihapus. Coba lagi nanti.");
       }
       if (result?.pendaftaran.length === 1 && page > 1) setPage((value) => value - 1);
       else setRefreshKey((value) => value + 1);
@@ -81,7 +84,7 @@ export function MasterSchoolRegistrations() {
     {result && <>
       {result.pendaftaran.length === 0 && <p className="mt-5 text-sm text-slate-600">Tidak ada pendaftaran pada halaman ini.</p>}
       <div className="mt-5 space-y-4">{result.pendaftaran.map((item) => <article key={item.id} className="master-record p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-bold">{item.namaSekolah}</h3><div className="flex items-center gap-4"><span className="text-xs font-bold text-[#80643a]">{item.status === "MENUNGGU" ? "Menunggu" : item.status === "DISETUJUI" ? "Disetujui" : "Ditolak"}</span>{!item.sekolahId && <button type="button" disabled={deletingId === item.id} onClick={() => void deleteRegistration(item)} className="text-xs font-bold text-rose-700 disabled:text-slate-400">{deletingId === item.id ? "Menghapus..." : "Hapus"}</button>}</div></div>
+        <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-bold">{item.namaSekolah}</h3><div className="flex items-center gap-4"><span className="text-xs font-bold text-[#80643a]">{item.status === "MENUNGGU" ? "Menunggu" : item.status === "DISETUJUI" ? "Disetujui" : "Ditolak"}</span><button type="button" disabled={deletingId !== null} onClick={() => void deleteRegistration(item)} className="text-xs font-bold text-rose-700 disabled:text-slate-400">{deletingId === item.id ? "Menghapus..." : "Hapus"}</button></div></div>
         <p className="mt-2 text-sm text-slate-600">NPSN: {item.npsn || "Belum diisi"}</p>
         <p className="mt-1 text-sm text-slate-600">Wilayah: {item.wilayah || "Belum diisi"}</p>
         <p className="mt-1 break-all text-sm text-slate-600">ID pendaftaran: {item.id}</p>

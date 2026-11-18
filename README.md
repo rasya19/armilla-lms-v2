@@ -51,6 +51,9 @@ Verifikasi dan aktivasi dilakukan dari Rasyatech Admin, bukan dari menu LMS.
 Setelah provisioning berhasil, LMS membuat sekolah dan akun admin lalu menautkan
 pendaftaran. Akun hanya dibuat sesudah persetujuan; undangan SMTP belum tersedia.
 Integrasi end-to-end ini ditujukan untuk pengujian lokal dan belum siap produksi.
+Master Admin LMS dapat menghapus pendaftaran beserta sekolah dan akun admin LMS
+yang terhubung, hanya jika sekolah tidak memiliki data terkait. Penghapusan ini
+tidak menghapus tenant di Rasyatech Admin dan memerlukan konfirmasi.
 Pendaftaran dibatasi lima permintaan per IP per jam di PostgreSQL, termasuk
 permintaan tidak valid; IP disimpan sebagai HMAC. Di Vercel diperlukan alamat
 IP dari `x-vercel-forwarded-for`; bila IP atau database tidak tersedia,

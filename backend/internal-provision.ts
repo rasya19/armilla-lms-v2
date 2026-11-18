@@ -88,7 +88,7 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
   };
 }
 
-export function internalProvisionRouter(store: InternalStore, settings: { secret: () => string | undefined; origin: () => string | undefined; production: boolean }) {
+export function internalProvisionRouter(store: InternalStore, settings: { secret: () => string | undefined; origin: () => string | undefined; production: boolean; allowProductionTest?: boolean }) {
   const router = Router();
   router.use((req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
@@ -97,7 +97,8 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     const actual = createHash("sha256").update(match?.[1] ?? "").digest();
     const expected = createHash("sha256").update(secret ?? "").digest();
     if (!secret || !secret.trim() || !match || !timingSafeEqual(actual, expected)) return res.status(401).json({ error: "Unauthorized." });
-    if (settings.production) return res.status(503).json({ error: "Provisioning internal hanya tersedia untuk pengujian, belum siap produksi." });
+    const testEndpoint = (req.method === "GET" && req.path === "/health") || (req.method === "POST" && req.path === "/provision");
+    if (settings.production && !(settings.allowProductionTest && testEndpoint)) return res.status(503).json({ error: "Provisioning internal hanya tersedia untuk pengujian, belum siap produksi." });
     if (req.get("origin") || req.get("sec-fetch-site")) return res.status(403).json({ error: "Endpoint hanya menerima permintaan antar-server." });
     return next();
   });
@@ -138,5 +139,10 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
 }
 
 export function internalProvisionRoutes(prisma: PrismaClient) {
-  return internalProvisionRouter(prismaInternalStore(prisma), { secret: () => process.env.MASTER_PROVISION_SECRET, origin: () => process.env.APP_ORIGIN, production: process.env.NODE_ENV === "production" });
+  return internalProvisionRouter(prismaInternalStore(prisma), {
+    secret: () => process.env.MASTER_PROVISION_SECRET,
+    origin: () => process.env.APP_ORIGIN,
+    production: process.env.NODE_ENV === "production",
+    allowProductionTest: process.env.LMS_ENABLE_PROVISIONING_TEST === "true",
+  });
 }

@@ -62,8 +62,14 @@ untuk dicocokkan dengan log Vercel tanpa menampilkan detail database.
 
 ### Integrasi provisioning internal (khusus uji)
 
-Endpoint internal **belum siap produksi** dan menolak permintaan pada
-`NODE_ENV=production`; pembatas login sekolah/LMS di produksi tidak diubah.
+Endpoint internal **belum siap produksi** dan secara default menolak permintaan
+pada `NODE_ENV=production`; pembatas login sekolah/LMS di produksi tidak diubah.
+Untuk pengujian terbatas pada deployment tersebut, atur
+`LMS_ENABLE_PROVISIONING_TEST=true` di environment server dan redeploy.
+Hanya health-check dan pembuatan tenant yang dibuka; keduanya tetap memerlukan
+bearer token. Endpoint perubahan status dan login sekolah/LMS tetap ditolak.
+Pengujian ini dapat membuat sekolah dan akun di database yang terhubung; jangan
+gunakan data asli, batasi akses, dan nonaktifkan flag setelah pengujian.
 Terapkan migrasi pada database uji yang tepat dengan `npm run db:migrate:deploy`,
 lalu atur `MASTER_PROVISION_SECRET` sebagai token acak yang panjang dan unik
 serta `APP_ORIGIN` sebagai origin aplikasi tanpa slash penutup, misalnya
@@ -96,8 +102,10 @@ bukan domain Production.
 
 Jangan gunakan token `MASTER_PROVISION_SECRET` untuk integrasi ini. Token itu
 tetap khusus webhook provisioning pada gambar: `LMS_WEBHOOK_URL` di Rasyatech
-Admin harus menunjuk ke `http://127.0.0.1:4000/api/internal/provision`, dan
-`LMS_BEARER_TOKEN` harus sama dengan `MASTER_PROVISION_SECRET` di backend LMS.
+Admin lokal harus menunjuk ke `http://127.0.0.1:4000/api/internal/provision`,
+sedangkan Admin di Vercel harus menunjuk ke URL HTTPS LMS yang dapat dijangkau,
+misalnya `https://rsch.my.id/api/internal/provision`. `LMS_BEARER_TOKEN`
+harus sama dengan `MASTER_PROVISION_SECRET` di backend LMS.
 Jangan menaruh token rahasia di frontend atau membagikannya.
 
 Jalankan LMS dengan `npm run dev:all` (frontend port 3000, backend port 4000).
@@ -134,8 +142,8 @@ milidetik) dan harus di masa depan. Respons 201 berisi `success`, `tenantId`,
 simpan dan sampaikan melalui kanal aman. Akun admin sekolah saat ini belum
 memiliki alur wajib ganti/reset password, jadi kredensial ini hanya untuk uji.
 `GET /api/internal/health` memakai autentikasi yang sama dan hanya untuk menguji
-koneksi lokal/staging; endpoint provisioning dan health-check tetap menolak
-permintaan pada `NODE_ENV=production`.
+koneksi; endpoint provisioning dan health-check hanya menerima permintaan pada
+`NODE_ENV=production` jika mode uji eksplisit di atas diaktifkan.
 NPSN, slug, dan email admin harus unik; duplikasi menghasilkan 409. Provisioning
 tidak otomatis menautkan atau mengubah pendaftaran yang sudah ada, dan tidak
 membuat invoice. Bila respons hilang setelah transaksi berhasil, jangan ulangi

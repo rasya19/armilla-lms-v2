@@ -76,6 +76,32 @@ test("production remains disabled and rejects missing credentials first", async 
   }
 });
 
+test("production test opt-in permits authenticated provisioning and health only", async () => {
+  let calls = 0;
+  const app = express();
+  app.use(internalProvisionRouter({
+    provision: async () => { calls++; return "tenant-id"; },
+    updateStatus: async () => { calls++; return true; },
+  }, { secret: () => "secret", origin: () => "https://lms.example.invalid", production: true, allowProductionTest: true }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { authorization: "Bearer secret", "content-type": "application/json" };
+    assert.equal((await fetch(`${base}/health`)).status, 401);
+    assert.equal((await fetch(`${base}/health`, { headers })).status, 200);
+    assert.equal((await fetch(`${base}/provision`, { method: "POST", headers: { ...headers, origin: "https://lms.example.invalid" }, body: JSON.stringify(valid) })).status, 403);
+    assert.equal((await fetch(`${base}/provision`, { method: "POST", headers, body: JSON.stringify(valid) })).status, 201);
+    assert.equal((await fetch(`${base}/tenants/P1234567/status`, { method: "PATCH", headers, body: JSON.stringify({ status: "SUSPENDED", expiresAt: future }) })).status, 503);
+    assert.equal(calls, 1);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
 test("conflicts and missing tenants are surfaced without success-shaped responses", async () => {
   const app = express();
   app.use(internalProvisionRouter({

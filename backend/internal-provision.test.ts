@@ -59,9 +59,10 @@ test("internal provisioning authenticates, validates, and returns a usable tempo
   }
 });
 
-test("production remains disabled and rejects missing credentials first", async () => {
+test("production provisioning requires credentials and returns a usable temporary password without a test flag", async () => {
+  let hash = "";
   const app = express();
-  app.use(internalProvisionRouter({ provision: async () => { throw new Error("unexpected"); }, updateStatus: async () => false }, { secret: () => "secret", origin: () => "https://example.invalid", production: true }));
+  app.use(internalProvisionRouter({ provision: async (_data, passwordHash) => { hash = passwordHash; return "tenant-id"; }, updateStatus: async () => false }, { secret: () => "secret", origin: () => "https://example.invalid", production: true }));
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
@@ -69,14 +70,27 @@ test("production remains disabled and rejects missing credentials first", async 
     assert.ok(address && typeof address !== "string");
     const url = `http://127.0.0.1:${address.port}/provision`;
     assert.equal((await fetch(url, { method: "POST" })).status, 401);
-    assert.equal((await fetch(url, { method: "POST", headers: { authorization: "Bearer secret" } })).status, 503);
+    const headers = { authorization: "Bearer secret", "content-type": "application/json" };
+    assert.equal((await fetch(url, { method: "POST", headers: { ...headers, origin: "https://example.invalid" }, body: JSON.stringify(valid) })).status, 403);
+    const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(valid) });
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const result = await response.json();
+    assert.deepEqual(Object.keys(result).sort(), ["initialUsername", "loginUrl", "success", "temporaryPassword", "tenantId"].sort());
+    assert.equal(result.success, true);
+    assert.equal(result.tenantId, "tenant-id");
+    assert.equal(result.loginUrl, "https://example.invalid/login");
+    assert.equal(result.initialUsername, "admin@example.invalid");
+    assert.match(result.temporaryPassword, /^[A-Za-z0-9_-]{24}$/);
+    assert.ok(await verifyPassword(result.temporaryPassword, hash));
+    assert.equal((await fetch(`http://127.0.0.1:${address.port}/health`, { headers })).status, 503);
   } finally {
     server.close();
     await once(server, "close");
   }
 });
 
-test("production test opt-in permits authenticated provisioning and health only", async () => {
+test("production test opt-in additionally permits authenticated health only", async () => {
   let calls = 0;
   const app = express();
   app.use(internalProvisionRouter({

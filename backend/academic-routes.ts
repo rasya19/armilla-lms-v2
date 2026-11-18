@@ -8,7 +8,6 @@ export function academicRoutes(schoolForCookie: (cookie: string | undefined) => 
   const router = Router();
 
   router.use(async (req, res, next) => {
-    if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Pengaturan akademik belum tersedia untuk produksi." });
     try {
       const sekolahId = await schoolForCookie(req.headers.cookie);
       if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });

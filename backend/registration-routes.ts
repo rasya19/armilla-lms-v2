@@ -10,14 +10,14 @@ import { RegistrationDeliveryError } from "./registration-delivery-error.js";
 type Registration = NonNullable<ReturnType<typeof parseRegistration>>;
 type LimitResult = { allowed: boolean; retryAfter: number };
 
-export function registrationLimitKey(secret: string, ip: string, preview = false): string {
-  const namespace = preview ? "registration-preview-v1" : "registration-short-v1";
+export function registrationLimitKey(secret: string, ip: string, preview = false, purpose: "registration" | "ppdb" = "registration"): string {
+  const namespace = purpose === "ppdb" ? "ppdb-v1" : preview ? "registration-preview-v1" : "registration-short-v1";
   return createHmac("sha256", secret).update(`${namespace}\0${ip}`).digest("hex");
 }
 
-export function registrationRateLimit(pool: Pool, secret: string, preview = false) {
+export function registrationRateLimit(pool: Pool, secret: string, preview = false, purpose: "registration" | "ppdb" = "registration") {
   return async (ip: string): Promise<LimitResult> => {
-    const key = registrationLimitKey(secret, ip, preview);
+    const key = registrationLimitKey(secret, ip, preview, purpose);
     const result = await pool.query<{ count: number; remaining: number }>(`
       INSERT INTO "LoginRateLimit" ("key", "count", "expiresAt")
       VALUES ($1, 1, clock_timestamp() + $2 * interval '1 second')
@@ -25,7 +25,7 @@ export function registrationRateLimit(pool: Pool, secret: string, preview = fals
         "count" = CASE WHEN "LoginRateLimit"."expiresAt" <= clock_timestamp() THEN 1 ELSE LEAST("LoginRateLimit"."count" + 1, 2147483647) END,
         "expiresAt" = CASE WHEN "LoginRateLimit"."expiresAt" <= clock_timestamp() THEN clock_timestamp() + $2 * interval '1 second' ELSE "LoginRateLimit"."expiresAt" END
       RETURNING "count", GREATEST(1, CEIL(EXTRACT(EPOCH FROM ("expiresAt" - clock_timestamp()))))::integer AS remaining
-    `, [key, 300]);
+    `, [key, purpose === "ppdb" ? 3600 : 300]);
     const row = result.rows[0];
     if (!row) throw new Error("Pembatas pendaftaran tidak mengembalikan hasil.");
     if (Math.random() < 0.01) {

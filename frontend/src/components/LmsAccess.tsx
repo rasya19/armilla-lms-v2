@@ -4,6 +4,7 @@ import { TeacherPasswordReset } from "./TeacherPasswordReset";
 import { LmsSchedule } from "./LmsSchedule";
 import { LmsLearning } from "./LmsLearning";
 import { PasswordChangeForm } from "./PasswordChangeForm";
+import { LoginNavigation } from "./LoginNavigation";
 
 type Session = { nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean };
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
@@ -36,14 +37,15 @@ export function LmsLogin() {
     finally { setBusy(false); }
   }
   return <main className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
-    <p className="master-eyebrow">KESETARAAN LMS / PEMBELAJARAN</p><h1 className="mt-3 text-2xl font-bold">Login Guru dan Siswa</h1><p className="mt-3 text-sm text-slate-700">Akun LMS untuk pengujian lokal, dibuat oleh admin sekolah.</p>
+    <p className="master-eyebrow">KESETARAAN LMS / PEMBELAJARAN</p><h1 className="mt-3 text-2xl font-bold">Login Guru dan Siswa</h1><p className="mt-3 text-sm text-slate-700">Akun LMS untuk pengujian, dibuat oleh admin sekolah.</p>
     {location.state?.changed === true && <p role="status" className="mt-4 text-sm text-green-700">Password berhasil diganti. Silakan masuk kembali.</p>}
-    <form onSubmit={submit} className="mt-6 space-y-4">
+    <LoginNavigation />
+    <form onSubmit={submit} className="mt-4 space-y-4">
       <label className="block text-sm font-semibold">Peran<select className={input} value={peran} onChange={(e) => { setPeran(e.target.value === "GURU" ? "GURU" : "SISWA"); setIdentitas(""); }}><option value="SISWA">Siswa</option><option value="GURU">Guru</option></select></label>
       <label className="block text-sm font-semibold">{peran === "SISWA" ? "NISN" : "Email"}<input className={input} required maxLength={254} autoComplete="username" value={identitas} onChange={(e) => setIdentitas(e.target.value)} /></label>
       <label className="block text-sm font-semibold">Kata sandi<input className={input} type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
       {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}<button disabled={busy} className={button}>{busy ? "Memeriksa..." : "Masuk"}</button>
-    </form><Link className="mt-6 inline-block text-sm font-semibold text-indigo-800 underline" to="/login">Login admin sekolah</Link>
+    </form><Link className="mt-4 inline-block text-sm font-semibold text-indigo-800 underline" to="/">Kembali ke beranda</Link>
   </div></main>;
 }
 
@@ -74,7 +76,7 @@ export function LmsHome() {
   if (status !== "ready" || !session) return <main className="p-8">{status === "loading" ? "Memeriksa sesi..." : "Layanan sesi tidak tersedia. Muat ulang halaman."}</main>;
   return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8">
     <h1 className="text-2xl font-bold">{session.wajibGantiPassword ? "Wajib ganti password" : `Selamat datang, ${session.nama}`}</h1>
-    {session.wajibGantiPassword ? <PasswordChangeForm endpoint="/api/auth/lms/ganti-password" requireCurrentPassword={false} title="Buat password baru" description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali." onChanged={() => navigate("/lms/login", { state: { changed: true }, replace: true })} buttonClassName={button} /> : <><p className="mt-4 text-sm text-slate-600">Login {session.peran.toLowerCase()} aktif untuk uji lokal.</p><LmsSchedule role={session.peran} /><LmsLearning role={session.peran} /></>}
+    {session.wajibGantiPassword ? <PasswordChangeForm endpoint="/api/auth/lms/ganti-password" requireCurrentPassword={false} title="Buat password baru" description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali." onChanged={() => navigate("/lms/login", { state: { changed: true }, replace: true })} buttonClassName={button} /> : <><p className="mt-4 text-sm text-slate-600">Login {session.peran.toLowerCase()} aktif untuk pengujian.</p><LmsSchedule role={session.peran} /><LmsLearning role={session.peran} /></>}
     {!session.wajibGantiPassword && session.peran === "GURU" && <PasswordChangeForm endpoint="/api/auth/lms/ganti-password" onChanged={() => navigate("/lms/login", { state: { changed: true }, replace: true })} />}
     {!session.wajibGantiPassword && session.peran === "GURU" && <TeacherPasswordReset />}
     {error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}<button disabled={busy} type="button" onClick={logout} className="mt-5 text-sm font-semibold text-[#80643a] underline">Keluar</button>

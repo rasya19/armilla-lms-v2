@@ -97,8 +97,9 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     const actual = createHash("sha256").update(match?.[1] ?? "").digest();
     const expected = createHash("sha256").update(secret ?? "").digest();
     if (!secret || !secret.trim() || !match || !timingSafeEqual(actual, expected)) return res.status(401).json({ error: "Unauthorized." });
-    const testEndpoint = (req.method === "GET" && req.path === "/health") || (req.method === "POST" && req.path === "/provision");
-    if (settings.production && !(settings.allowProductionTest && testEndpoint)) return res.status(503).json({ error: "Provisioning internal hanya tersedia untuk pengujian, belum siap produksi." });
+    const productionProvision = req.method === "POST" && req.path === "/provision";
+    const testHealth = settings.allowProductionTest && req.method === "GET" && req.path === "/health";
+    if (settings.production && !productionProvision && !testHealth) return res.status(503).json({ error: "Endpoint internal ini hanya tersedia untuk pengujian." });
     if (req.get("origin") || req.get("sec-fetch-site")) return res.status(403).json({ error: "Endpoint hanya menerima permintaan antar-server." });
     return next();
   });

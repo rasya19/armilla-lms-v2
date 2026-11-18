@@ -14,9 +14,23 @@ frontend tetap membutuhkan backend untuk data nyata.
 pembatas login terpusat, tetapi login sekolah, PPDB dan pembelajaran belum siap.
 Akses master dan pendaftaran sekolah diaktifkan untuk pengujian produksi;
 deployment dan operasional masih memerlukan pengujian lebih lanjut.
-Rute dan API lama dinonaktifkan, termasuk form PPDB; jangan masukkan data
-sungguhan sebelum implementasi dan pengujian selesai.
+Rute dan API lama dinonaktifkan. Jangan masukkan data sungguhan sebelum
+implementasi dan pengujian selesai.
 Data contoh lokal dan komponen prototipe yang tidak dipakai telah dihapus.
+
+### Fitur sekolah dan LMS di deployment produksi
+
+Login dan fitur sekolah, LMS, serta PPDB dapat diakses di produksi tanpa flag.
+Ini bukan jaminan kesiapan atau keamanan produksi. Gunakan database dan data
+uji serta batasi akses deployment sampai pengujian selesai. Autentikasi,
+validasi origin, cookie aman, dan pembatas login produksi tetap berlaku.
+Pembatas login dan PPDB produksi memerlukan IP Vercel yang valid dan PostgreSQL;
+deployment produksi non-Vercel belum didukung untuk operasi tersebut. PPDB
+produksi dibatasi lima permintaan per IP per jam secara terpusat.
+
+Password belum dikirim melalui email/WhatsApp dan reset mandiri admin sekolah
+belum tersedia. Jika kredensial awal hilang, jangan mengulang provisioning
+secara buta; gunakan prosedur reset lokal di bawah untuk database uji.
 
 ## Akun master admin
 
@@ -62,14 +76,11 @@ untuk dicocokkan dengan log Vercel tanpa menampilkan detail database.
 
 ### Integrasi provisioning internal (khusus uji)
 
-Endpoint internal **belum siap produksi** dan secara default menolak permintaan
-pada `NODE_ENV=production`; pembatas login sekolah/LMS di produksi tidak diubah.
-Untuk pengujian terbatas pada deployment tersebut, atur
-`LMS_ENABLE_PROVISIONING_TEST=true` di environment server dan redeploy.
-Hanya health-check dan pembuatan tenant yang dibuka; keduanya tetap memerlukan
-bearer token. Endpoint perubahan status dan login sekolah/LMS tetap ditolak.
-Pengujian ini dapat membuat sekolah dan akun di database yang terhubung; jangan
-gunakan data asli, batasi akses, dan nonaktifkan flag setelah pengujian.
+Pembuatan tenant melalui provisioning tersedia tanpa flag di produksi, tetapi
+integrasi ini **belum siap produksi** dan memerlukan bearer token. Health-check
+produksi memerlukan `LMS_ENABLE_PROVISIONING_TEST=true`; endpoint perubahan
+status tetap ditolak. Provisioning membuat sekolah dan akun di database yang
+terhubung; gunakan database dan data uji, serta batasi akses.
 Terapkan migrasi pada database uji yang tepat dengan `npm run db:migrate:deploy`,
 lalu atur `MASTER_PROVISION_SECRET` sebagai token acak yang panjang dan unik
 serta `APP_ORIGIN` sebagai origin aplikasi tanpa slash penutup, misalnya
@@ -140,14 +151,14 @@ milidetik) dan harus di masa depan. Respons 201 berisi `success`, `tenantId`,
 `loginUrl` (login bersama `APP_ORIGIN/login`), `initialUsername`, dan
 `temporaryPassword`. Password hanya ditampilkan dalam respons tersebut;
 simpan dan sampaikan melalui kanal aman. Akun admin sekolah saat ini belum
-memiliki alur wajib ganti/reset password, jadi kredensial ini hanya untuk uji.
+memiliki alur wajib ganti/reset mandiri, jadi kredensial ini hanya untuk uji.
 `GET /api/internal/health` memakai autentikasi yang sama dan hanya untuk menguji
-koneksi; endpoint provisioning dan health-check hanya menerima permintaan pada
-`NODE_ENV=production` jika mode uji eksplisit di atas diaktifkan.
+koneksi; health-check produksi memerlukan flag uji yang dijelaskan di atas.
 NPSN, slug, dan email admin harus unik; duplikasi menghasilkan 409. Provisioning
 tidak otomatis menautkan atau mengubah pendaftaran yang sudah ada, dan tidak
 membuat invoice. Bila respons hilang setelah transaksi berhasil, jangan ulangi
-secara buta: periksa tenant terlebih dahulu; password tidak dapat dipulihkan.
+secara buta: periksa tenant terlebih dahulu; password awal tidak dapat dipulihkan,
+tetapi akun admin sekolah uji dapat direset melalui terminal seperti di bawah.
 
 `PATCH /api/internal/tenants/:npsn/status` memakai autentikasi yang sama dan
 body `{"status":"SUSPENDED","expiresAt":"2099-12-31T23:59:59Z"}`.
@@ -163,6 +174,16 @@ langkah tersebut membuat sekolah dan akun admin LMS serta menautkan
 pendaftarannya. Jangan jalankan `npm run create:school-admin` untuk tenant
 yang sudah diprovision dari Rasyatech Admin karena NPSN dan email harus unik.
 Admin dapat masuk melalui `/login`; sesi admin dan master terpisah.
+
+Jika password admin sekolah uji hilang, pastikan backend lokal menunjuk ke
+database uji yang benar, lalu jalankan `npm run reset:school-admin` di terminal
+interaktif. Masukkan email admin yang terdaftar, konfirmasi dengan `RESET`, lalu
+masukkan password baru dua kali tanpa membagikannya. Perintah mengubah password
+akun admin aktif yang sudah ada dan mencabut semua sesinya; akun tidak dibuat
+ulang. Database yang dikonfigurasi dapat dipakai bersama deployment lain:
+periksa terlebih dahulu agar tidak mengubah database yang salah. Perintah
+menolak `NODE_ENV=production` dan bukan fitur reset email/WhatsApp.
+
 Daftar siswa, guru, dan PPDB dibatasi berdasarkan sekolah akun. Impor siswa
 tersedia untuk uji lokal melalui Data Siswa: pilih file `.xlsx` berukuran
 maksimal 3 MB dengan satu sheet, header pada baris pertama dan maksimal 500
@@ -183,7 +204,7 @@ password baru ditampilkan sekali dan sesi lama dicabut. Password wajib diganti
 dengan password berbeda (minimal 6 karakter); setelah perubahan semua sesi
 akun dicabut dan pengguna harus login kembali. Akun lama yang masih memakai
 `123456` tidak otomatis berubah dan perlu direset. Fitur LMS dan pembuatan akun
-tetap hanya untuk uji lokal dan dinonaktifkan di `NODE_ENV=production`.
+tetap eksperimental meskipun dapat diakses di produksi.
 Guru yang sudah mengganti password awal dapat mencari siswa berdasarkan NISN
 dan mereset password ke password sementara acak untuk uji lokal.
 Reset hanya diizinkan untuk siswa aktif berakun dalam kelas yang guru tersebut

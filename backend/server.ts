@@ -34,6 +34,7 @@ app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
 const limitSecret = production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex");
 const limitLogin = loginRateLimit(loginPool, limitSecret);
+const limitProductionPpdb = registrationRateLimit(loginPool, limitSecret, false, "ppdb");
 
 function loginIp(req: express.Request): string {
   return loginClientIp(production, !!process.env.VERCEL, req.ip, req.get("x-vercel-forwarded-for"));
@@ -124,7 +125,6 @@ async function getSession(cookieHeader: string | undefined, role: "MASTER_ADMIN"
 }
 
 app.post("/api/auth/sekolah/login", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Login sekolah belum tersedia untuk produksi." });
   const { email, password } = req.body || {};
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
   try {
@@ -201,7 +201,6 @@ app.post("/api/auth/sekolah/ganti-password", async (req, res) => {
 });
 
 app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Akun LMS belum tersedia untuk produksi." });
   try {
     const session = await getSession(req.headers.cookie, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
@@ -231,7 +230,6 @@ app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
 });
 
 app.post("/api/sekolah/:jenis/:id/reset-password", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Reset password belum tersedia untuk produksi." });
   try {
     const session = await getSession(req.headers.cookie, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
@@ -280,7 +278,6 @@ async function getLmsSession(cookieHeader: string | undefined) {
 }
 
 app.post("/api/auth/lms/login", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Login LMS belum tersedia untuk produksi." });
   const { identitas, password, peran } = req.body || {};
   if (typeof identitas !== "string" || identitas.length > 254 || typeof password !== "string" || password.length > 1024 || (peran !== "SISWA" && peran !== "GURU")) return res.status(400).json({ error: "Periksa identitas, peran, dan kata sandi." });
   try {
@@ -310,7 +307,6 @@ app.post("/api/auth/lms/login", async (req, res) => {
 });
 
 app.get("/api/auth/lms/session", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "LMS belum tersedia untuk produksi." });
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -322,7 +318,6 @@ app.get("/api/auth/lms/session", async (req, res) => {
 });
 
 app.post("/api/auth/lms/ganti-password", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "LMS belum tersedia untuk produksi." });
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -367,7 +362,6 @@ app.post("/api/auth/lms/logout", async (req, res) => {
 });
 
 app.get("/api/lms/beranda", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "LMS belum tersedia untuk produksi." });
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -393,7 +387,6 @@ app.use("/api/lms/pembelajaran", learningRoutes(async (cookie) => {
 }, jakartaDate));
 
 app.get("/api/lms/jadwal", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Jadwal LMS belum tersedia untuk produksi." });
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -430,7 +423,6 @@ app.get("/api/lms/jadwal", async (req, res) => {
 });
 
 app.get("/api/lms/guru/siswa-reset", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Reset password belum tersedia untuk produksi." });
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -453,7 +445,6 @@ app.get("/api/lms/guru/siswa-reset", async (req, res) => {
 });
 
 app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Reset password belum tersedia untuk produksi." });
   try {
     const session = await getLmsSession(req.headers.cookie);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -486,7 +477,6 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
 });
 
 app.post("/api/sekolah/siswa/import", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Impor siswa belum tersedia untuk produksi." });
   try {
     const session = await getSession(req.headers.cookie, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
@@ -523,7 +513,6 @@ app.post("/api/sekolah/siswa/import", async (req, res) => {
 });
 
 app.post("/api/sekolah/guru", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Data guru belum tersedia untuk produksi." });
   try {
     const session = await getSession(req.headers.cookie, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
@@ -540,7 +529,6 @@ app.post("/api/sekolah/guru", async (req, res) => {
 });
 
 app.get("/api/ppdb/:slug", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "PPDB belum tersedia untuk produksi." });
   try {
     const sekolah = await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { nama: true } });
     if (!sekolah) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
@@ -552,16 +540,28 @@ app.get("/api/ppdb/:slug", async (req, res) => {
 });
 
 app.post("/api/ppdb/:slug", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "PPDB belum tersedia untuk produksi." });
-  const now = Date.now();
-  for (const [key, value] of ppdbAttempts) if (value.until <= now) ppdbAttempts.delete(key);
-  const ip = req.ip || "unknown";
-  const current = ppdbAttempts.get(ip);
-  if (current && current.count >= 5) {
-    res.setHeader("Retry-After", String(Math.ceil((current.until - now) / 1000)));
-    return res.status(429).json({ error: "Terlalu banyak permintaan. Coba lagi nanti." });
+  if (production) {
+    try {
+      const limit = await limitProductionPpdb(loginIp(req));
+      if (!limit.allowed) {
+        res.setHeader("Retry-After", String(limit.retryAfter));
+        return res.status(429).json({ error: "Terlalu banyak permintaan. Coba lagi nanti." });
+      }
+    } catch (error) {
+      console.error("Pembatas PPDB tidak tersedia:", error instanceof Error ? error.name : "UnknownError");
+      return res.status(503).json({ error: "Perlindungan PPDB tidak tersedia." });
+    }
+  } else {
+    const now = Date.now();
+    for (const [key, value] of ppdbAttempts) if (value.until <= now) ppdbAttempts.delete(key);
+    const ip = req.ip || "unknown";
+    const current = ppdbAttempts.get(ip);
+    if (current && current.count >= 5) {
+      res.setHeader("Retry-After", String(Math.ceil((current.until - now) / 1000)));
+      return res.status(429).json({ error: "Terlalu banyak permintaan. Coba lagi nanti." });
+    }
+    ppdbAttempts.set(ip, { count: (current?.count || 0) + 1, until: current?.until || now + 60 * 60 * 1000 });
   }
-  ppdbAttempts.set(ip, { count: (current?.count || 0) + 1, until: current?.until || now + 60 * 60 * 1000 });
   const data = parseApplicant(req.body);
   if (!data) return res.status(400).json({ error: "Periksa nama, email, telepon, alamat, dan jenjang." });
   try {
@@ -576,7 +576,6 @@ app.post("/api/ppdb/:slug", async (req, res) => {
 });
 
 app.post("/api/sekolah/ppdb/:id/tinjau", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "PPDB belum tersedia untuk produksi." });
   try {
     const session = await getSession(req.headers.cookie, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
@@ -595,7 +594,6 @@ app.post("/api/sekolah/ppdb/:id/tinjau", async (req, res) => {
 app.use("/api/sekolah/akademik", academicRoutes(async (cookie) => (await getSession(cookie, "ADMIN"))?.akun.sekolahId ?? null));
 
 app.get("/api/sekolah/kelas", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Pengaturan kelas belum tersedia untuk produksi." });
   try {
     const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -612,7 +610,6 @@ app.get("/api/sekolah/kelas", async (req, res) => {
 });
 
 app.post("/api/sekolah/kelas", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Pengaturan kelas belum tersedia untuk produksi." });
   try {
     const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -635,7 +632,6 @@ app.post("/api/sekolah/kelas", async (req, res) => {
 });
 
 app.patch("/api/sekolah/kelas/:id", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Pengaturan kelas belum tersedia untuk produksi." });
   try {
     const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -653,7 +649,6 @@ app.patch("/api/sekolah/kelas/:id", async (req, res) => {
 });
 
 app.get("/api/sekolah/penempatan-siswa", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Penempatan siswa belum tersedia untuk produksi." });
   try {
     const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -669,7 +664,6 @@ app.get("/api/sekolah/penempatan-siswa", async (req, res) => {
 });
 
 app.patch("/api/sekolah/siswa/:id/kelas", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Penempatan siswa belum tersedia untuk produksi." });
   try {
     const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -686,7 +680,6 @@ app.patch("/api/sekolah/siswa/:id/kelas", async (req, res) => {
 });
 
 app.get("/api/sekolah/:jenis", async (req, res) => {
-  if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Data sekolah belum tersedia untuk produksi." });
   try {
     const session = await getSession(req.headers.cookie, "ADMIN");
     const sekolahId = session?.akun.sekolahId;

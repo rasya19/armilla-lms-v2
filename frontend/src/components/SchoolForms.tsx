@@ -74,7 +74,7 @@ export function PublicPPDB() {
       setError(error instanceof TypeError ? "Koneksi terputus. Hubungi admin sekolah sebelum mengirim ulang." : error instanceof Error ? error.message : "Pendaftaran gagal.");
     } finally { setBusy(false); }
   }
-  return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8"><h1 className="text-2xl font-bold">PPDB {school}</h1><p className="mt-3 text-sm text-slate-600">Hanya untuk pengujian lokal. Jangan masukkan data asli; akun siswa dan pemberitahuan belum tersedia.</p>
+  return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8"><h1 className="text-2xl font-bold">PPDB {school}</h1><p className="mt-3 text-sm text-slate-600">Hanya untuk pengujian. Jangan masukkan data asli; akun siswa dan pemberitahuan belum tersedia.</p>
     {error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-4 text-sm text-green-700">{message}</p>}
     {school && !message && <form onSubmit={submit} className="mt-6 space-y-3">
       <label className="block text-sm font-semibold">Nama calon siswa<input className={fieldClass} required minLength={2} maxLength={200} value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} /></label>

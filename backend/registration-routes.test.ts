@@ -38,6 +38,7 @@ test("preview registration limit is isolated and uses a five-minute window", asy
     assert.deepEqual(await production(ip), { allowed: false, retryAfter: 300 });
     assert.deepEqual(windows, Array(12).fill(300));
     assert.notEqual(registrationLimitKey(secret, ip, true), registrationLimitKey(secret, ip));
+    assert.notEqual(registrationLimitKey(secret, ip, false, "ppdb"), registrationLimitKey(secret, ip));
   } finally {
     await pool.end();
   }

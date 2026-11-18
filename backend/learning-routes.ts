@@ -9,7 +9,6 @@ type GetSession = (cookie: string | undefined) => Promise<LearningSession | null
 export function learningRoutes(getSession: GetSession, today: () => Date) {
   const router = Router();
   router.use(async (req, res, next) => {
-    if (process.env.NODE_ENV === "production") return res.status(503).json({ error: "Materi dan tugas belum tersedia untuk produksi." });
     try {
       const session = await getSession(req.headers.cookie);
       if (!session) return res.status(401).json({ error: "Sesi tidak valid." });

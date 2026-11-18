@@ -55,7 +55,7 @@ export function TeacherPasswordReset() {
 
   return <section className="mt-6 rounded-xl border border-[#e6dfd0] bg-[#f8f6ef] p-5">
     <h2 className="font-bold">Reset password siswa</h2>
-    <p className="mt-2 text-sm leading-6 text-slate-600">Uji lokal saja. Hanya siswa aktif yang memiliki akun dan berada di kelas yang Anda ajar pada tahun ajaran aktif yang dapat direset.</p>
+    <p className="mt-2 text-sm leading-6 text-slate-600">Hanya siswa aktif yang memiliki akun dan berada di kelas yang Anda ajar pada tahun ajaran aktif yang dapat direset.</p>
     <form onSubmit={search} className="mt-4"><label className="block text-sm font-semibold">NISN siswa<input disabled={!!temporaryPassword} className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} required value={nisn} onChange={(e) => { setNisn(e.target.value); setStudent(null); setMessage(""); }} /></label><button disabled={busy || !!temporaryPassword} className="mt-3 rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Cari siswa</button></form>
     {student && <div className="mt-4 rounded-xl border border-[#e6dfd0] bg-white p-4"><p className="font-bold">{student.nama}</p><p className="mt-1 text-sm">NISN: {student.nisn}</p><button disabled={busy || !!temporaryPassword} type="button" onClick={reset} className="mt-3 rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50">Reset password</button></div>}
     {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}

@@ -5,9 +5,9 @@ import {
   Menu, Sparkles, Users, X, LockKeyhole,
 } from 'lucide-react';
 const programs = [
-  { name: 'Administrasi', level: 'Data lembaga', number: '01', description: 'Direncanakan untuk membantu lembaga mengelola data siswa, guru, dan kelas.' },
-  { name: 'Pembelajaran', level: 'Kegiatan belajar', number: '02', description: 'Direncanakan untuk mendukung jadwal, presensi, materi, dan tugas.' },
-  { name: 'Evaluasi', level: 'Hasil belajar', number: '03', description: 'Direncanakan untuk mendukung pengelolaan nilai dan ujian daring.' },
+  { name: 'Administrasi', level: 'Data lembaga', number: '01', description: 'Kelola data siswa, guru, dan kelas di sekolah Anda.' },
+  { name: 'Pembelajaran', level: 'Kegiatan belajar', number: '02', description: 'Kelola jadwal, materi, dan tugas untuk kegiatan belajar.' },
+  { name: 'Evaluasi', level: 'Hasil belajar', number: '03', description: 'Guru dapat memberi nilai dan komentar pada pengumpulan tugas.' },
 ];
 
 export const LandingPage: React.FC = () => {
@@ -59,7 +59,7 @@ export const LandingPage: React.FC = () => {
             <div className="glass-panel rounded-3xl p-6 sm:p-10">
               <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.22em] text-indigo-800"><span className="h-px w-8 bg-indigo-600" /> Pendidikan untuk semua</span>
               <h1 className="mt-7 max-w-2xl text-4xl font-semibold leading-[1.1] tracking-[-0.04em] sm:text-6xl lg:text-[4.3rem]">Ruang digital untuk pendidikan yang terus bertumbuh.</h1>
-              <p className="mt-6 max-w-xl text-base leading-8 text-slate-700 sm:text-lg">Platform pendidikan yang sedang disiapkan untuk membantu berbagai lembaga mengelola administrasi dan kegiatan belajar dalam satu tempat.</p>
+              <p className="mt-6 max-w-xl text-base leading-8 text-slate-700 sm:text-lg">Platform pendidikan untuk membantu berbagai lembaga mengelola administrasi dan kegiatan belajar dalam satu tempat.</p>
               <div className="mt-9 flex flex-wrap gap-3">
                 <Link to="/daftar" className="landing-primary inline-flex items-center gap-4 rounded-full px-6 py-4 text-sm font-bold transition">Daftar lembaga <ArrowRight size={17} /></Link>
                 <a href="#program" className="landing-secondary inline-flex items-center gap-3 rounded-full px-6 py-4 text-sm font-semibold transition">Jelajahi fitur <ArrowDown size={16} /></a>
@@ -93,12 +93,12 @@ export const LandingPage: React.FC = () => {
         </section>
 
         <section id="program" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24">
-          <div className="mx-auto max-w-7xl"><div className="glass-panel flex flex-col justify-between gap-4 rounded-3xl p-6 sm:flex-row sm:items-end sm:p-10"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Rencana platform</p><h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Dukungan untuk setiap langkah belajar.</h2></div><p className="max-w-sm text-sm leading-6 text-slate-700">Fitur-fitur berikut masih dalam pengembangan dan belum dapat digunakan.</p></div>
+          <div className="mx-auto max-w-7xl"><div className="glass-panel flex flex-col justify-between gap-4 rounded-3xl p-6 sm:flex-row sm:items-end sm:p-10"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Fitur platform</p><h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Dukungan untuk setiap langkah belajar.</h2></div><p className="max-w-sm text-sm leading-6 text-slate-700">Layanan administrasi dan pembelajaran tersedia melalui subdomain masing-masing sekolah.</p></div>
             <div className="mt-10 grid gap-4 md:grid-cols-3">{programs.map(program => <article key={program.name} className="glass-panel group rounded-2xl p-7 transition hover:-translate-y-1 hover:shadow-lg"><div className="flex items-center justify-between"><span className="master-logo"><BookOpen size={22} /></span><span className="text-xs font-semibold tracking-widest text-slate-600">{program.number}</span></div><p className="mt-8 text-xs font-bold uppercase tracking-[0.15em] text-indigo-800">{program.level}</p><h3 className="mt-2 text-2xl font-semibold">{program.name}</h3><p className="mt-3 min-h-[72px] text-sm leading-6 text-slate-700">{program.description}</p></article>)}</div>
           </div>
         </section>
 
-        <section id="registrasi" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24"><div className="glass-panel mx-auto max-w-7xl rounded-3xl p-7 sm:p-10"><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Untuk pengelola lembaga</p><h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Bertumbuh bersama dalam pendidikan.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-slate-700">Pendaftaran lembaga sedang diuji secara lokal; akun sekolah dan undangan belum tersedia.</p></div></section>
+        <section id="registrasi" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24"><div className="glass-panel mx-auto max-w-7xl rounded-3xl p-7 sm:p-10"><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Untuk pengelola lembaga</p><h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Bertumbuh bersama dalam pendidikan.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-slate-700">Daftarkan lembaga untuk menggunakan layanan LMS Kesetaraan.</p></div></section>
       </main>
       <footer className="landing-footer px-5 py-10 text-slate-700 sm:px-8"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-xs sm:flex-row sm:items-center"><div><p className="text-lg font-bold text-slate-900">Rasyatech Digital Zenith<span className="text-indigo-700">.</span></p><p className="mt-2">Platform digital untuk mendukung lembaga pendidikan.</p></div><button type="button" onClick={openMasterLogin} aria-label="Akses master admin" title="Akses master admin" className="landing-secondary self-start rounded-full p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"><LockKeyhole size={18} /></button></div></footer>
     </div>

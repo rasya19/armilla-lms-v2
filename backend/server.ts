@@ -9,12 +9,15 @@ import { parseClass, parsePlacement } from "./class-input.js";
 import { academicRoutes } from "./academic-routes.js";
 import { httpSecurity, productionOrigin } from "./http-security.js";
 import { learningRoutes } from "./learning-routes.js";
+import { classroomRoutes } from "./classroom-routes.js";
 import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
 import { Prisma } from "@prisma/client";
 import { internalProvisionRoutes } from "./internal-provision.js";
 import { forwardRegistrationToMaster } from "./master-admin-registration.js";
 import { tenantAccessible } from "./tenant-access.js";
+import { tenantHostMiddleware } from "./tenant-host.js";
+import { schoolManagementRoutes } from "./school-management-routes.js";
 
 const app = express();
 export default app;
@@ -32,6 +35,23 @@ app.use(httpSecurity({ production, origin: production ? productionOrigin(process
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
+app.use("/api", tenantHostMiddleware(production, (slug) => prisma.sekolah.findUnique({
+  where: { slug },
+  select: { id: true, slug: true, status: true, expiresAt: true },
+})));
+app.get("/api/tenant/context", (req, res) => res.json({ kind: req.tenant?.kind }));
+app.use("/api", (req, res, next) => {
+  const tenant = req.tenant;
+  if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
+  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|lms|ppdb)(?:\/|$)/.test(req.path)) {
+    if (/^\/auth\/(?:sekolah|lms)\/login$/.test(req.path)) return res.status(401).json({ error: "Akun tidak terdaftar pada instansi ini. Gunakan subdomain sekolah Anda." });
+    return res.status(404).json({ error: "Fitur ini tersedia melalui subdomain sekolah." });
+  }
+  if (tenant.kind === "school" && /^\/(?:auth\/master|master|pendaftaran-sekolah)(?:\/|$)/.test(req.path)) {
+    return res.status(404).json({ error: "Fitur ini tersedia melalui domain utama." });
+  }
+  return next();
+});
 const limitSecret = production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex");
 const limitLogin = loginRateLimit(loginPool, limitSecret);
 const limitProductionPpdb = registrationRateLimit(loginPool, limitSecret, false, "ppdb");
@@ -114,13 +134,14 @@ app.post("/api/auth/master/login", async (req, res) => {
   }
 });
 
-async function getSession(cookieHeader: string | undefined, role: "MASTER_ADMIN" | "ADMIN" = "MASTER_ADMIN") {
-  const token = sessionToken(cookieHeader, role === "ADMIN" ? schoolCookieName : cookieName);
+async function getSession(req: express.Request, role: "MASTER_ADMIN" | "ADMIN" = "MASTER_ADMIN") {
+  const token = sessionToken(req.headers.cookie, role === "ADMIN" ? schoolCookieName : cookieName);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const session = await prisma.sesiAkun.findUnique({ where: { tokenHash }, include: { akun: { include: { sekolah: true } } } });
+  const session = await prisma.sesiAkun.findUnique({ where: { tokenHash }, include: { akun: { include: { sekolah: { select: { status: true, expiresAt: true } } } } } });
   if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.akun.aktif || session.akun.peran !== role || (role === "ADMIN" && !session.akun.sekolahId)) return null;
   if (role === "ADMIN" && !tenantAccessible(session.akun.sekolah)) return null;
+  if (role === "ADMIN" && req.tenant?.kind === "school" && session.akun.sekolahId !== req.tenant.id) return null;
   return session;
 }
 
@@ -131,7 +152,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
     const result = await limitLogin<{ token: string; nama: string }>(loginIp(req), email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
-      if (!account || !valid || !account.aktif || account.peran !== "ADMIN" || !account.sekolahId) return { kind: "failure" };
+      if (!account || !valid || !account.aktif || account.peran !== "ADMIN" || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id)) return { kind: "failure" };
       const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
       if (!token) return { kind: "failure" };
       return { kind: "success", value: { token, nama: account.nama } };
@@ -140,7 +161,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
       res.setHeader("Retry-After", String(result.retryAfter));
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
-    if (result.kind === "failure") return res.status(401).json({ error: "Email atau kata sandi salah." });
+    if (result.kind === "failure") return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
     res.cookie(schoolCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({ nama: result.value.nama });
   } catch (error) {
@@ -151,7 +172,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
 
 app.get("/api/auth/sekolah/session", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     if (!session || !session.akun.sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const school = await prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true } });
     if (!school) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -164,7 +185,7 @@ app.get("/api/auth/sekolah/session", async (req, res) => {
 
 app.post("/api/auth/sekolah/logout", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     if (session) await prisma.sesiAkun.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
     res.clearCookie(schoolCookieName, cookieOptions());
     return res.status(204).end();
@@ -176,7 +197,7 @@ app.post("/api/auth/sekolah/logout", async (req, res) => {
 
 app.post("/api/auth/sekolah/ganti-password", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     const { currentPassword, password } = req.body || {};
     if (typeof currentPassword !== "string" || currentPassword.length > 1024 || typeof password !== "string" || !isValidPasswordLength(password)) {
@@ -202,7 +223,7 @@ app.post("/api/auth/sekolah/ganti-password", async (req, res) => {
 
 app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
@@ -211,10 +232,12 @@ app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
     const passwordHash = await hashPassword(temporaryPassword);
     await prisma.$transaction(async (tx) => {
       if (jenis === "siswa") {
+        await tx.$queryRaw`SELECT "id" FROM "Siswa" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
         const siswa = await tx.siswa.findFirst({ where: { id: req.params.id, sekolahId, status: "Aktif" }, select: { id: true, nama: true, nisn: true } });
         if (!siswa || !/^\d{10}$/.test(siswa.nisn)) throw new Error("INVALID_ENTITY");
         await tx.akun.create({ data: { nama: siswa.nama, sekolahId, siswaId: siswa.id, peran: "SISWA", passwordHash, wajibGantiPassword: true } });
       } else {
+        await tx.$queryRaw`SELECT "id" FROM "Guru" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
         const guru = await tx.guru.findFirst({ where: { id: req.params.id, sekolahId, status: "Aktif" }, select: { id: true, nama: true, email: true } });
         if (!guru || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guru.email.trim()) || guru.email.length > 254) throw new Error("INVALID_ENTITY");
         await tx.akun.create({ data: { nama: guru.nama, email: guru.email.trim().toLowerCase(), sekolahId, guruId: guru.id, peran: "GURU", passwordHash, wajibGantiPassword: true } });
@@ -231,7 +254,7 @@ app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
 
 app.post("/api/sekolah/:jenis/:id/reset-password", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
@@ -262,20 +285,38 @@ app.post("/api/sekolah/:jenis/:id/reset-password", async (req, res) => {
   }
 });
 
-async function getLmsSession(cookieHeader: string | undefined) {
-  const token = sessionToken(cookieHeader, lmsCookieName);
+async function getLmsSession(req: express.Request) {
+  const token = sessionToken(req.headers.cookie, lmsCookieName);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const session = await prisma.sesiAkun.findUnique({
     where: { tokenHash: createHash("sha256").update(token).digest("hex") },
-    include: { akun: { include: { siswa: true, guru: true, sekolah: true } } },
+    include: { akun: { include: { siswa: { select: { sekolahId: true, status: true, kelasId: true } }, guru: { select: { sekolahId: true, status: true } }, sekolah: { select: { status: true, expiresAt: true } } } } },
   });
   if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.akun.aktif || !session.akun.sekolahId) return null;
   if (!tenantAccessible(session.akun.sekolah)) return null;
+  if (req.tenant?.kind === "school" && session.akun.sekolahId !== req.tenant.id) return null;
   const account = session.akun;
   if (account.peran === "SISWA" && account.siswa?.sekolahId === account.sekolahId && account.siswa.status === "Aktif" && !account.guruId) return session;
   if (account.peran === "GURU" && account.guru?.sekolahId === account.sekolahId && account.guru.status === "Aktif" && !account.siswaId) return session;
   return null;
 }
+
+app.get("/api/tenant/theme", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (req.tenant?.kind === "main") return res.status(404).json({ error: "Tema sekolah tersedia melalui subdomain sekolah." });
+  if (req.query.scope !== "sekolah" && req.query.scope !== "lms") return res.status(400).json({ error: "Jenis sesi tidak valid." });
+  try {
+    const session = req.query.scope === "sekolah" ? await getSession(req, "ADMIN") : await getLmsSession(req);
+    const sekolahId = session?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const school = await prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { themeKey: true } });
+    if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+    return res.json({ themeKey: school.themeKey });
+  } catch (error) {
+    console.error("Gagal memuat tema sekolah:", error);
+    return res.status(503).json({ error: "Tema sekolah belum dapat dimuat." });
+  }
+});
 
 app.post("/api/auth/lms/login", async (req, res) => {
   const { identitas, password, peran } = req.body || {};
@@ -284,11 +325,11 @@ app.post("/api/auth/lms/login", async (req, res) => {
     const result = await limitLogin<{ token: string; wajibGantiPassword: boolean }>(loginIp(req), identitas, async () => {
       const identity = identitas.trim().toLowerCase();
       const account = peran === "SISWA"
-        ? await prisma.akun.findFirst({ where: { peran: "SISWA", siswa: { nisn: identity } }, include: { siswa: true, guru: true } })
-        : await prisma.akun.findUnique({ where: { email: identity }, include: { siswa: true, guru: true } });
+        ? await prisma.akun.findFirst({ where: { peran: "SISWA", siswa: { nisn: identity } }, include: { siswa: { select: { sekolahId: true, status: true } }, guru: { select: { sekolahId: true, status: true } } } })
+        : await prisma.akun.findUnique({ where: { email: identity }, include: { siswa: { select: { sekolahId: true, status: true } }, guru: { select: { sekolahId: true, status: true } } } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       const related = account?.peran === "SISWA" ? account.siswa : account?.peran === "GURU" ? account.guru : null;
-      if (!account || !valid || account.peran !== peran || !account.aktif || !account.sekolahId || !related || related.sekolahId !== account.sekolahId || related.status !== "Aktif" || (peran === "SISWA" ? !!account.guruId : !!account.siswaId)) return { kind: "failure" };
+      if (!account || !valid || account.peran !== peran || !account.aktif || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id) || !related || related.sekolahId !== account.sekolahId || related.status !== "Aktif" || (peran === "SISWA" ? !!account.guruId : !!account.siswaId)) return { kind: "failure" };
       const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
       if (!token) return { kind: "failure" };
       return { kind: "success", value: { token, wajibGantiPassword: account.wajibGantiPassword } };
@@ -297,7 +338,7 @@ app.post("/api/auth/lms/login", async (req, res) => {
       res.setHeader("Retry-After", String(result.retryAfter));
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
-    if (result.kind === "failure") return res.status(401).json({ error: "Identitas atau kata sandi salah." });
+    if (result.kind === "failure") return res.status(401).json({ error: "Identitas atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
     res.cookie(lmsCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({ wajibGantiPassword: result.value.wajibGantiPassword });
   } catch (error) {
@@ -308,7 +349,7 @@ app.post("/api/auth/lms/login", async (req, res) => {
 
 app.get("/api/auth/lms/session", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     return res.json({ nama: session.akun.nama, peran: session.akun.peran, wajibGantiPassword: session.akun.wajibGantiPassword });
   } catch (error) {
@@ -319,7 +360,7 @@ app.get("/api/auth/lms/session", async (req, res) => {
 
 app.post("/api/auth/lms/ganti-password", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     const forcedChange = session.akun.wajibGantiPassword;
     if (!forcedChange && session.akun.peran !== "GURU") return res.status(403).json({ error: "Fitur ganti password tidak tersedia untuk peran ini." });
@@ -351,7 +392,7 @@ app.post("/api/auth/lms/ganti-password", async (req, res) => {
 
 app.post("/api/auth/lms/logout", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (session) await prisma.sesiAkun.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
     res.clearCookie(lmsCookieName, cookieOptions());
     return res.status(204).end();
@@ -363,7 +404,7 @@ app.post("/api/auth/lms/logout", async (req, res) => {
 
 app.get("/api/lms/beranda", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     if (session.akun.wajibGantiPassword) return res.status(403).json({ error: "Ganti password awal sebelum mengakses LMS." });
     return res.json({ nama: session.akun.nama, peran: session.akun.peran });
@@ -379,8 +420,25 @@ function jakartaDate(): Date {
   return new Date(`${part("year")}-${part("month")}-${part("day")}T00:00:00.000Z`);
 }
 
-app.use("/api/lms/pembelajaran", learningRoutes(async (cookie) => {
-  const session = await getLmsSession(cookie);
+app.use("/api/lms/ruang-kbm", classroomRoutes(async (req) => {
+  const session = await getLmsSession(req);
+  const account = session?.akun;
+  if (!account?.sekolahId || account.wajibGantiPassword || (account.peran !== "SISWA" && account.peran !== "GURU")) return null;
+  return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null };
+}, jakartaDate));
+app.use("/api/sekolah/ruang-kbm", classroomRoutes(async (req) => {
+  const session = await getSession(req, "ADMIN");
+  if (!session?.akun.sekolahId) return null;
+  return { sekolahId: session.akun.sekolahId, peran: "ADMIN", siswaId: null, kelasId: null };
+}, jakartaDate));
+app.use("/api/sekolah/pembelajaran", learningRoutes(async (req) => {
+  const session = await getSession(req, "ADMIN");
+  if (!session?.akun.sekolahId) return null;
+  return { sekolahId: session.akun.sekolahId, peran: "ADMIN", siswaId: null, kelasId: null, guruId: null, wajibGantiPassword: false };
+}, jakartaDate));
+
+app.use("/api/lms/pembelajaran", learningRoutes(async (req) => {
+  const session = await getLmsSession(req);
   const account = session?.akun;
   if (!account?.sekolahId || (account.peran !== "SISWA" && account.peran !== "GURU")) return null;
   return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null, guruId: account.guruId, wajibGantiPassword: account.wajibGantiPassword };
@@ -388,7 +446,7 @@ app.use("/api/lms/pembelajaran", learningRoutes(async (cookie) => {
 
 app.get("/api/lms/jadwal", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     if (session.akun.wajibGantiPassword) return res.status(403).json({ error: "Ganti password awal sebelum mengakses LMS." });
     const pageValue = req.query.page;
@@ -424,7 +482,7 @@ app.get("/api/lms/jadwal", async (req, res) => {
 
 app.get("/api/lms/guru/siswa-reset", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     if (session.akun.peran !== "GURU" || session.akun.wajibGantiPassword || !session.akun.guruId || !session.akun.sekolahId) return res.status(403).json({ error: "Akses ditolak. Guru harus mengganti password awal." });
     const nisn = req.query.nisn;
@@ -446,7 +504,7 @@ app.get("/api/lms/guru/siswa-reset", async (req, res) => {
 
 app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
   try {
-    const session = await getLmsSession(req.headers.cookie);
+    const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     if (session.akun.peran !== "GURU" || session.akun.wajibGantiPassword || !session.akun.guruId || !session.akun.sekolahId) return res.status(403).json({ error: "Akses ditolak. Guru harus mengganti password awal." });
     const sekolahId = session.akun.sekolahId;
@@ -476,9 +534,11 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
   }
 });
 
+app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
+
 app.post("/api/sekolah/siswa/import", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const parsed = parseStudentImport(req.body?.rows);
@@ -490,11 +550,19 @@ app.post("/api/sekolah/siswa/import", async (req, res) => {
       const newRows = parsed.rows.filter((row) => !found.has(row.nisn));
       const existingRows = parsed.rows.filter((row) => found.has(row.nisn));
       if (existingRows.length) {
-        const values = Prisma.join(existingRows.map((row) => Prisma.sql`(${row.nisn}, ${row.nama}, ${row.email ?? null}, ${row.telepon ?? null})`));
+        const values = Prisma.join(existingRows.map((row) => Prisma.sql`(${row.nisn}, ${row.nama}, ${row.email ?? null}, ${row.telepon ?? null}, ${row.nik ?? null}, ${row.tempatLahir ?? null}, ${row.tanggalLahir ?? null}::date, ${row.jenisKelamin ?? null}, ${row.jenjang ?? null}, ${row.tanggalMasuk ?? null}::date, ${row.jalurPendaftaran ?? null}, ${row.namaAyah ?? null}, ${row.namaIbu ?? null}, ${row.alamatLengkap ?? null}, ${row.teleponAyah ?? null}, ${row.pekerjaanAyah ?? null}, ${row.teleponIbu ?? null}, ${row.pekerjaanIbu ?? null}, ${row.namaWali ?? null}, ${row.teleponWali ?? null}, ${row.pekerjaanWali ?? null})`));
         const updated = await tx.$executeRaw`
           UPDATE "Siswa" AS siswa SET "nama" = data.nama, "email" = COALESCE(data.email, siswa."email"),
-            "telepon" = COALESCE(data.telepon, siswa."telepon")
-          FROM (VALUES ${values}) AS data(nisn, nama, email, telepon)
+            "telepon" = COALESCE(data.telepon, siswa."telepon"), "nik" = COALESCE(data.nik, siswa."nik"),
+            "tempatLahir" = COALESCE(data.tempat_lahir, siswa."tempatLahir"), "tanggalLahir" = COALESCE(data.tanggal_lahir, siswa."tanggalLahir"),
+            "jenisKelamin" = COALESCE(data.jenis_kelamin, siswa."jenisKelamin"), "jenjang" = COALESCE(data.jenjang, siswa."jenjang"),
+            "tanggalMasuk" = COALESCE(data.tanggal_masuk, siswa."tanggalMasuk"), "jalurPendaftaran" = COALESCE(data.jalur_pendaftaran, siswa."jalurPendaftaran"),
+            "namaAyah" = COALESCE(data.nama_ayah, siswa."namaAyah"), "namaIbu" = COALESCE(data.nama_ibu, siswa."namaIbu"),
+            "alamatLengkap" = COALESCE(data.alamat, siswa."alamatLengkap"),
+            "teleponAyah" = COALESCE(data.telepon_ayah, siswa."teleponAyah"), "pekerjaanAyah" = COALESCE(data.pekerjaan_ayah, siswa."pekerjaanAyah"),
+            "teleponIbu" = COALESCE(data.telepon_ibu, siswa."teleponIbu"), "pekerjaanIbu" = COALESCE(data.pekerjaan_ibu, siswa."pekerjaanIbu"),
+            "namaWali" = COALESCE(data.nama_wali, siswa."namaWali"), "teleponWali" = COALESCE(data.telepon_wali, siswa."teleponWali"), "pekerjaanWali" = COALESCE(data.pekerjaan_wali, siswa."pekerjaanWali")
+          FROM (VALUES ${values}) AS data(nisn, nama, email, telepon, nik, tempat_lahir, tanggal_lahir, jenis_kelamin, jenjang, tanggal_masuk, jalur_pendaftaran, nama_ayah, nama_ibu, alamat, telepon_ayah, pekerjaan_ayah, telepon_ibu, pekerjaan_ibu, nama_wali, telepon_wali, pekerjaan_wali)
           WHERE siswa."nisn" = data.nisn AND siswa."sekolahId" = ${sekolahId}
         `;
         if (updated !== existingRows.length) throw new Error("IMPORT_CONFLICT");
@@ -514,7 +582,7 @@ app.post("/api/sekolah/siswa/import", async (req, res) => {
 
 app.post("/api/sekolah/guru", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const data = parseTeacher(req.body);
@@ -529,6 +597,7 @@ app.post("/api/sekolah/guru", async (req, res) => {
 });
 
 app.get("/api/ppdb/:slug", async (req, res) => {
+  if (req.tenant?.kind === "school" && req.params.slug !== req.tenant.slug) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
   try {
     const sekolah = await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { nama: true } });
     if (!sekolah) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
@@ -540,6 +609,7 @@ app.get("/api/ppdb/:slug", async (req, res) => {
 });
 
 app.post("/api/ppdb/:slug", async (req, res) => {
+  if (req.tenant?.kind === "school" && req.params.slug !== req.tenant.slug) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
   if (production) {
     try {
       const limit = await limitProductionPpdb(loginIp(req));
@@ -577,7 +647,7 @@ app.post("/api/ppdb/:slug", async (req, res) => {
 
 app.post("/api/sekolah/ppdb/:id/tinjau", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!session || !sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const { keputusan, catatan } = req.body || {};
@@ -591,18 +661,71 @@ app.post("/api/sekolah/ppdb/:id/tinjau", async (req, res) => {
   }
 });
 
-app.use("/api/sekolah/akademik", academicRoutes(async (cookie) => (await getSession(cookie, "ADMIN"))?.akun.sekolahId ?? null));
+app.use("/api/sekolah/akademik", academicRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
+
+app.get("/api/sekolah/ringkasan", async (req, res) => {
+  try {
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const [siswa, guru, kelas, ppdb, ppdbDiterima, ppdbDitolak] = await Promise.all([
+      prisma.siswa.count({ where: { sekolahId, status: "Aktif" } }),
+      prisma.guru.count({ where: { sekolahId, status: "Aktif" } }),
+      prisma.kelas.count({ where: { sekolahId } }),
+      prisma.pPDB.count({ where: { sekolahId, status: "Pending" } }),
+      prisma.pPDB.count({ where: { sekolahId, status: "Diterima" } }),
+      prisma.pPDB.count({ where: { sekolahId, status: "Ditolak" } }),
+    ]);
+    return res.json({ siswa, guru, kelas, ppdb, ppdbDiterima, ppdbDitolak });
+  } catch (error) {
+    console.error("Gagal memuat ringkasan sekolah:", error);
+    return res.status(503).json({ error: "Ringkasan sekolah belum dapat dimuat." });
+  }
+});
+
+app.post("/api/sekolah/kelas-standar", async (req, res) => {
+  try {
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    await prisma.$transaction(async (tx) => {
+      const schools = await tx.$queryRaw<{ kelasStandarDibuat: boolean }[]>`SELECT "kelasStandarDibuat" FROM "Sekolah" WHERE "id" = ${sekolahId} FOR UPDATE`;
+      if (!schools.length) throw new Error("SCHOOL_MISSING");
+      if (schools[0].kelasStandarDibuat) return;
+      const existing = await tx.kelas.findMany({ where: { sekolahId }, select: { nama: true }, take: 501 });
+      const names: string[] = [];
+      for (let grade = 1; grade <= 12; grade++) {
+        const paket = grade <= 6 ? "A" : grade <= 9 ? "B" : "C";
+        const candidates = existing.filter((item) => {
+          const name = item.nama.trim().replace(/\s+/g, " ").toLowerCase();
+          return name === `kelas ${grade}` || name === `paket ${paket.toLowerCase()} kelas ${grade}`;
+        });
+        if (candidates.length > 1) throw new Error(`AMBIGUOUS_CLASS:${grade}`);
+        if (!candidates.length) names.push(`Paket ${paket} Kelas ${grade}`);
+      }
+      if (existing.length + names.length > 500) throw new Error("CLASS_LIMIT");
+      if (names.length) await tx.kelas.createMany({ data: names.map((nama) => ({ nama, kode: randomBytes(16).toString("hex"), sekolahId, waliGuruId: null })) });
+      await tx.sekolah.update({ where: { id: sekolahId }, data: { kelasStandarDibuat: true } });
+    });
+    return res.json({ message: "Kelas standar tersedia." });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("AMBIGUOUS_CLASS:")) return res.status(409).json({ error: `Ada lebih dari satu kelas standar untuk kelas ${error.message.split(":")[1]}. Ubah nama kelas yang duplikat di Manajemen Kelas.` });
+    if (error instanceof Error && error.message === "CLASS_LIMIT") return res.status(409).json({ error: "Kelas standar tidak dapat dibuat karena batas 500 kelas akan terlampaui." });
+    console.error("Gagal menyiapkan kelas standar:", error);
+    return res.status(503).json({ error: "Kelas standar belum dapat disiapkan. Coba lagi." });
+  }
+});
 
 app.get("/api/sekolah/kelas", async (req, res) => {
   try {
-    const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
-    const [kelas, guru] = await Promise.all([
+    const [kelas, guru, counts] = await Promise.all([
       prisma.kelas.findMany({ where: { sekolahId }, select: { id: true, nama: true, waliGuruId: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 }),
       prisma.guru.findMany({ where: { sekolahId, status: "Aktif" }, select: { id: true, nama: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 }),
+      prisma.siswa.groupBy({ by: ["kelasId"], where: { sekolahId, status: "Aktif", kelasId: { not: null } }, _count: { _all: true } }),
     ]);
-    if (kelas.length > 500 || guru.length > 500) return res.status(409).json({ error: "Pengaturan kelas mendukung maksimal 500 kelas dan 500 guru aktif untuk uji lokal." });
-    return res.json({ kelas, guru });
+    if (kelas.length > 500 || guru.length > 500) return res.status(409).json({ error: "Pengaturan kelas mendukung maksimal 500 kelas dan 500 guru aktif." });
+    const jumlah = new Map(counts.map((item) => [item.kelasId, item._count._all]));
+    return res.json({ kelas: kelas.map((item) => ({ ...item, jumlahSiswa: jumlah.get(item.id) ?? 0 })), guru });
   } catch (error) {
     console.error("Gagal memuat pengaturan kelas:", error);
     return res.status(503).json({ error: "Pengaturan kelas belum dapat dimuat." });
@@ -611,21 +734,20 @@ app.get("/api/sekolah/kelas", async (req, res) => {
 
 app.post("/api/sekolah/kelas", async (req, res) => {
   try {
-    const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const data = parseClass(req.body);
-    if (!data) return res.status(400).json({ error: "Nama kelas dan wali kelas wajib diisi." });
+    if (!data) return res.status(400).json({ error: "Nama kelas atau wali kelas tidak valid." });
     const kelas = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Sekolah" WHERE "id" = ${sekolahId} FOR UPDATE`;
-      const teacher = await tx.guru.findFirst({ where: { id: data.waliGuruId, sekolahId, status: "Aktif" }, select: { id: true } });
-      if (!teacher) throw new Error("INVALID_TEACHER");
+      if (data.waliGuruId && !await tx.guru.findFirst({ where: { id: data.waliGuruId, sekolahId, status: "Aktif" }, select: { id: true } })) throw new Error("INVALID_TEACHER");
       if (await tx.kelas.count({ where: { sekolahId } }) >= 500) throw new Error("CLASS_LIMIT");
       return tx.kelas.create({ data: { ...data, kode: randomBytes(16).toString("hex"), sekolahId }, select: { id: true, nama: true, waliGuruId: true } });
     });
     return res.status(201).json(kelas);
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_TEACHER") return res.status(400).json({ error: "Wali kelas aktif tidak ditemukan di sekolah ini." });
-    if (error instanceof Error && error.message === "CLASS_LIMIT") return res.status(409).json({ error: "Batas 500 kelas untuk uji lokal telah tercapai." });
+    if (error instanceof Error && error.message === "CLASS_LIMIT") return res.status(409).json({ error: "Batas 500 kelas telah tercapai." });
     console.error("Gagal membuat kelas:", error);
     return res.status(503).json({ error: "Kelas belum dapat dibuat." });
   }
@@ -633,12 +755,11 @@ app.post("/api/sekolah/kelas", async (req, res) => {
 
 app.patch("/api/sekolah/kelas/:id", async (req, res) => {
   try {
-    const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const data = parseClass(req.body);
-    if (!data) return res.status(400).json({ error: "Nama kelas dan wali kelas wajib diisi." });
-    const teacher = await prisma.guru.findFirst({ where: { id: data.waliGuruId, sekolahId, status: "Aktif" }, select: { id: true } });
-    if (!teacher) return res.status(400).json({ error: "Wali kelas aktif tidak ditemukan di sekolah ini." });
+    if (!data) return res.status(400).json({ error: "Nama kelas atau wali kelas tidak valid." });
+    if (data.waliGuruId && !await prisma.guru.findFirst({ where: { id: data.waliGuruId, sekolahId, status: "Aktif" }, select: { id: true } })) return res.status(400).json({ error: "Wali kelas aktif tidak ditemukan di sekolah ini." });
     const updated = await prisma.kelas.updateMany({ where: { id: req.params.id, sekolahId }, data });
     if (!updated.count) return res.status(404).json({ error: "Kelas tidak ditemukan di sekolah ini." });
     return res.json({ message: "Kelas diperbarui." });
@@ -648,9 +769,30 @@ app.patch("/api/sekolah/kelas/:id", async (req, res) => {
   }
 });
 
+app.delete("/api/sekolah/kelas/:id", async (req, res) => {
+  try {
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const result = await prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Kelas" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
+      if (!locked.length) return "missing";
+      if (await tx.siswa.count({ where: { kelasId: req.params.id } })) return "used";
+      await tx.kelas.deleteMany({ where: { id: req.params.id, sekolahId } });
+      return "deleted";
+    });
+    if (result === "missing") return res.status(404).json({ error: "Kelas tidak ditemukan." });
+    if (result === "used") return res.status(409).json({ error: "Kelas masih digunakan siswa dan tidak dapat dihapus." });
+    return res.json({ message: "Kelas dihapus." });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2003" || error.code === "P2014")) return res.status(409).json({ error: "Kelas masih digunakan data akademik dan tidak dapat dihapus." });
+    console.error("Gagal menghapus kelas:", error);
+    return res.status(503).json({ error: "Kelas belum dapat dihapus." });
+  }
+});
+
 app.get("/api/sekolah/penempatan-siswa", async (req, res) => {
   try {
-    const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const nisn = req.query.nisn;
     if (typeof nisn !== "string" || !/^\d{10}$/.test(nisn)) return res.status(400).json({ error: "NISN harus terdiri dari 10 angka." });
@@ -663,17 +805,75 @@ app.get("/api/sekolah/penempatan-siswa", async (req, res) => {
   }
 });
 
+app.get("/api/sekolah/kenaikan-kelas", async (req, res) => {
+  try {
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const kelasId = req.query.kelasId;
+    if (kelasId !== undefined && (typeof kelasId !== "string" || !kelasId || kelasId.length > 100 || kelasId !== kelasId.trim())) return res.status(400).json({ error: "Kelas asal tidak valid." });
+    if (typeof kelasId === "string" && !await prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true } })) return res.status(404).json({ error: "Kelas asal tidak ditemukan di sekolah ini." });
+    const [counts, siswa] = await Promise.all([
+      prisma.siswa.groupBy({ by: ["kelasId"], where: { sekolahId, status: "Aktif", kelasId: { not: null } }, _count: { _all: true } }),
+      typeof kelasId === "string" ? prisma.siswa.findMany({ where: { sekolahId, kelasId, status: "Aktif" }, select: { id: true, nama: true, nisn: true, akun: { select: { aktif: true, peran: true, sekolahId: true, guruId: true } } }, orderBy: [{ nama: "asc" }, { id: "asc" }] }) : Promise.resolve([]),
+    ]);
+    return res.json({
+      counts: counts.map((item) => ({ kelasId: item.kelasId, jumlah: item._count._all })),
+      siswa: siswa.map((item) => ({ id: item.id, nama: item.nama, nisn: item.nisn, statusAkun: !item.akun ? "Belum ada akun" : item.akun.aktif && item.akun.peran === "SISWA" && item.akun.sekolahId === sekolahId && !item.akun.guruId ? "Akun aktif" : "Akun tidak aktif" })),
+    });
+  } catch (error) {
+    console.error("Gagal memuat data kenaikan kelas:", error);
+    return res.status(503).json({ error: "Data kenaikan kelas belum dapat dimuat." });
+  }
+});
+
+app.post("/api/sekolah/penempatan-massal", async (req, res) => {
+  try {
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const kelasId = req.body?.kelasId;
+    const students: unknown = req.body?.siswa;
+    if (typeof kelasId !== "string" || !parsePlacement({ kelasId, expectedKelasId: null }) || !Array.isArray(students) || students.length < 1 || students.length > 25) return res.status(400).json({ error: "Pilih kelas dan 1 sampai 25 siswa." });
+    const parsed: { id: string; expectedKelasId: string | null }[] = [];
+    for (const student of students) {
+      if (typeof student !== "object" || student === null || Array.isArray(student) || typeof student.id !== "string" || !student.id || student.id.length > 100 || student.id !== student.id.trim()) return res.status(400).json({ error: "Data siswa tidak valid." });
+      const placement = parsePlacement({ kelasId, expectedKelasId: student.expectedKelasId });
+      if (!placement || parsed.some((item) => item.id === student.id)) return res.status(400).json({ error: "Data siswa atau kelas asal tidak valid." });
+      parsed.push({ id: student.id, expectedKelasId: placement.expectedKelasId });
+    }
+    await prisma.$transaction(async (tx) => {
+      const kelas = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Kelas" WHERE "id" = ${kelasId} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
+      if (!kelas.length) throw new Error("INVALID_CLASS");
+      for (const student of parsed.sort((a, b) => a.id.localeCompare(b.id))) {
+        const updated = await tx.siswa.updateMany({ where: { id: student.id, sekolahId, status: "Aktif", kelasId: student.expectedKelasId }, data: { kelasId } });
+        if (updated.count !== 1) throw new Error("PLACEMENT_CONFLICT");
+      }
+    });
+    return res.json({ updated: parsed.length });
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_CLASS") return res.status(400).json({ error: "Kelas tidak ditemukan di sekolah ini." });
+    if (error instanceof Error && error.message === "PLACEMENT_CONFLICT") return res.status(409).json({ error: "Siswa tidak aktif, tidak ditemukan, atau kelasnya sudah berubah. Tidak ada siswa yang dipindahkan; muat ulang daftar." });
+    console.error("Gagal menyimpan penempatan massal:", error);
+    return res.status(503).json({ error: "Penempatan belum dapat dipastikan. Muat ulang daftar sebelum mencoba lagi." });
+  }
+});
+
 app.patch("/api/sekolah/siswa/:id/kelas", async (req, res) => {
   try {
-    const sekolahId = (await getSession(req.headers.cookie, "ADMIN"))?.akun.sekolahId;
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const data = parsePlacement(req.body);
     if (!data) return res.status(400).json({ error: "Pilih kelas atau kosongkan penempatan." });
-    if (data.kelasId && !await prisma.kelas.findFirst({ where: { id: data.kelasId, sekolahId }, select: { id: true } })) return res.status(400).json({ error: "Kelas tidak ditemukan di sekolah ini." });
-    const updated = await prisma.siswa.updateMany({ where: { id: req.params.id, sekolahId, status: "Aktif", kelasId: data.expectedKelasId }, data: { kelasId: data.kelasId } });
+    const updated = await prisma.$transaction(async (tx) => {
+      if (data.kelasId) {
+        const kelas = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Kelas" WHERE "id" = ${data.kelasId} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
+        if (!kelas.length) throw new Error("INVALID_CLASS");
+      }
+      return tx.siswa.updateMany({ where: { id: req.params.id, sekolahId, status: "Aktif", kelasId: data.expectedKelasId }, data: { kelasId: data.kelasId } });
+    });
     if (!updated.count) return res.status(409).json({ error: "Siswa tidak ditemukan atau penempatan sudah berubah. Cari kembali siswa." });
     return res.json({ message: "Penempatan siswa disimpan." });
   } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_CLASS") return res.status(400).json({ error: "Kelas tidak ditemukan di sekolah ini." });
     console.error("Gagal menyimpan penempatan siswa:", error);
     return res.status(503).json({ error: "Penempatan siswa belum dapat disimpan." });
   }
@@ -681,20 +881,42 @@ app.patch("/api/sekolah/siswa/:id/kelas", async (req, res) => {
 
 app.get("/api/sekolah/:jenis", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie, "ADMIN");
+    const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const pageValue = req.query.page;
     if (pageValue !== undefined && (typeof pageValue !== "string" || !/^[1-9]\d{0,5}$/.test(pageValue))) return res.status(400).json({ error: "Nomor halaman tidak valid." });
     const page = pageValue === undefined ? 1 : Number(pageValue);
     const pagination = { skip: (page - 1) * 25, take: 26 };
-    let rows: { id: string; nama: string; keterangan: string; status: string; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null }[];
+    let rows: { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null }[];
     if (req.params.jenis === "siswa") {
-      const data = await prisma.siswa.findMany({ where: { sekolahId }, select: { id: true, nama: true, nisn: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination });
-      rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.nisn, status: item.status, punyaAkun: !!item.akun }));
+      const filter = req.query.kelas;
+      const active = req.query.aktif;
+      const search = req.query.q;
+      if (filter !== undefined && filter !== "semua" && filter !== "belum" && filter !== "sudah") return res.status(400).json({ error: "Filter kelas tidak valid." });
+      if (active !== undefined && active !== "1") return res.status(400).json({ error: "Filter status tidak valid." });
+      if (search !== undefined && (typeof search !== "string" || search.trim().length > 100)) return res.status(400).json({ error: "Pencarian maksimal 100 karakter." });
+      const term = typeof search === "string" ? search.trim().replace(/[\\%_]/g, "\\$&") : "";
+      const data = await prisma.siswa.findMany({ where: { sekolahId, ...(active === "1" ? { status: "Aktif" } : {}), ...(filter === "belum" ? { kelasId: null } : filter === "sudah" ? { kelasId: { not: null } } : {}), ...(term ? { OR: [{ nama: { contains: term, mode: "insensitive" } }, { nisn: { contains: term, mode: "insensitive" } }] } : {}) }, select: { id: true, nama: true, nisn: true, kelasId: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination });
+      rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.nisn, kelasId: item.kelasId, status: item.status, punyaAkun: !!item.akun }));
     } else if (req.params.jenis === "guru") {
-      const data = await prisma.guru.findMany({ where: { sekolahId }, select: { id: true, nama: true, nuptk: true, email: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination });
+      const search = req.query.q;
+      if (search !== undefined && (typeof search !== "string" || search.trim().length > 100)) return res.status(400).json({ error: "Pencarian maksimal 100 karakter." });
+      const term = typeof search === "string" ? search.trim().replace(/[\\%_]/g, "\\$&") : "";
+      const where: Prisma.GuruWhereInput = {
+        sekolahId,
+        ...(term ? { OR: [
+          { nama: { contains: term, mode: "insensitive" } },
+          { nuptk: { contains: term, mode: "insensitive" } },
+          { email: { contains: term, mode: "insensitive" } },
+        ] } : {}),
+      };
+      const [data, total] = await Promise.all([
+        prisma.guru.findMany({ where, select: { id: true, nama: true, nuptk: true, email: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination }),
+        prisma.guru.count({ where }),
+      ]);
       rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.nuptk || "Belum ada", email: item.email, status: item.status, punyaAkun: !!item.akun }));
+      return res.json({ rows: rows.slice(0, 25), page, hasNext: rows.length > 25, total });
     } else if (req.params.jenis === "ppdb") {
       const data = await prisma.pPDB.findMany({ where: { sekolahId }, select: { id: true, nama: true, noDaftar: true, status: true, email: true, telepon: true, alamat: true, jenjang: true, catatanTinjauan: true }, orderBy: { id: "asc" }, ...pagination });
       rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.noDaftar, status: item.status, email: item.email, telepon: item.telepon, alamat: item.alamat, jenjang: item.jenjang, catatan: item.catatanTinjauan }));
@@ -708,7 +930,7 @@ app.get("/api/sekolah/:jenis", async (req, res) => {
 
 app.get("/api/auth/master/session", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     return res.json({ nama: session.akun.nama, peran: session.akun.peran });
   } catch (error) {
@@ -719,7 +941,7 @@ app.get("/api/auth/master/session", async (req, res) => {
 
 app.post("/api/auth/master/logout", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (session) await prisma.sesiAkun.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
     res.clearCookie(cookieName, cookieOptions());
     return res.status(204).end();
@@ -731,7 +953,7 @@ app.post("/api/auth/master/logout", async (req, res) => {
 
 app.get("/api/master/summary", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     const [sekolah, adminSekolah] = await prisma.$transaction([
       prisma.sekolah.count(),
@@ -746,7 +968,7 @@ app.get("/api/master/summary", async (req, res) => {
 
 app.get("/api/master/sekolah", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     const pageValue = req.query.page;
     if (pageValue !== undefined && (typeof pageValue !== "string" || !/^[1-9]\d{0,5}$/.test(pageValue))) {
@@ -769,7 +991,7 @@ app.get("/api/master/sekolah", async (req, res) => {
 
 app.get("/api/master/pendaftaran-sekolah", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     const pageValue = req.query.page;
     if (pageValue !== undefined && (typeof pageValue !== "string" || !/^[1-9]\d{0,5}$/.test(pageValue))) {
@@ -792,7 +1014,7 @@ app.get("/api/master/pendaftaran-sekolah", async (req, res) => {
 
 app.post("/api/master/pendaftaran-sekolah/:id/tinjau", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     return res.status(409).json({ error: "Verifikasi pendaftaran dilakukan melalui Rasyatech Admin." });
   } catch (error) {
@@ -803,7 +1025,7 @@ app.post("/api/master/pendaftaran-sekolah/:id/tinjau", async (req, res) => {
 
 app.delete("/api/master/pendaftaran-sekolah/:id", async (req, res) => {
   try {
-    const session = await getSession(req.headers.cookie);
+    const session = await getSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
     const result = await prisma.$transaction(async (tx) => {
       const registration = await tx.pendaftaranSekolah.findUnique({

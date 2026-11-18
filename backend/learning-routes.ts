@@ -1,16 +1,17 @@
 import { Router } from "express";
+import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { parseGrade, parseLearningContent, parseSubmission } from "./learning-input.js";
 
-type LearningSession = { sekolahId: string; peran: "SISWA" | "GURU"; siswaId: string | null; kelasId: string | null; guruId: string | null; wajibGantiPassword: boolean };
-type GetSession = (cookie: string | undefined) => Promise<LearningSession | null>;
+type LearningSession = { sekolahId: string; peran: "ADMIN" | "SISWA" | "GURU"; siswaId: string | null; kelasId: string | null; guruId: string | null; wajibGantiPassword: boolean };
+type GetSession = (req: Request) => Promise<LearningSession | null>;
 
 export function learningRoutes(getSession: GetSession, today: () => Date) {
   const router = Router();
   router.use(async (req, res, next) => {
     try {
-      const session = await getSession(req.headers.cookie);
+      const session = await getSession(req);
       if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
       if (session.wajibGantiPassword) return res.status(403).json({ error: "Ganti password awal sebelum mengakses LMS." });
       res.locals.learning = session;
@@ -22,7 +23,7 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
   });
   const scope = (s: LearningSession) => ({
     sekolahId: s.sekolahId,
-    ...(s.peran === "GURU" ? { guruId: s.guruId ?? "" } : { kelasId: s.kelasId ?? "" }),
+    ...(s.peran === "GURU" ? { guruId: s.guruId ?? "" } : s.peran === "SISWA" ? { kelasId: s.kelasId ?? "" } : {}),
     kelas: { sekolahId: s.sekolahId }, guru: { sekolahId: s.sekolahId }, mapel: { sekolahId: s.sekolahId },
     tahunAjaran: { sekolahId: s.sekolahId, mulai: { lte: today() }, selesai: { gte: today() } },
   });
@@ -35,7 +36,7 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     try {
       const rows = await prisma.jadwalPelajaran.findMany({
         where: { ...scope(s), guruId: s.guruId },
-        select: { id: true, hari: true, jamMulai: true, jamSelesai: true, kelas: { select: { nama: true } }, mapel: { select: { nama: true } }, tahunAjaran: { select: { nama: true, semester: true } } },
+        select: { id: true, hari: true, jamMulai: true, jamSelesai: true, kelas: { select: { id: true, nama: true } }, mapel: { select: { id: true, nama: true } }, tahunAjaran: { select: { nama: true, semester: true } } },
         orderBy: [{ hari: "asc" }, { jamMulai: "asc" }, { id: "asc" }], take: 2001,
       });
       if (rows.length > 2000) return res.status(409).json({ error: "Terlalu banyak jadwal; hubungi admin sekolah." });
@@ -50,14 +51,24 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     const s: LearningSession = res.locals.learning;
     const p = page(req.query.page);
     if (!p) return res.status(400).json({ error: "Nomor halaman tidak valid." });
+    const kelasId = req.query.kelasId;
+    const mapelId = req.query.mapelId;
+    if ((kelasId !== undefined && (typeof kelasId !== "string" || !kelasId || kelasId.length > 100)) || (mapelId !== undefined && (typeof mapelId !== "string" || !mapelId || mapelId.length > 100 || !kelasId))) return res.status(400).json({ error: "Filter kelas atau mata pelajaran tidak valid." });
+    if (s.peran === "ADMIN" && !kelasId) return res.status(400).json({ error: "Pilih kelas terlebih dahulu." });
+    if (s.peran === "SISWA" && kelasId && kelasId !== s.kelasId) return res.status(404).json({ error: "Kelas tidak ditemukan." });
     try {
-      const common = { where: scope(s), orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }], skip: (p - 1) * 25, take: 26 };
+      if (typeof kelasId === "string" && !await prisma.kelas.findFirst({ where: { id: kelasId, sekolahId: s.sekolahId }, select: { id: true } })) return res.status(404).json({ error: "Kelas tidak ditemukan." });
+      const base = scope(s);
+      const where = typeof kelasId === "string"
+        ? { sekolahId: base.sekolahId, kelasId, kelas: base.kelas, guru: base.guru, mapel: base.mapel, tahunAjaran: base.tahunAjaran, ...(typeof mapelId === "string" ? { mapelId } : {}) }
+        : base;
+      const common = { where, orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }], skip: (p - 1) * 25, take: 26 };
       if (req.params.kind === "materi") {
         const rows = await prisma.materiAjar.findMany({ ...common, select: { ...select, deskripsi: true, tautan: true } });
         return res.json({ rows: rows.slice(0, 25), page: p, hasNext: rows.length > 25 });
       }
-      const rows = await prisma.tugas.findMany({ ...common, select: { ...select, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } });
-      return res.json({ rows: rows.slice(0, 25), page: p, hasNext: rows.length > 25 });
+      const rows = await prisma.tugas.findMany({ ...common, select: { ...select, guruId: true, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } });
+      return res.json({ rows: rows.slice(0, 25).map(({ guruId, ...row }) => ({ ...row, bisaMenilai: s.peran === "GURU" && guruId === s.guruId })), page: p, hasNext: rows.length > 25 });
     } catch (error) {
       console.error("Gagal memuat materi atau tugas:", error);
       return res.status(503).json({ error: "Materi atau tugas belum dapat dimuat." });
@@ -90,9 +101,15 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     const data = parseSubmission(req.body);
     if (!data) return res.status(400).json({ error: "Isi jawaban atau tautan HTTPS yang valid." });
     try {
-      const task = await prisma.tugas.findFirst({ where: { ...scope(s), id: req.params.id }, select: { id: true } });
-      if (!task) return res.status(404).json({ error: "Tugas tidak ditemukan." });
-      await prisma.pengumpulanTugas.create({ data: { ...data, tugasId: task.id, siswaId: s.siswaId } });
+      const saved = await prisma.$transaction(async (tx) => {
+        const siswa = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Siswa" WHERE "id" = ${s.siswaId} AND "sekolahId" = ${s.sekolahId} AND "kelasId" = ${s.kelasId} AND "status" = 'Aktif' FOR UPDATE`;
+        if (!siswa.length) return false;
+        const task = await tx.tugas.findFirst({ where: { ...scope(s), id: req.params.id }, select: { id: true } });
+        if (!task) return false;
+        await tx.pengumpulanTugas.create({ data: { ...data, tugasId: task.id, siswaId: s.siswaId ?? "" } });
+        return true;
+      });
+      if (!saved) return res.status(404).json({ error: "Tugas atau penempatan kelas tidak ditemukan." });
       return res.status(201).json({ message: "Tugas dikumpulkan." });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return res.status(409).json({ error: "Tugas sudah dikumpulkan dan belum dapat diubah." });

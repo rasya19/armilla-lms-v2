@@ -1,12 +1,13 @@
 import { strict as assert } from "node:assert";
 import { once } from "node:events";
 import { test } from "node:test";
+import express from "express";
 
 test("master deletes only registrations and empty linked schools", async () => {
   process.env.DATABASE_URL = "postgresql://test:test@127.0.0.1:5432/test";
   process.env.NODE_ENV = "production";
   process.env.VERCEL = "1";
-  process.env.APP_ORIGIN = "https://master.example.invalid";
+  process.env.APP_ORIGIN = "https://rsch.my.id";
   process.env.LOGIN_RATE_LIMIT_SECRET = "ab".repeat(32);
   const { prisma, pool, loginPool } = await import("./db.js");
   const { default: app } = await import("./server.js");
@@ -52,14 +53,14 @@ test("master deletes only registrations and empty linked schools", async () => {
       return callback(tx);
     },
   });
-  const server = app.listen(0, "127.0.0.1");
+  const server = express().use((req, _res, next) => { if (req.get("x-test-host")) req.headers.host = req.get("x-test-host"); next(); }).use(app).listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
     const address = server.address();
     assert.ok(address && typeof address !== "string");
     const url = `http://127.0.0.1:${address.port}/api/master/pendaftaran-sekolah/test-id`;
-    const headers = { origin: process.env.APP_ORIGIN, cookie: `armilla_session=${"a".repeat(64)}` };
-    assert.equal((await fetch(url, { method: "DELETE", headers: { origin: headers.origin } })).status, 401);
+    const headers = { origin: process.env.APP_ORIGIN, "x-test-host": "rsch.my.id", cookie: `armilla_session=${"a".repeat(64)}` };
+    assert.equal((await fetch(url, { method: "DELETE", headers: { origin: headers.origin, "x-test-host": headers["x-test-host"] } })).status, 401);
     assert.equal((await fetch(url, { method: "DELETE", headers: { ...headers, origin: "https://evil.invalid" } })).status, 403);
     mode = "non-master";
     assert.equal((await fetch(url, { method: "DELETE", headers })).status, 401);

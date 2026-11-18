@@ -2,8 +2,9 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { parseClass, parsePlacement } from "./class-input.js";
 
-test("class input requires a name and a homeroom teacher", () => {
+test("class input requires a name and accepts an optional homeroom teacher", () => {
   assert.deepEqual(parseClass({ nama: "  7 A ", waliGuruId: " guru-id " }), { nama: "7 A", waliGuruId: "guru-id" });
+  assert.deepEqual(parseClass({ nama: "Kelas 9", waliGuruId: null }), { nama: "Kelas 9", waliGuruId: null });
   for (const data of [null, [], {}, { nama: " ", waliGuruId: "g" }, { nama: "x".repeat(101), waliGuruId: "g" }, { nama: "7 A", waliGuruId: "" }]) {
     assert.equal(parseClass(data), null);
   }

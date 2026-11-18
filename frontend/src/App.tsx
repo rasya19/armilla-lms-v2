@@ -8,8 +8,8 @@ import { SchoolHome, SchoolLogin } from "./components/SchoolAccess";
 import { PublicPPDB } from "./components/SchoolForms";
 import { LmsHome, LmsLogin } from "./components/LmsAccess";
 
-function Unavailable() {
-  return <main className="min-h-screen bg-slate-950 px-6 py-24 text-white"><div className="mx-auto max-w-lg"><h1 className="text-3xl font-bold">Fitur belum tersedia</h1><p className="mt-4 leading-7 text-slate-300">Layanan ini sedang disiapkan dan belum menerima data. Silakan kembali ke halaman utama.</p><Link className="mt-8 inline-block text-amber-300 underline" to="/">Kembali ke beranda</Link></div></main>;
+function Unavailable({ schoolLogin = false }: { schoolLogin?: boolean }) {
+  return <main className="min-h-screen bg-slate-950 px-6 py-24 text-white"><div className="mx-auto max-w-lg"><h1 className="text-3xl font-bold">{schoolLogin ? "Masuk melalui subdomain sekolah" : "Fitur belum tersedia"}</h1><p className="mt-4 leading-7 text-slate-300">{schoolLogin ? "Gunakan alamat login sekolah Anda. Hubungi admin sekolah jika belum mengetahui alamatnya." : "Layanan ini sedang disiapkan dan belum menerima data. Silakan kembali ke halaman utama."}</p><Link className="mt-8 inline-block text-amber-300 underline" to="/">Kembali ke beranda</Link></div></main>;
 }
 
 function MasterLogin() {
@@ -96,6 +96,33 @@ function MasterHome() {
   return <MasterDashboard name={name || "Master Admin"} error={error} onLogout={logout} />;
 }
 
-export default function App() {
+function AppRoutes() {
   return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
+}
+
+export default function App() {
+  const hostname = window.location.hostname.toLowerCase();
+  const mainDomain = hostname === "rsch.my.id" || hostname === "www.rsch.my.id";
+  const schoolDomain = !mainDomain && hostname.endsWith(".rsch.my.id");
+  const [status, setStatus] = useState<"loading" | "ready" | "missing" | "error">(schoolDomain ? "loading" : "ready");
+  useEffect(() => {
+    if (!schoolDomain) return;
+    const controller = new AbortController();
+    fetch("/api/tenant/context", { signal: controller.signal }).then(async (response) => {
+      if (response.status === 404) { setStatus("missing"); return; }
+      if (!response.ok) throw new Error("Gagal memeriksa sekolah.");
+      const data: unknown = await response.json();
+      if (typeof data !== "object" || data === null || !("kind" in data) || data.kind !== "school") throw new Error("Respons sekolah tidak valid.");
+      setStatus("ready");
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) { console.error("Gagal memeriksa sekolah:", error); setStatus("error"); }
+    });
+    return () => controller.abort();
+  }, [schoolDomain]);
+  if (status === "loading") return <main className="glass-shell flex min-h-screen items-center justify-center p-6">Memeriksa sekolah...</main>;
+  if (status === "missing") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md rounded-3xl p-6"><h1 className="text-2xl font-bold">Sekolah / Lembaga Tidak Terdaftar (404)</h1><p className="mt-4 text-sm">Sekolah tidak ditemukan atau tidak aktif.</p><a className="master-primary mt-5 inline-block" href="https://rsch.my.id">Kembali ke domain utama</a></div></main>;
+  if (status === "error") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><p role="alert">Layanan sekolah tidak tersedia. Coba muat ulang halaman.</p></main>;
+  if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  if (schoolDomain) return <Routes><Route path="/" element={<Navigate to="/login" replace />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  return <AppRoutes />;
 }

@@ -1,0 +1,2 @@
+ALTER TABLE "Kelas" ALTER COLUMN "waliGuruId" DROP NOT NULL;
+ALTER TABLE "Sekolah" ADD COLUMN "kelasStandarDibuat" BOOLEAN NOT NULL DEFAULT false;

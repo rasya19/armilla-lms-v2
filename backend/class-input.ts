@@ -4,10 +4,10 @@ function object(input: unknown): Record<string, unknown> | null {
 
 export function parseClass(input: unknown) {
   const data = object(input);
-  if (!data || typeof data.nama !== "string" || typeof data.waliGuruId !== "string") return null;
+  if (!data || typeof data.nama !== "string" || (data.waliGuruId !== null && typeof data.waliGuruId !== "string")) return null;
   const nama = data.nama.trim();
-  const waliGuruId = data.waliGuruId.trim();
-  if (nama.length < 1 || nama.length > 100 || !waliGuruId || waliGuruId.length > 100) return null;
+  const waliGuruId = typeof data.waliGuruId === "string" ? data.waliGuruId.trim() : null;
+  if (nama.length < 1 || nama.length > 100 || (waliGuruId !== null && (!waliGuruId || waliGuruId.length > 100))) return null;
   return { nama, waliGuruId };
 }
 

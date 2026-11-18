@@ -28,8 +28,11 @@ export function httpSecurity(options: { production: boolean; origin?: string }):
       if (origin) {
         try {
           const parsed = new URL(origin);
+          const schoolOrigin = parsed.protocol === "https:" && !parsed.port && parsed.host === req.get("host") &&
+            (parsed.hostname === "www.rsch.my.id" ||
+              /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.rsch\.my\.id$/.test(parsed.hostname));
           if (parsed.origin !== origin || !["http:", "https:"].includes(parsed.protocol) ||
-            (options.production ? origin !== options.origin : parsed.host !== req.get("host"))) {
+            (options.production ? (origin !== options.origin && !schoolOrigin) || parsed.host !== req.get("host") : parsed.host !== req.get("host"))) {
             return res.status(403).json({ error: "Permintaan ditolak." });
           }
 

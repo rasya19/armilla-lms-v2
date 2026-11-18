@@ -10,13 +10,9 @@ Keduanya dapat dijalankan bersama atau terpisah, dan dibangun terpisah.
 Pemisahan ini tidak menjamin kompatibilitas API jika kontraknya diubah;
 frontend tetap membutuhkan backend untuk data nyata.
 
-**Belum siap produksi:** akses master memakai akun database, sesi, dan
-pembatas login terpusat, tetapi login sekolah, PPDB dan pembelajaran belum siap.
-Akses master dan pendaftaran sekolah diaktifkan untuk pengujian produksi;
-deployment dan operasional masih memerlukan pengujian lebih lanjut.
-Rute dan API lama dinonaktifkan. Jangan masukkan data sungguhan sebelum
-implementasi dan pengujian selesai.
-Data contoh lokal dan komponen prototipe yang tidak dipakai telah dihapus.
+Login sekolah, guru, siswa, PPDB dan pembelajaran tersedia tanpa flag.
+Kesiapan produksi tetap memerlukan verifikasi deployment, isolasi tenant,
+integrasi Admin, keamanan, backup, dan pemantauan pada lingkungan sebenarnya.
 
 ### Fitur sekolah dan LMS di deployment produksi
 
@@ -31,6 +27,49 @@ produksi dibatasi lima permintaan per IP per jam secara terpusat.
 Password belum dikirim melalui email/WhatsApp dan reset mandiri admin sekolah
 belum tersedia. Jika kredensial awal hilang, jangan mengulang provisioning
 secara buta; gunakan prosedur reset lokal di bawah untuk database uji.
+
+Admin sekolah dapat mengedit guru dan siswa serta menonaktifkan atau
+mengaktifkannya kembali. Penonaktifan mempertahankan data dan riwayat,
+mengakhiri sesi, dan mencegah login selama status tidak aktif. Perubahan data
+juga mengakhiri sesi akun terkait; perubahan email guru memperbarui email
+login akun. Kelas, mata pelajaran, dan tahun ajaran hanya dapat dihapus jika
+tidak digunakan oleh data terkait. Perubahan atau penghapusan jadwal dapat
+mengubah akses guru untuk mereset password siswa.
+
+### Ruang KBM
+
+Admin dan guru dapat membuka kelas sekolahnya melalui Ruang KBM; siswa hanya
+dapat membuka kelas tempat ia terdaftar. Materi dan tugas dapat disaring per
+mapel terjadwal. Guru dapat melihat konten kelas, tetapi hanya pembuat tugas
+yang dapat memeriksa dan memberi nilai. Konfirmasi hadir siswa mencatat
+presensi harian tanpa menimpa presensi yang sudah ada dan memerlukan tepat
+satu tahun ajaran aktif. Jika siswa belum ditempatkan, admin perlu menempatkan
+siswa di Manajemen Kelas terlebih dahulu.
+
+### Tema sekolah terpusat
+
+Tema sekolah berasal dari `Sekolah.themeKey`: `ocean`, `emerald`, `sunset`,
+atau `dark`. Dashboard sekolah dan LMS memuatnya melalui
+`GET /api/tenant/theme?scope=sekolah|lms` menggunakan sesi yang sesuai.
+Perubahan tema terlihat setelah halaman dimuat ulang; jika pembacaan gagal,
+pengguna diberi peringatan dan tampilan sementara memakai Ocean.
+
+Setelah migrasi tema diterapkan pada database yang tepat, Rasyatech Admin
+dapat menggunakan `PATCH /api/internal/tenant-theme` dengan bearer token
+`MASTER_PROVISION_SECRET` dan salah satu bentuk JSON berikut:
+
+```json
+{"sekolahId":"id-sekolah","themeKey":"emerald"}
+{"npsn":"P1234567","themeKey":"dark"}
+{"applyToAll":true,"themeKey":"sunset"}
+```
+
+`applyToAll` memperbarui semua sekolah, termasuk yang nonaktif atau kedaluwarsa.
+Respons berisi jumlah sekolah yang diperbarui. Server juga menyediakan
+`GET /api/internal/tenant-theme?npsn=P1234567` dengan autentikasi yang sama.
+Endpoint internal hanya untuk komunikasi antar-server; jangan menaruh token
+di frontend. Migrasi harus ditinjau dan diterapkan melalui prosedur deployment
+sebelum endpoint tema dapat mengakses kolom tersebut.
 
 ## Akun master admin
 
@@ -54,7 +93,7 @@ Dashboard menampilkan jumlah sekolah dan akun admin sekolah yang tercatat.
 Menu Kelola Tenant menampilkan daftar sekolah tersimpan, tetapi belum dapat
 menambah, mengubah, menghapus, atau mengaktifkan sekolah. Menu pengelolaan
 lainnya belum tersedia dan belum terhubung ke data.
-Untuk pengujian lokal, Admin Sekolah dan Guru dapat mengganti password dari
+Admin Sekolah dan Guru dapat mengganti password dari
 halaman masing-masing dengan memasukkan password saat ini. Setelah berhasil,
 semua sesi akun berakhir dan pengguna harus masuk kembali. Master Admin tidak
 termasuk karena pengelolaan akunnya akan dipindahkan ke Rasyatech Admin; alur
@@ -64,30 +103,36 @@ Formulir `/daftar` meneruskan pendaftaran LMS ke antrean tenant Rasyatech Admin.
 Verifikasi dan aktivasi dilakukan dari Rasyatech Admin, bukan dari menu LMS.
 Setelah provisioning berhasil, LMS membuat sekolah dan akun admin lalu menautkan
 pendaftaran. Akun hanya dibuat sesudah persetujuan; undangan SMTP belum tersedia.
-Integrasi end-to-end ini ditujukan untuk pengujian lokal dan belum siap produksi.
+Integrasi end-to-end perlu diverifikasi pada lingkungan deployment yang digunakan.
 Master Admin LMS dapat menghapus pendaftaran beserta sekolah dan akun admin LMS
 yang terhubung, hanya jika sekolah tidak memiliki data terkait. Penghapusan ini
 tidak menghapus tenant di Rasyatech Admin dan memerlukan konfirmasi.
-Pendaftaran dibatasi lima permintaan per IP per jam di PostgreSQL, termasuk
+Pendaftaran dibatasi lima permintaan per IP per lima menit di PostgreSQL, termasuk
 permintaan tidak valid; IP disimpan sebagai HMAC. Di Vercel diperlukan alamat
 IP dari `x-vercel-forwarded-for`; bila IP atau database tidak tersedia,
 permintaan ditolak. Respons kesalahan dapat berisi kode dan ID referensi
 untuk dicocokkan dengan log Vercel tanpa menampilkan detail database.
 
-### Integrasi provisioning internal (khusus uji)
+### Integrasi provisioning internal
 
-Pembuatan tenant melalui provisioning tersedia tanpa flag di produksi, tetapi
-integrasi ini **belum siap produksi** dan memerlukan bearer token. Health-check
-produksi memerlukan `LMS_ENABLE_PROVISIONING_TEST=true`; endpoint perubahan
-status tetap ditolak. Provisioning membuat sekolah dan akun di database yang
-terhubung; gunakan database dan data uji, serta batasi akses.
-Terapkan migrasi pada database uji yang tepat dengan `npm run db:migrate:deploy`,
+Pembuatan tenant, health-check, dan perubahan status tersedia tanpa flag dan
+memerlukan bearer token. Provisioning membuat sekolah dan akun di database yang
+terhubung. Terapkan migrasi pada database yang tepat dengan `npm run db:migrate:deploy`,
 lalu atur `MASTER_PROVISION_SECRET` sebagai token acak yang panjang dan unik
 serta `APP_ORIGIN` sebagai origin aplikasi tanpa slash penutup, misalnya
 `http://localhost:3000` untuk uji lokal atau origin HTTPS. Atur keduanya hanya
 di environment backend, jangan di frontend, repositori, atau log. Backend lokal
 default hanya mendengarkan loopback. Untuk komunikasi antar-host gunakan TLS,
 jaringan privat, dan batasi akses; jangan mengekspos token atau password.
+
+Pengelolaan tema memakai migration `20261121000000_tenant_theme`. Endpoint
+internal `GET /api/internal/tenant-theme?npsn=...` membaca tema sekolah;
+`PATCH /api/internal/tenant-theme` menerima `npsn` dan `themeKey`, atau
+`applyToAll: true` dan `themeKey`. Rollout massal hanya mengubah sekolah
+berstatus ACTIVE yang belum kedaluwarsa (atau tanpa tanggal kedaluwarsa).
+`GET /api/internal/tenant-theme/capabilities` menyatakan batas rollout ini
+untuk pemeriksaan kompatibilitas Master Admin. Semua endpoint tersebut
+memerlukan bearer `MASTER_PROVISION_SECRET` dan hanya untuk antar-server.
 
 ### Integrasi pendaftaran LMS ke Rasyatech Admin (uji lokal)
 
@@ -101,15 +146,9 @@ MASTER_ADMIN_REGISTRATION_URL=http://127.0.0.1:3100/api/lms-registrations
 MASTER_ADMIN_REGISTRATION_TOKEN=<token-yang-sama-dengan-LMS_REGISTRATION_TOKEN>
 ```
 
-Untuk pengujian sementara, batas pendaftaran di Vercel Preview dan Production
-adalah 5 permintaan per IP per 5 menit. Kembalikan batas Production ke 5
-permintaan per IP per jam setelah pengujian selesai dan deploy ulang.
-Batas Preview terpisah dari Production, tetapi gunakan database dan Rasyatech Admin uji yang
-terpisah agar data uji tidak masuk ke layanan produksi. Aktifkan eksposur
-system environment variables Vercel agar `VERCEL_ENV` tersedia, dan atur
-`APP_ORIGIN` Preview ke origin HTTPS yang tepat (URL preview dinamis tidak
-otomatis cocok). Preview harus digunakan melalui URL deployment Preview,
-bukan domain Production.
+Batas Preview terpisah dari Production; gunakan database dan Rasyatech Admin uji
+yang terpisah agar data uji tidak masuk ke layanan produksi. Aktifkan eksposur
+system environment variables Vercel agar `VERCEL_ENV` tersedia.
 
 Jangan gunakan token `MASTER_PROVISION_SECRET` untuk integrasi ini. Token itu
 tetap khusus webhook provisioning pada gambar: `LMS_WEBHOOK_URL` di Rasyatech
@@ -136,7 +175,7 @@ Portal mengirim `Authorization: Bearer <MASTER_PROVISION_SECRET>` dan JSON ke
 {
   "institutionName": "Sekolah Uji",
   "npsn": "P1234567",
-  "subdomain": "sekolah-uji",
+  "subdomain": "sekolahuji",
   "adminName": "Admin Uji",
   "adminEmail": "admin@example.invalid",
   "adminPhone": "08123456789",
@@ -145,17 +184,19 @@ Portal mengirim `Authorization: Bearer <MASTER_PROVISION_SECRET>` dan JSON ke
 }
 ```
 
-`subdomain` disimpan sebagai slug saja, bukan domain yang otomatis diarahkan.
+`subdomain` harus 1–63 huruf kecil atau angka tanpa spasi/strip, dan bukan
+`www`; Rasyatech Admin harus mengirim slug dalam format ini. Slug lama yang
+memakai strip tetap dapat digunakan. DNS dan domain wildcard perlu dikonfigurasi
+secara terpisah.
 `expiresAt` wajib timestamp UTC ISO 8601 (`Z`, detik dan opsional tiga digit
 milidetik) dan harus di masa depan. Respons 201 berisi `success`, `tenantId`,
-`loginUrl` (login bersama `APP_ORIGIN/login`), `initialUsername`, dan
+`loginUrl` (`https://<subdomain>.rsch.my.id/login`), `initialUsername`, dan
 `temporaryPassword`. Password hanya ditampilkan dalam respons tersebut;
 simpan dan sampaikan melalui kanal aman. Akun admin sekolah saat ini belum
-memiliki alur wajib ganti/reset mandiri, jadi kredensial ini hanya untuk uji.
-`GET /api/internal/health` memakai autentikasi yang sama dan hanya untuk menguji
-koneksi; health-check produksi memerlukan flag uji yang dijelaskan di atas.
+memiliki alur wajib ganti/reset mandiri; admin dapat mengganti password setelah masuk.
+`GET /api/internal/health` memakai autentikasi yang sama.
 NPSN, slug, dan email admin harus unik; duplikasi menghasilkan 409. Provisioning
-tidak otomatis menautkan atau mengubah pendaftaran yang sudah ada, dan tidak
+menautkan pendaftaran LMS berstatus menunggu dengan NPSN yang sama, dan tidak
 membuat invoice. Bila respons hilang setelah transaksi berhasil, jangan ulangi
 secara buta: periksa tenant terlebih dahulu; password awal tidak dapat dipulihkan,
 tetapi akun admin sekolah uji dapat direset melalui terminal seperti di bawah.
@@ -184,17 +225,40 @@ ulang. Database yang dikonfigurasi dapat dipakai bersama deployment lain:
 periksa terlebih dahulu agar tidak mengubah database yang salah. Perintah
 menolak `NODE_ENV=production` dan bukan fitur reset email/WhatsApp.
 
-Daftar siswa, guru, dan PPDB dibatasi berdasarkan sekolah akun. Impor siswa
-tersedia untuk uji lokal melalui Data Siswa: pilih file `.xlsx` berukuran
-maksimal 3 MB dengan satu sheet, header pada baris pertama dan maksimal 500
-baris. Pilih pemetaan kolom dan periksa pratinjau sebelum menyimpan. Hanya
-NISN, nama, email, dan telepon diimpor; format ekspor Dapodik belum diverifikasi
-dengan contoh ekspor asli. NISN wajib 10 angka, termasuk nol awal (gunakan teks
-atau format angka Excel yang mempertahankan nol). NISN yang sama dalam sekolah
+Dashboard admin menampilkan jumlah siswa aktif, guru aktif, kelas, serta status
+pendaftar PPDB berdasarkan sekolah akun. Statistik rata-rata nilai pada
+dashboard belum tersedia. Sidebar menyediakan akses ke data
+sekolah dan penggantian password; menu yang belum terhubung disembunyikan.
+Monitoring materi dan tugas untuk admin belum tersedia. Daftar siswa, guru, dan PPDB dibatasi
+berdasarkan sekolah akun. Data Siswa menyediakan penambahan dan pengeditan
+manual identitas, kontak, kelahiran, alamat, orang tua, jenjang dan pendaftaran.
+Nama dan NISN wajib; NISN yang sudah terdaftar ditolak saat penambahan.
+Form juga menyimpan nama, telepon dan pekerjaan ayah, ibu dan wali; kelas awal
+opsional dipilih dari kelas sekolah sendiri sesuai paket: A kelas 1–6, B kelas
+7–9 dan C kelas 10–12. Pilihan kelas dikenali dari nomor dan, jika ada, nama
+paket pada nama kelas. Kelas siswa aktif dapat diubah dari form edit siswa atau
+Manajemen Kelas; perubahan mengganti kelas sebelumnya tanpa menyimpan riwayat.
+Siswa baru berstatus Aktif tanpa akun.
+Kolom keluarga dan kelas standar memerlukan migrasi database
+`20261119000000_student_family_details` dan `20261120000000_standard_classes`
+sebelum backend baru dijalankan. Periksa target database sebelum menjalankan
+`npm run db:migrate:deploy`; database Neon dapat digunakan bersama lingkungan lain.
+Impor siswa tersedia melalui
+Data Siswa: pilih file `.xlsx` maksimal 3 MB dengan satu sheet dan maksimal 500
+baris siswa. Format unduhan Daftar Peserta Didik Dapodik dengan dua baris
+header didukung. Pilih pemetaan kolom dan periksa seluruh pratinjau; HP dipilih
+sebagai telepon bila kolom HP dan Telepon sama-sama ada. Tanggal harus
+berformat YYYY-MM-DD. Kolom yang didukung adalah NISN, nama, NIK, jenis
+kelamin (L/P), tempat dan tanggal lahir, alamat, nama ayah dan ibu, telepon,
+email, jenjang, tanggal masuk dan jalur pendaftaran. Kolom lain, termasuk
+RT/RW, wilayah dan rombel, tidak disimpan; alamat hanya berasal dari kolom
+Alamat yang dipilih. NISN wajib 10 angka, termasuk nol awal (gunakan teks
+atau format angka Excel yang mempertahankan nol); baris tanpa NISN dilewati
+dan ditampilkan agar dapat dilengkapi dan diimpor kemudian. NISN yang sama dalam sekolah
 yang sama diperbarui, sel kosong tidak menghapus data lama. Jika NISN ada di
 sekolah lain atau tanpa sekolah, seluruh impor dibatalkan. Kelas tidak diimpor;
 siswa baru tanpa email, telepon, atau kelas disimpan kosong dengan status Aktif.
-Menu guru menyediakan penambahan data untuk uji lokal; NUPTK opsional.
+Menu guru menyediakan penambahan data; NUPTK opsional.
 Admin sekolah dapat membuat akun untuk siswa dan guru aktif pada daftar masing-masing.
 Siswa login di `/lms/login` dengan NISN dan guru dengan email. Saat pembuatan
 akun, password sementara acak ditampilkan sekali kepada admin sekolah, yang
@@ -203,17 +267,29 @@ Admin sekolah dapat mereset password guru atau siswa di sekolahnya jika hilang;
 password baru ditampilkan sekali dan sesi lama dicabut. Password wajib diganti
 dengan password berbeda (minimal 6 karakter); setelah perubahan semua sesi
 akun dicabut dan pengguna harus login kembali. Akun lama yang masih memakai
-`123456` tidak otomatis berubah dan perlu direset. Fitur LMS dan pembuatan akun
-tetap eksperimental meskipun dapat diakses di produksi.
+`123456` tidak otomatis berubah dan perlu direset.
 Guru yang sudah mengganti password awal dapat mencari siswa berdasarkan NISN
-dan mereset password ke password sementara acak untuk uji lokal.
+dan mereset password ke password sementara acak.
 Reset hanya diizinkan untuk siswa aktif berakun dalam kelas yang guru tersebut
 ajar menurut jadwal pada tahun ajaran aktif (tanggal Jakarta), di sekolah
 yang sama. Semua sesi siswa dicabut dan siswa wajib mengganti password lagi.
-Menu Kelas menyediakan penambahan dan perubahan kelas dengan wali guru aktif,
-serta penempatan atau pemindahan siswa aktif berdasarkan NISN. Saat ini siswa
-hanya memiliki satu kelas dan perubahan tidak menyimpan riwayat kelas; wali
-kelas tidak otomatis memperoleh izin reset. Impor siswa belum menetapkan kelas.
+Saat Data Siswa atau Manajemen Kelas dibuka pertama kali, sistem menyiapkan kelas
+standar 1–12 untuk sekolah tersebut tanpa wali; wali guru aktif dapat ditentukan
+kemudian. Kelas bernama tepat `Kelas 9` atau `Paket B Kelas 9`, misalnya, digunakan
+kembali; jika keduanya ada, ubah nama yang duplikat sebelum menyiapkan kelas
+standar. Kelas yang dihapus setelah penyiapan tidak dibuat kembali otomatis.
+Penempatan massal tersedia di Manajemen Kelas dan Data Siswa, dengan pencarian
+dan filter di server. Pemilihan hanya mencakup siswa aktif pada halaman yang
+terlihat (maksimal 25 siswa). Satu penempatan massal bersifat atomik dan
+memeriksa sekolah serta kelas asal; jika koneksi terputus, periksa daftar sebelum
+mencoba kembali. Saat ini siswa hanya memiliki satu kelas dan perubahan tidak
+menyimpan riwayat kelas; wali kelas tidak otomatis memperoleh izin reset. Impor
+siswa belum menetapkan kelas.
+Tab Kenaikan Kelas Massal menampilkan siswa aktif di kelas asal dan memindahkan
+siswa terpilih satu per satu menggunakan pemeriksaan kelas asal. Proses bukan
+transaksi massal: jika satu permintaan gagal atau koneksi terputus, proses
+berhenti dan hasilnya harus diperiksa sebelum mencoba kembali. Perpindahan tidak
+menyimpan riwayat; jangan tutup halaman selama proses berlangsung.
 Menu Tahun & Jadwal menyediakan tahun ajaran dan semester, mata pelajaran dan
 KKM, serta penambahan dan penghapusan jadwal guru. Tahun ajaran aktif ditentukan
 tanggal mulai dan selesai secara inklusif di zona Jakarta, bukan toggle; periode
@@ -238,22 +314,23 @@ perubahan jawaban, dan riwayat kelas belum tersedia.
 Bentrok waktu belum dicek otomatis, dan jadwal yang salah dikoreksi dengan
 menghapus lalu membuat ulang. Pengaturan kelas dibatasi hingga 500 kelas dan
 500 guru aktif; akademik hingga 500 tahun, mapel, kelas, dan guru aktif serta
-2000 jadwal per sekolah untuk uji lokal. Menu PPDB menampilkan tautan pendaftaran
+2000 jadwal per sekolah. Menu PPDB menampilkan tautan pendaftaran
 khusus sekolah; admin dapat menerima atau menolak pendaftar. Persetujuan hanya
 mencatat keputusan, belum membuat siswa maupun akun, dan belum mengirim
 pemberitahuan. Tautan localhost hanya bisa digunakan di komputer tersebut.
 Fitur KBM lainnya, perubahan manual data, dan pengiriman undangan
-belum tersedia. Login dan data sekolah ditolak dalam mode produksi; jangan
-gunakan data asli sampai seluruh alur dan isolasi tenant selesai diuji.
+belum tersedia.
 
 Sesi memakai cookie HttpOnly dan penyimpanan hash token di database. Saat
 `NODE_ENV=production`, cookie memerlukan HTTPS. Deploy harus menggunakan HTTPS
 dan reverse proxy dengan host asal yang sama, membatasi percobaan login di
 proxy secara terpusat, dan menjalani peninjauan keamanan sebelum publikasi.
 Backend produksi wajib mengatur `APP_ORIGIN` sebagai origin HTTPS publik yang
-persis, misalnya `https://lms.example.com`, tanpa slash penutup, path, atau
+persis, misalnya `https://rsch.my.id`, tanpa slash penutup, path, atau
 query. Backend menolak startup jika konfigurasi ini tidak valid dan menolak
-permintaan POST/PUT/PATCH/DELETE tanpa header `Origin` yang cocok. Klien
+permintaan POST/PUT/PATCH/DELETE tanpa header `Origin` yang cocok. Subdomain
+`*.rsch.my.id` juga diizinkan melalui HTTPS hanya jika Origin sama dengan host
+request; akses API lintas subdomain tidak didukung. Klien
 non-browser juga harus mengirim header tersebut. Origin bukan autentikasi;
 server tetap memeriksa sesi. Jangan mempercayai header proxy dari internet
 secara langsung. Atur keamanan HTTPS/HSTS, header halaman frontend, dan
@@ -277,7 +354,7 @@ mengandalkan header yang diberikan Vercel; jangan mengekspos backend langsung
 atau menambahkan proxy yang tidak tepercaya. Saat lokal pembatas juga memakai
 PostgreSQL tetapi kunci acak berganti setiap server dimulai.
 
-## Persiapan Vercel (belum siap produksi)
+## Persiapan Vercel
 
 Konfigurasi di root disiapkan untuk satu proyek: frontend Vite, satu function
 Express untuk `/api/*`, dan fallback SPA. Atur Root Directory ke root proyek,
@@ -288,7 +365,12 @@ Variables Vercel atur `DATABASE_URL` (pooled), `DIRECT_URL` (migrasi),
 di terminal lokal dengan `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 dan simpan langsung di pengaturan Vercel, jangan bagikan lewat chat. Setiap
 environment yang dapat diakses publik harus punya konfigurasi dan origin yang
-sesuai; preview URL dinamis tidak otomatis cocok dengan `APP_ORIGIN`.
+sesuai. API hanya menerima host `rsch.my.id`, `www.rsch.my.id`, dan subdomain
+sekolah yang terdaftar; URL Vercel Preview standar tidak didukung.
+Tambahkan domain utama dan wildcard `*.rsch.my.id` ke proyek Vercel,
+konfigurasi DNS wildcard sesuai petunjuk Vercel, dan pastikan sertifikat HTTPS
+aktif untuk domain utama dan subdomain. Verifikasi setiap langkah pada akun
+Vercel dan penyedia DNS sebelum digunakan.
 Jangan masukkan kredensial ke variabel `VITE_`.
 Setelah mengubah environment variable, redeploy agar function menggunakan
 nilai terbaru. Jika startup gagal karena konfigurasi, API mengembalikan HTTP
@@ -304,10 +386,8 @@ Migrasi baru menambahkan tabel `LoginRateLimit`; jalankan migrasi dengan
 Build Vercel tidak menjalankan migrasi. Jika menggunakan satu database untuk uji
 dan produksi, pengujian dan migrasi memengaruhi database yang sama; buat backup
 dan jangan gunakan data sungguhan sebelum siap. Konfigurasi ini belum diuji
-melalui deployment Vercel nyata. Endpoint sekolah, PPDB dan LMS tetap
-ditolak dalam mode produksi; master dan pendaftaran sekolah diaktifkan untuk uji.
-Jangan hapus pembatas lain sebelum pengujian end-to-end,
-keamanan multi-tenant, audit, pemantauan, backup, dan deployment selesai.
+melalui deployment Vercel nyata; pengujian end-to-end, audit keamanan
+multi-tenant, pemantauan, dan backup tetap diperlukan.
 
 ## Menjalankan lokal
 

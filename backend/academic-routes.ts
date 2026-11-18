@@ -1,15 +1,16 @@
 import { Router } from "express";
+import type { Request } from "express";
 import { randomBytes } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { parseAcademicYear, parseSchedule, parseSubject } from "./academic-input.js";
 
-export function academicRoutes(schoolForCookie: (cookie: string | undefined) => Promise<string | null>) {
+export function academicRoutes(schoolForRequest: (req: Request) => Promise<string | null>) {
   const router = Router();
 
   router.use(async (req, res, next) => {
     try {
-      const sekolahId = await schoolForCookie(req.headers.cookie);
+      const sekolahId = await schoolForRequest(req);
       if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
       res.locals.sekolahId = sekolahId;
       next();
@@ -29,7 +30,7 @@ export function academicRoutes(schoolForCookie: (cookie: string | undefined) => 
         prisma.guru.findMany({ where: { sekolahId, status: "Aktif" }, select: { id: true, nama: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 }),
         prisma.jadwalPelajaran.findMany({ where: { sekolahId }, select: { id: true, tahunAjaranId: true, kelasId: true, mapelId: true, guruId: true, hari: true, jamMulai: true, jamSelesai: true }, orderBy: [{ hari: "asc" }, { jamMulai: "asc" }, { id: "asc" }], take: 2001 }),
       ]);
-      if (tahun.length > 500 || mapel.length > 500 || kelas.length > 500 || guru.length > 500 || jadwal.length > 2000) return res.status(409).json({ error: "Batas data akademik untuk uji lokal terlampaui." });
+      if (tahun.length > 500 || mapel.length > 500 || kelas.length > 500 || guru.length > 500 || jadwal.length > 2000) return res.status(409).json({ error: "Batas data akademik terlampaui." });
       return res.json({ tahun, mapel, kelas, guru, jadwal });
     } catch (error) {
       console.error("Gagal memuat data akademik:", error);
@@ -70,6 +71,18 @@ export function academicRoutes(schoolForCookie: (cookie: string | undefined) => 
     }
   });
 
+  router.delete("/tahun/:id", async (req, res) => {
+    try {
+      const result = await prisma.tahunAjaran.deleteMany({ where: { id: req.params.id, sekolahId: res.locals.sekolahId } });
+      if (!result.count) return res.status(404).json({ error: "Tahun ajaran tidak ditemukan." });
+      return res.json({ message: "Tahun ajaran dihapus." });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2003" || error.code === "P2014")) return res.status(409).json({ error: "Tahun ajaran masih digunakan data akademik dan tidak dapat dihapus." });
+      console.error("Gagal menghapus tahun ajaran:", error);
+      return res.status(503).json({ error: "Tahun ajaran belum dapat dihapus." });
+    }
+  });
+
   router.post("/mapel", async (req, res) => {
     const data = parseSubject(req.body);
     if (!data) return res.status(400).json({ error: "Periksa nama mata pelajaran dan KKM (0–100)." });
@@ -101,6 +114,26 @@ export function academicRoutes(schoolForCookie: (cookie: string | undefined) => 
     }
   });
 
+  router.delete("/mapel/:id", async (req, res) => {
+    try {
+      const sekolahId: string = res.locals.sekolahId;
+      const result = await prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Mapel" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
+        if (!locked.length) return "missing";
+        if (await tx.nilai.count({ where: { mapelId: req.params.id } })) return "used";
+        await tx.mapel.deleteMany({ where: { id: req.params.id, sekolahId } });
+        return "deleted";
+      });
+      if (result === "missing") return res.status(404).json({ error: "Mata pelajaran tidak ditemukan." });
+      if (result === "used") return res.status(409).json({ error: "Mata pelajaran masih digunakan data nilai dan tidak dapat dihapus." });
+      return res.json({ message: "Mata pelajaran dihapus." });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2003" || error.code === "P2014")) return res.status(409).json({ error: "Mata pelajaran masih digunakan data akademik dan tidak dapat dihapus." });
+      console.error("Gagal menghapus mata pelajaran:", error);
+      return res.status(503).json({ error: "Mata pelajaran belum dapat dihapus." });
+    }
+  });
+
   router.post("/jadwal", async (req, res) => {
     const data = parseSchedule(req.body);
     if (!data) return res.status(400).json({ error: "Periksa tahun ajaran, kelas, guru, mata pelajaran, hari, dan jam." });
@@ -126,6 +159,33 @@ export function academicRoutes(schoolForCookie: (cookie: string | undefined) => 
       if (error instanceof Error && error.message === "DUPLICATE") return res.status(409).json({ error: "Jadwal yang sama sudah ada." });
       console.error("Gagal menyimpan jadwal:", error);
       return res.status(503).json({ error: "Jadwal belum dapat disimpan." });
+    }
+  });
+
+  router.patch("/jadwal/:id", async (req, res) => {
+    const data = parseSchedule(req.body);
+    if (!data) return res.status(400).json({ error: "Periksa tahun ajaran, kelas, guru, mata pelajaran, hari, dan jam." });
+    try {
+      const sekolahId: string = res.locals.sekolahId;
+      const result = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "Sekolah" WHERE "id" = ${sekolahId} FOR UPDATE`;
+        const [year, klass, subject, teacher] = await Promise.all([
+          tx.tahunAjaran.findFirst({ where: { id: data.tahunAjaranId, sekolahId }, select: { id: true } }),
+          tx.kelas.findFirst({ where: { id: data.kelasId, sekolahId }, select: { id: true } }),
+          tx.mapel.findFirst({ where: { id: data.mapelId, sekolahId }, select: { id: true } }),
+          tx.guru.findFirst({ where: { id: data.guruId, sekolahId, status: "Aktif" }, select: { id: true } }),
+        ]);
+        if (!year || !klass || !subject || !teacher) throw new Error("INVALID_REFERENCE");
+        if (await tx.jadwalPelajaran.findFirst({ where: { ...data, sekolahId, id: { not: req.params.id } }, select: { id: true } })) throw new Error("DUPLICATE");
+        return tx.jadwalPelajaran.updateMany({ where: { id: req.params.id, sekolahId }, data });
+      });
+      if (!result.count) return res.status(404).json({ error: "Jadwal tidak ditemukan." });
+      return res.json({ message: "Jadwal diperbarui." });
+    } catch (error) {
+      if (error instanceof Error && error.message === "INVALID_REFERENCE") return res.status(400).json({ error: "Data akademik atau guru aktif tidak ditemukan di sekolah ini." });
+      if (error instanceof Error && error.message === "DUPLICATE") return res.status(409).json({ error: "Jadwal yang sama sudah ada." });
+      console.error("Gagal memperbarui jadwal:", error);
+      return res.status(503).json({ error: "Jadwal belum dapat diperbarui." });
     }
   });
 

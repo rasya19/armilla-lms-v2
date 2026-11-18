@@ -24,7 +24,14 @@ model Siswa {
   tanggalMasuk     DateTime?          @db.Date
   jalurPendaftaran String?
   namaAyah         String?
+  teleponAyah      String?
+  pekerjaanAyah    String?
   namaIbu          String?
+  teleponIbu       String?
+  pekerjaanIbu     String?
+  namaWali         String?
+  teleponWali      String?
+  pekerjaanWali    String?
   alamatLengkap    String?
   akun             Akun?
   pendaftaran      PPDB?
@@ -75,7 +82,7 @@ model Kelas {
   id         String            @id @default(uuid())
   kode       String            @unique
   nama       String
-  waliGuruId String
+  waliGuruId String?
   sekolahId  String?
   sekolah    Sekolah?          @relation(fields: [sekolahId], references: [id])
   jadwal     JadwalPelajaran[]
@@ -192,6 +199,8 @@ model Sekolah {
   status      StatusTenant      @default(ACTIVE)
   expiresAt   DateTime?
   plan        String?
+  kelasStandarDibuat Boolean   @default(false)
+  themeKey    String            @default("ocean")
   adminPhone  String?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt

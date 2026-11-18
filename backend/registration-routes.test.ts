@@ -10,7 +10,7 @@ import { registrationLimitKey, registrationRateLimit, registrationRoutes } from 
 
 const valid = { namaSekolah: "Sekolah Uji", npsn: "P1234567", namaKontak: "Penguji", emailKontak: "test@example.invalid", teleponKontak: "0123456789" };
 const origin = "https://school.example.invalid";
-const headers = { origin, "content-type": "application/json", "x-vercel-forwarded-for": "192.0.2.1" };
+const headers = { origin, "x-test-host": "school.example.invalid", "content-type": "application/json", "x-vercel-forwarded-for": "192.0.2.1" };
 
 test("preview registration limit is isolated and uses a five-minute window", async () => {
   const pool = new Pool();
@@ -49,6 +49,7 @@ test("production registration validates origin and input, saves, and reports saf
   let saved = 0;
   let savedId = "";
   const app = express();
+  app.use((req, _res, next) => { if (req.get("x-test-host")) req.headers.host = req.get("x-test-host"); next(); });
   app.use(httpSecurity({ production: true, origin }));
   app.use(express.json());
   app.use("/api/pendaftaran-sekolah", registrationRoutes({
@@ -110,6 +111,7 @@ test("database saves test registration and enforces a shared limit", { skip: pro
   const limits = [registrationRateLimit(pool, secret), registrationRateLimit(loginPool, secret)];
   const testId = randomUUID();
   const app = express();
+  app.use((req, _res, next) => { if (req.get("x-test-host")) req.headers.host = req.get("x-test-host"); next(); });
   app.use(httpSecurity({ production: true, origin }));
   app.use(express.json());
   app.use("/api/pendaftaran-sekolah", registrationRoutes({

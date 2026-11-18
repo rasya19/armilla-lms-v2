@@ -2,10 +2,11 @@ import { strict as assert } from "node:assert";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { test } from "node:test";
+import express from "express";
 
 test("production master login enforces session, role, origin, and shared failure limits", { skip: process.env.RUN_MASTER_INTEGRATION !== "1", timeout: 120000 }, async () => {
   const secret = randomBytes(32).toString("hex");
-  const origin = "https://master-test.example.invalid";
+  const origin = "https://rsch.my.id";
   const ip = "192.0.2.78";
   const id = randomUUID();
   const adminId = randomUUID();
@@ -25,19 +26,19 @@ test("production master login enforces session, role, origin, and shared failure
   const { default: app } = await import("./server.js");
   const originalRandom = Math.random;
   Math.random = () => 1;
-  const server = app.listen(0, "127.0.0.1");
+  const server = express().use((req, _res, next) => { if (req.get("x-test-host")) req.headers.host = req.get("x-test-host"); next(); }).use(app).listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
     const address = server.address();
     assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}`;
-    const headers = { origin, "content-type": "application/json", "x-vercel-forwarded-for": ip };
+    const headers = { origin, "x-test-host": "rsch.my.id", "content-type": "application/json", "x-vercel-forwarded-for": ip };
     const post = (path: string, body: unknown, cookie?: string, customOrigin = origin) => fetch(`${base}${path}`, {
       method: "POST",
       headers: { ...headers, origin: customOrigin, ...(cookie ? { cookie } : {}) },
       body: JSON.stringify(body),
     });
-    const get = (path: string, cookie?: string) => fetch(`${base}${path}`, { headers: cookie ? { cookie } : {} });
+    const get = (path: string, cookie?: string) => fetch(`${base}${path}`, { headers: { "x-test-host": "rsch.my.id", ...(cookie ? { cookie } : {}) } });
     const hash = await hashPassword(password);
     await prisma.akun.create({ data: { id, email, nama: "Test master", peran: "MASTER_ADMIN", passwordHash: hash } });
     await prisma.akun.create({ data: { id: adminId, email: adminEmail, nama: "Test admin", peran: "ADMIN", passwordHash: hash } });

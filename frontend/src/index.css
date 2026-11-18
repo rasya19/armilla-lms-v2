@@ -152,8 +152,71 @@
 .glass-area [class~="bg-[#f7f6f1]"] { background: rgba(231,239,252,.9); }
 .glass-area [class~="bg-amber-50"] { background: rgba(255,251,235,.85); backdrop-filter: blur(16px); }
 .glass-area [class~="bg-[#0c192d]"] { background: linear-gradient(120deg, #1956a4, #5142b4); }
-.glass-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; overflow-y: auto; border-radius: 22px; padding: 24px; color: #1d2d49; }
-.glass-dialog::backdrop { background: rgba(25, 37, 64, .5); backdrop-filter: blur(4px); }
+.glass-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; overflow-y: auto; border: 1px solid rgba(255,255,255,.8); border-radius: 22px; padding: 24px; color: #1d2d49; background: rgba(255,255,255,.94); box-shadow: 0 25px 70px rgba(15,23,42,.25); backdrop-filter: blur(32px); }
+.glass-dialog::backdrop { background: rgba(15, 23, 42, .25); backdrop-filter: blur(4px); }
+.glass-dialog.student-dialog[open] { display: flex; flex-direction: column; width: min(768px, calc(100% - 24px)); height: min(780px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); overflow: hidden; border-radius: 24px; padding: 0; background: rgba(255,255,255,.95); }
+.dashboard-canvas { position: relative; isolation: isolate; background: linear-gradient(135deg, #f8fafc, #eff6ff, #eef2ff); }
+.dashboard-canvas::before { content: ""; position: fixed; z-index: -1; inset: 0; pointer-events: none; background: radial-gradient(circle at 15% 20%, rgba(129,140,248,.42), transparent 34%), radial-gradient(circle at 85% 32%, rgba(34,211,238,.36), transparent 32%), radial-gradient(circle at 52% 85%, rgba(192,132,252,.32), transparent 35%); filter: blur(48px); }
+.dashboard-hero { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; overflow: hidden; border-radius: 20px; padding: 26px; color: white; background: linear-gradient(115deg, #4338ca, #1d4ed8 60%, #063c55); box-shadow: 0 16px 35px rgba(37, 99, 235, .2); }
+.dashboard-hero::after { content: ""; pointer-events: none; position: absolute; right: -35px; top: -110px; width: 250px; height: 250px; border: 35px solid rgba(255,255,255,.09); border-radius: 50%; box-shadow: 0 0 0 35px rgba(255,255,255,.06); }
+.dashboard-hero-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; background: white; padding: 11px 15px; color: #3730a3; font-size: 13px; font-weight: 800; box-shadow: 0 8px 20px rgba(30, 58, 138, .2); }
+.dashboard-hero-action:hover { background: #eef2ff; }
+.dashboard-hero-secondary { border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.2); color: white; backdrop-filter: blur(12px); }
+.dashboard-hero-secondary:hover { background: rgba(255,255,255,.3); }
+.dashboard-glass, .dashboard-header, .dashboard-canvas.glass-area section, .dashboard-canvas.glass-area article { border-color: rgba(255,255,255,.8); background: rgba(255,255,255,.65); box-shadow: 0 8px 32px rgba(31,38,135,.07); backdrop-filter: blur(24px); }
+.dashboard-glass { border: 1px solid rgba(255,255,255,.8); border-radius: 1rem; }
+.dashboard-canvas table tbody tr:hover { background-color: rgba(255,255,255,.7); }
+[data-tenant-theme="ocean"] .dashboard-canvas { background: linear-gradient(135deg, #eefaff, #dceffa, #edf5ff); }
+[data-tenant-theme="ocean"] .dashboard-hero { background: linear-gradient(115deg, #075985, #0369a1 60%, #164e63); }
+[data-tenant-theme="ocean"] .master-primary { background: linear-gradient(120deg, #fbbf24, #f59e0b); color: #422006; }
+[data-tenant-theme="emerald"] .dashboard-canvas { background: linear-gradient(135deg, #ecfdf5, #d7f5eb, #e6fffa); }
+[data-tenant-theme="emerald"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(52,211,153,.4), transparent 34%), radial-gradient(circle at 85% 32%, rgba(45,212,191,.35), transparent 32%), radial-gradient(circle at 52% 85%, rgba(110,231,183,.36), transparent 35%); }
+[data-tenant-theme="emerald"] .dashboard-hero, [data-tenant-theme="emerald"] .master-primary { background: linear-gradient(115deg, #047857, #0f766e 60%, #155e75); }
+[data-tenant-theme="sunset"] .dashboard-canvas { background: linear-gradient(135deg, #faf5ff, #fdf2f8, #fff1ed); }
+[data-tenant-theme="sunset"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(167,139,250,.42), transparent 34%), radial-gradient(circle at 85% 32%, rgba(232,121,249,.36), transparent 32%), radial-gradient(circle at 52% 85%, rgba(251,146,120,.32), transparent 35%); }
+[data-tenant-theme="sunset"] .dashboard-hero, [data-tenant-theme="sunset"] .master-primary { background: linear-gradient(115deg, #6d28d9, #a21caf 60%, #be4557); }
+[data-tenant-theme="dark"] .dashboard-canvas { background: #090d16; color: #e2e8f0; }
+[data-tenant-theme="dark"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(16,185,129,.22), transparent 34%), radial-gradient(circle at 85% 32%, rgba(59,130,246,.2), transparent 32%), radial-gradient(circle at 52% 85%, rgba(245,158,11,.16), transparent 35%); }
+[data-tenant-theme="dark"] .dashboard-hero { background: linear-gradient(115deg, #064e3b, #134e4a 60%, #1e293b); }
+[data-tenant-theme="dark"] .master-primary { background: linear-gradient(120deg, #fbbf24, #f59e0b); color: #422006; }
+[data-tenant-theme="dark"] .dashboard-canvas .dashboard-glass:not(dialog *),
+[data-tenant-theme="dark"] .dashboard-canvas .dashboard-header,
+[data-tenant-theme="dark"] .dashboard-canvas section:not(dialog *),
+[data-tenant-theme="dark"] .dashboard-canvas article:not(dialog *),
+[data-tenant-theme="dark"] .dashboard-canvas form[class*="border"]:not(dialog *) { border-color: rgba(148,163,184,.25); background: rgba(30,41,59,.78); box-shadow: 0 8px 32px rgba(0,0,0,.24); }
+[data-tenant-theme="dark"] .dashboard-canvas :is(.text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500):not(dialog *):not([class*="bg-slate-"]):not([class*="bg-indigo-"]):not([class*="bg-white"]) { color: #e2e8f0; }
+[data-tenant-theme="dark"] .dashboard-canvas :is(.text-indigo-800, .text-indigo-700):not(dialog *):not([class*="bg-indigo-"]):not([class*="bg-white"]) { color: #c7d2fe; }
+[data-tenant-theme="dark"] .dashboard-canvas .text-emerald-700:not(dialog *):not([class*="bg-emerald-"]) { color: #6ee7b7; }
+[data-tenant-theme="dark"] .dashboard-canvas .page-stagger > button { border-color: rgba(148,163,184,.25); background: rgba(30,41,59,.8); }
+[data-tenant-theme="dark"] .dashboard-canvas .bg-white:not(dialog *) { color: #1e293b; }
+[data-tenant-theme="dark"] .dashboard-canvas .bg-white :is(.text-slate-900, .text-slate-800, .text-slate-700, .text-slate-600, .text-slate-500):not(dialog *) { color: #334155; }
+[data-tenant-theme="dark"] .dashboard-canvas table thead { background: #334155; color: #f1f5f9; }
+[data-tenant-theme="dark"] .dashboard-canvas table tbody tr:hover { background: rgba(148,163,184,.15); }
+[data-tenant-theme="dark"] .dashboard-canvas nav[aria-label^="Navigasi bawah"] { background: rgba(15,23,42,.95); border-color: rgba(148,163,184,.25); }
+[data-tenant-theme="dark"] .dashboard-canvas nav[aria-label^="Navigasi bawah"] .text-slate-600 { color: #cbd5e1; }
+[data-tenant-theme="dark"] .dashboard-canvas nav[aria-label^="Navigasi bawah"] .text-indigo-600 { color: #c7d2fe; }
+[data-tenant-theme="dark"] .dashboard-canvas nav[aria-label^="Navigasi bawah"] [class~="bg-indigo-50/80"] { background: #334155; }
+@keyframes pageSlideUp {
+  0% { opacity: 0; transform: translateY(28px) scale(.99); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes pageSlideUpAlternate {
+  0% { opacity: 0; transform: translateY(28px) scale(.99); }
+  100% { opacity: 1; transform: none; }
+}
+.animate-page-enter { animation: pageSlideUp .38s cubic-bezier(.16, 1, .3, 1) both; }
+.animate-page-enter.page-enter-alternate { animation-name: pageSlideUpAlternate; }
+.animate-page-enter .page-stagger, .animate-page-enter .dashboard-glass > table { animation: pageSlideUp .38s cubic-bezier(.16, 1, .3, 1) 70ms both; }
+.animate-page-enter.page-enter-alternate .page-stagger, .animate-page-enter.page-enter-alternate .dashboard-glass > table { animation-name: pageSlideUpAlternate; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-enter, .animate-page-enter.page-enter-alternate,
+  .animate-page-enter .page-stagger, .animate-page-enter.page-enter-alternate .page-stagger,
+  .animate-page-enter .dashboard-glass > table, .animate-page-enter.page-enter-alternate .dashboard-glass > table { animation: none; }
+}
+.dashboard-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.35) transparent; }
+.dashboard-scrollbar::-webkit-scrollbar { width: 5px; }
+.dashboard-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.dashboard-scrollbar::-webkit-scrollbar-thumb { border-radius: 99px; background: rgba(148,163,184,.35); }
 .glass-login-shell { min-height: 100dvh; }
 @media (max-height: 700px) {
   .glass-login-shell { padding-top: 12px; padding-bottom: 12px; }

@@ -1,35 +1,37 @@
 import { useEffect, useState } from "react";
 import { useGlassConfirm } from "./GlassConfirm";
+import { SchoolModal } from "./SchoolModal";
+import { EmptyState } from "./DashboardUI";
 
 type Named = { nama: string };
-type Assignment = { id: string; hari: number; jamMulai: string; jamSelesai: string; kelas: Named; mapel: Named; tahunAjaran: Named & { semester: string } };
+type Assignment = { id: string; hari: number; jamMulai: string; jamSelesai: string; kelas: Named & { id: string }; mapel: Named & { id: string }; tahunAjaran: Named & { semester: string } };
 type Submission = { id: string; jawaban: string | null; tautan: string | null; dikumpulkanPada: string; nilai: number | null; catatanGuru: string | null };
 type StudentSubmission = Submission & { siswa: Named & { nisn: string } };
-type Content = { id: string; judul: string; kelas: Named; mapel: Named; guru: Named; tahunAjaran: Named & { semester: string }; deskripsi?: string | null; tautan?: string | null; instruksi?: string | null; batasWaktu?: string | null; pengumpulan?: Submission[] };
+type Content = { id: string; judul: string; kelas: Named; mapel: Named; guru: Named; tahunAjaran: Named & { semester: string }; deskripsi?: string | null; tautan?: string | null; instruksi?: string | null; batasWaktu?: string | null; pengumpulan?: Submission[]; bisaMenilai?: boolean };
 type Page<T> = { rows: T[]; page: number; hasNext: boolean };
 type Kind = "materi" | "tugas";
 const field = "mt-1 w-full rounded-xl border border-slate-300 bg-white p-2";
 const button = "mt-3 rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
 const days = ["", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
 function obj(v: unknown): v is Record<string, unknown> { return typeof v === "object" && v !== null && !Array.isArray(v); }
-function named(v: unknown): v is Named { return obj(v) && typeof v.nama === "string"; }
+function named(v: unknown): v is Named & Record<string, unknown> { return obj(v) && typeof v.nama === "string"; }
 function nullableString(v: unknown): v is string | null { return v === null || typeof v === "string"; }
 function submission(v: unknown): v is Submission {
   return obj(v) && typeof v.id === "string" && nullableString(v.jawaban) && nullableString(v.tautan) && typeof v.dikumpulkanPada === "string" && (v.nilai === null || typeof v.nilai === "number") && nullableString(v.catatanGuru);
 }
 function content(v: unknown): v is Content {
   return obj(v) && typeof v.id === "string" && typeof v.judul === "string" && named(v.kelas) && named(v.mapel) && named(v.guru) && obj(v.tahunAjaran) && typeof v.tahunAjaran.nama === "string" && typeof v.tahunAjaran.semester === "string"
-    && (v.deskripsi === undefined || nullableString(v.deskripsi)) && (v.tautan === undefined || nullableString(v.tautan)) && (v.instruksi === undefined || nullableString(v.instruksi)) && (v.batasWaktu === undefined || nullableString(v.batasWaktu)) && (v.pengumpulan === undefined || (Array.isArray(v.pengumpulan) && v.pengumpulan.every(submission)));
+    && (v.deskripsi === undefined || nullableString(v.deskripsi)) && (v.tautan === undefined || nullableString(v.tautan)) && (v.instruksi === undefined || nullableString(v.instruksi)) && (v.batasWaktu === undefined || nullableString(v.batasWaktu)) && (v.bisaMenilai === undefined || typeof v.bisaMenilai === "boolean") && (v.pengumpulan === undefined || (Array.isArray(v.pengumpulan) && v.pengumpulan.every(submission)));
 }
 function assignment(v: unknown): v is Assignment {
-  return obj(v) && typeof v.id === "string" && typeof v.hari === "number" && typeof v.jamMulai === "string" && typeof v.jamSelesai === "string" && named(v.kelas) && named(v.mapel) && obj(v.tahunAjaran) && typeof v.tahunAjaran.nama === "string" && typeof v.tahunAjaran.semester === "string";
+  return obj(v) && typeof v.id === "string" && typeof v.hari === "number" && typeof v.jamMulai === "string" && typeof v.jamSelesai === "string" && named(v.kelas) && obj(v.kelas) && typeof v.kelas.id === "string" && named(v.mapel) && obj(v.mapel) && typeof v.mapel.id === "string" && obj(v.tahunAjaran) && typeof v.tahunAjaran.nama === "string" && typeof v.tahunAjaran.semester === "string";
 }
 function studentSubmission(v: unknown): v is StudentSubmission { return obj(v) && obj(v.siswa) && typeof v.siswa.nama === "string" && typeof v.siswa.nisn === "string" && submission(v); }
 function isPage<T>(v: unknown, guard: (x: unknown) => x is T): v is Page<T> {
   return obj(v) && Array.isArray(v.rows) && v.rows.every(guard) && typeof v.page === "number" && typeof v.hasNext === "boolean";
 }
-async function request(path: string, method = "GET", body?: object, signal?: AbortSignal): Promise<unknown> {
-  const response = await fetch(`/api/lms/pembelajaran${path}`, { method, signal, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+async function request(path: string, method = "GET", body?: object, signal?: AbortSignal, admin = false): Promise<unknown> {
+  const response = await fetch(`/api/${admin ? "sekolah" : "lms"}/pembelajaran${path}`, { method, signal, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
   const result: unknown = await response.json();
   if (!response.ok) throw new Error(obj(result) && typeof result.error === "string" ? result.error : `Permintaan gagal (${response.status}).`);
   return result;
@@ -47,9 +49,9 @@ function Link({ value }: { value: string | null | undefined }) {
   } catch { return <p className="text-rose-700">Tautan tidak valid dan tidak ditampilkan.</p>; }
 }
 
-export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
+export function LmsLearning({ role, kelasId, mapelId, initialKind = "materi" }: { role: "ADMIN" | "GURU" | "SISWA"; kelasId?: string; mapelId?: string; initialKind?: Kind }) {
   const confirm = useGlassConfirm();
-  const [kind, setKind] = useState<Kind>("materi");
+  const [kind, setKind] = useState<Kind>(initialKind);
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
   const [data, setData] = useState<Page<Content> | null>(null);
@@ -58,6 +60,7 @@ export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ jadwalId: "", judul: "", isi: "", tautan: "", batasWaktu: "" });
   const [selected, setSelected] = useState<Content | null>(null);
   const [answers, setAnswers] = useState<Page<StudentSubmission> | null>(null);
@@ -65,16 +68,21 @@ export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
   const [answerError, setAnswerError] = useState("");
   const [answerText, setAnswerText] = useState("");
   const [answerLink, setAnswerLink] = useState("");
+  const filteredAssignments = assignments?.filter((item) => (!kelasId || item.kelas.id === kelasId) && (!mapelId || item.mapel.id === mapelId));
 
+  useEffect(() => { setPage(1); setSelected(null); }, [kelasId, mapelId]);
   useEffect(() => {
     const controller = new AbortController();
     setData(null); setError("");
-    request(`/${kind}?page=${page}`, "GET", undefined, controller.signal).then((value) => {
+    const query = new URLSearchParams({ page: String(page) });
+    if (kelasId) query.set("kelasId", kelasId);
+    if (mapelId) query.set("mapelId", mapelId);
+    request(`/${kind}?${query}`, "GET", undefined, controller.signal, role === "ADMIN").then((value) => {
       if (!isPage(value, content) || value.page !== page) throw new Error("Respons materi atau tugas tidak valid.");
       setData(value);
     }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat pembelajaran:", failure); setError(failureMessage(failure)); } });
     return () => controller.abort();
-  }, [kind, page, version]);
+  }, [kind, page, version, kelasId, mapelId, role]);
   useEffect(() => {
     if (role !== "GURU") return;
     const controller = new AbortController();
@@ -98,7 +106,7 @@ export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
 
   async function mutate(path: string, method: string, body: object, success: string) {
     setBusy(true); setError(""); setMessage("");
-    try { await request(path, method, body); setMessage(success); setVersion((v) => v + 1); return true; }
+    try { await request(path, method, body, undefined, role === "ADMIN"); setMessage(success); setVersion((v) => v + 1); return true; }
     catch (failure) { console.error("Gagal memproses pembelajaran:", failure); setError(failureMessage(failure)); return false; }
     finally { setBusy(false); }
   }
@@ -111,7 +119,7 @@ export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
       batasWaktu = parsed.toISOString();
     }
     if (await mutate(`/${kind}`, "POST", { ...form, batasWaktu }, `${kind === "materi" ? "Materi" : "Tugas"} disimpan.`)) {
-      setForm({ jadwalId: "", judul: "", isi: "", tautan: "", batasWaktu: "" }); setPage(1);
+      setForm({ jadwalId: "", judul: "", isi: "", tautan: "", batasWaktu: "" }); setPage(1); setCreateOpen(false);
     }
   }
   async function submitAnswer(event: React.FormEvent<HTMLFormElement>) {
@@ -125,21 +133,20 @@ export function LmsLearning({ role }: { role: "GURU" | "SISWA" }) {
   }
   function switchKind(value: Kind) { setKind(value); setPage(1); setSelected(null); setMessage(""); setError(""); }
   return <section className="mt-6 rounded-xl border border-[#e6dfd0] bg-[#f8f6ef] p-5">
-    <h2 className="font-bold">Materi dan tugas</h2><p className="mt-2 text-sm text-slate-600">Uji lokal. Hanya periode aktif dan kelas yang sesuai ditampilkan. Tautan harus HTTPS; pastikan penerima memiliki izin mengaksesnya.</p>
-    <div className="mt-3 flex gap-3"><button type="button" aria-pressed={kind === "materi"} onClick={() => switchKind("materi")} className="font-bold underline">Materi</button><button type="button" aria-pressed={kind === "tugas"} onClick={() => switchKind("tugas")} className="font-bold underline">Tugas</button></div>
-    {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-3 text-sm text-green-700">{message}</p>}
-    {role === "GURU" && <form onSubmit={create} className="mt-4 rounded-xl border border-[#e6dfd0] bg-white p-4">
-      <h3 className="font-bold">Buat {kind}</h3>
+    {!kelasId && <><h2 className="font-bold">Materi dan tugas</h2><p className="mt-2 text-sm text-slate-600">Hanya periode aktif dan kelas yang sesuai ditampilkan. Tautan harus HTTPS; pastikan penerima memiliki izin mengaksesnya.</p></>}
+    <div className="mt-3 flex flex-wrap items-center gap-3">{!kelasId && <><button type="button" aria-pressed={kind === "materi"} onClick={() => switchKind("materi")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "materi" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Materi</button><button type="button" aria-pressed={kind === "tugas"} onClick={() => switchKind("tugas")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "tugas" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Tugas</button></>}{role === "GURU" && <button type="button" onClick={() => { setError(""); setCreateOpen(true); }} className="master-primary ml-auto">{kelasId && kind === "materi" ? "+ Bagikan Materi ke Kelas ini" : `+ Buat ${kind}`}</button>}</div>
+    {error && !createOpen && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-3 text-sm text-green-700">{message}</p>}
+    {role === "GURU" && createOpen && <SchoolModal title={`Buat ${kind}`} busy={busy} onClose={() => { setCreateOpen(false); setError(""); }}><form onSubmit={create}>
       {assignmentError && <p role="alert" className="mt-2 text-sm text-rose-700">{assignmentError} <button type="button" onClick={() => setVersion((v) => v + 1)} className="font-bold underline">Coba lagi</button></p>}
-      <label className="mt-3 block text-sm font-semibold">Jadwal mengajar<select required className={field} value={form.jadwalId} onChange={(e) => setForm({ ...form, jadwalId: e.target.value })}><option value="">Pilih jadwal aktif</option>{assignments?.map((a) => <option key={a.id} value={a.id}>{a.mapel.nama} · {a.kelas.nama} · {a.tahunAjaran.nama} {a.tahunAjaran.semester} · {days[a.hari]} {a.jamMulai}–{a.jamSelesai}</option>)}</select></label>
-      {assignments?.length === 0 && <p className="mt-2 text-sm">Belum ada jadwal aktif. Hubungi admin sekolah.</p>}
+      <label className="mt-3 block text-sm font-semibold">Jadwal mengajar<select required className={field} value={form.jadwalId} onChange={(e) => setForm({ ...form, jadwalId: e.target.value })}><option value="">Pilih jadwal aktif</option>{filteredAssignments?.map((a) => <option key={a.id} value={a.id}>{a.mapel.nama} · {a.kelas.nama} · {a.tahunAjaran.nama} {a.tahunAjaran.semester} · {days[a.hari]} {a.jamMulai}–{a.jamSelesai}</option>)}</select></label>
+      {filteredAssignments?.length === 0 && <p className="mt-2 text-sm">Tidak ada jadwal mengajar aktif yang sesuai. Hubungi admin sekolah.</p>}
       <label className="mt-3 block text-sm font-semibold">Judul<input required maxLength={200} className={field} value={form.judul} onChange={(e) => setForm({ ...form, judul: e.target.value })} /></label>
       <label className="mt-3 block text-sm font-semibold">{kind === "materi" ? "Isi materi (boleh kosong jika ada tautan)" : "Instruksi tugas"}<textarea required={kind === "tugas"} maxLength={5000} className={field} value={form.isi} onChange={(e) => setForm({ ...form, isi: e.target.value })} /></label>
       {kind === "materi" ? <label className="mt-3 block text-sm font-semibold">Tautan HTTPS (opsional)<input type="url" maxLength={2000} className={field} value={form.tautan} onChange={(e) => setForm({ ...form, tautan: e.target.value })} /></label> : <label className="mt-3 block text-sm font-semibold">Batas waktu WIB (opsional)<input type="datetime-local" className={field} value={form.batasWaktu} onChange={(e) => setForm({ ...form, batasWaktu: e.target.value })} /></label>}
-      <button disabled={busy || !assignments?.length} className={button}>Simpan {kind}</button>
-    </form>}
-    {!data && !error ? <p className="mt-4 text-sm">Memuat...</p> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <p className="mt-4 text-sm">Belum ada {kind} pada halaman ini.</p> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="rounded-xl border border-[#e6dfd0] bg-white p-4 text-sm"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p><Link value={item.tautan} />
-      {kind === "tugas" && <><p className="mt-2">Batas: {item.batasWaktu ? time(item.batasWaktu) : "Tidak ada"}</p>{role === "SISWA" && item.pengumpulan?.[0] ? <div className="mt-2"><p>Sudah dikumpulkan: {time(item.pengumpulan[0].dikumpulkanPada)}{item.batasWaktu && new Date(item.pengumpulan[0].dikumpulkanPada) > new Date(item.batasWaktu) ? " · Terlambat" : ""}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].jawaban}</p><Link value={item.pengumpulan[0].tautan} /><p>Nilai: {item.pengumpulan[0].nilai ?? "Belum dinilai"}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].catatanGuru}</p></div> : <button type="button" onClick={() => { setSelected(item); setAnswerPage(1); setAnswerText(""); setAnswerLink(""); }} className="mt-2 font-bold underline">{role === "GURU" ? "Lihat pengumpulan" : "Kumpulkan jawaban"}</button>}</>}
+      {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}<button disabled={busy || !filteredAssignments?.length} className={button}>Simpan {kind}</button>
+    </form></SchoolModal>}
+    {!data && !error ? <p className="mt-4 text-sm">Memuat...</p> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <EmptyState title={`Belum ada ${kind}`} description="Data pada halaman ini akan ditampilkan di sini." action={role === "GURU" ? <button type="button" className="master-primary" onClick={() => setCreateOpen(true)}>Buat {kind}</button> : undefined} /> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p><Link value={item.tautan} />
+      {kind === "tugas" && <><p className="mt-2">Batas: {item.batasWaktu ? time(item.batasWaktu) : "Tidak ada"}</p>{role === "SISWA" && item.pengumpulan?.[0] ? <div className="mt-2"><p>Sudah dikumpulkan: {time(item.pengumpulan[0].dikumpulkanPada)}{item.batasWaktu && new Date(item.pengumpulan[0].dikumpulkanPada) > new Date(item.batasWaktu) ? " · Terlambat" : ""}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].jawaban}</p><Link value={item.pengumpulan[0].tautan} /><p>Nilai: {item.pengumpulan[0].nilai ?? "Belum dinilai"}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].catatanGuru}</p></div> : (role === "SISWA" || (role === "GURU" && item.bisaMenilai)) && <button type="button" onClick={() => { setSelected(item); setAnswerPage(1); setAnswerText(""); setAnswerLink(""); }} className="mt-2 font-bold underline">{role === "GURU" ? "Periksa dan beri nilai" : "Kumpulkan jawaban"}</button>}</>}
     </li>)}</ul>}<div className="mt-4 flex gap-4 text-sm"><button type="button" disabled={page === 1} onClick={() => { setSelected(null); setPage((v) => v - 1); }} className="font-bold underline disabled:text-slate-400">Sebelumnya</button><span>Halaman {page}</span><button type="button" disabled={!data.hasNext} onClick={() => { setSelected(null); setPage((v) => v + 1); }} className="font-bold underline disabled:text-slate-400">Berikutnya</button></div></>}
     {selected && kind === "tugas" && <section className="mt-4 rounded-xl border border-[#e6dfd0] bg-white p-4"><h3 className="font-bold">{role === "GURU" ? "Pengumpulan" : "Jawaban"}: {selected.judul}</h3><button type="button" onClick={() => setSelected(null)} className="mt-2 text-sm font-bold underline">Tutup</button>
       {role === "SISWA" ? <form onSubmit={submitAnswer}><p className="mt-2 text-sm">Jawaban hanya dapat dikumpulkan sekali dan tidak bisa diubah. Jawaban setelah batas waktu tetap diterima dan ditandai terlambat.</p><label className="mt-3 block text-sm font-semibold">Jawaban teks<textarea maxLength={5000} className={field} value={answerText} onChange={(e) => setAnswerText(e.target.value)} /></label><label className="mt-3 block text-sm font-semibold">Tautan HTTPS<input type="url" maxLength={2000} className={field} value={answerLink} onChange={(e) => setAnswerLink(e.target.value)} /></label><button disabled={busy || (!answerText.trim() && !answerLink.trim())} className={button}>Kumpulkan tugas</button></form>

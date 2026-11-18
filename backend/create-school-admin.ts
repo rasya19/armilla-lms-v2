@@ -1,9 +1,10 @@
 import { createInterface } from "readline/promises";
 import { stdin, stdout } from "process";
-import { randomUUID } from "crypto";
+import { randomBytes } from "crypto";
 import { prisma, pool } from "./db.js";
 import { hashPassword, isValidPasswordLength } from "./password.js";
 import { readPassword } from "./read-password.js";
+import { schoolSlugBase } from "./school-slug.js";
 
 async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Pembuatan manual hanya tersedia untuk pengujian lokal.");
@@ -18,7 +19,10 @@ async function main() {
   if (password !== await readPassword()) throw new Error("Kata sandi tidak cocok.");
   const passwordHash = await hashPassword(password);
   await prisma.$transaction(async (tx) => {
-    const slug = `sekolah-${randomUUID()}`;
+    const base = schoolSlugBase(registration.namaSekolah);
+    const slug = await tx.sekolah.findUnique({ where: { slug: base }, select: { id: true } })
+      ? `${base}${randomBytes(4).toString("hex")}`
+      : base;
     const school = await tx.sekolah.create({ data: { nama: registration.namaSekolah, npsn: registration.npsn, slug } });
     const claimed = await tx.pendaftaranSekolah.updateMany({ where: { id: registration.id, status: "DISETUJUI", sekolahId: null }, data: { sekolahId: school.id } });
     if (claimed.count !== 1) throw new Error("Pendaftaran telah berubah; pembuatan dibatalkan.");

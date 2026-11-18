@@ -5,10 +5,13 @@ import { generateTemporaryPassword, hashPassword } from "./password.js";
 import { parseRegistration } from "./school-registration.js";
 
 type Status = "ACTIVE" | "SUSPENDED";
+type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date };
 type InternalStore = {
   provision: (data: Provision, passwordHash: string) => Promise<string>;
   updateStatus: (npsn: string, status: Status, expiresAt: Date) => Promise<boolean>;
+  getTheme: (npsn: string) => Promise<string | null>;
+  updateTheme: (themeKey: ThemeKey, sekolahId: string | null, npsn?: string) => Promise<number>;
 };
 
 export class ProvisionConflict extends Error {}
@@ -29,20 +32,8 @@ function provisionInput(body: unknown): Provision | null {
   if (!parsed || !parsed.npsn || typeof input.subdomain !== "string" || typeof input.plan !== "string" || !expiresAt || expiresAt <= new Date()) return null;
   const subdomain = input.subdomain.trim().toLowerCase();
   const plan = input.plan.trim();
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain) || !plan || plan.length > 100) return null;
+  if (!/^[a-z0-9]{1,63}$/.test(subdomain) || subdomain === "www" || !plan || plan.length > 100) return null;
   return { institutionName: parsed.namaSekolah, npsn: parsed.npsn, subdomain, adminName: parsed.namaKontak, adminEmail: parsed.emailKontak, adminPhone: parsed.teleponKontak, plan, expiresAt };
-}
-
-function loginUrl(origin: string | undefined): string | null {
-  if (!origin) return null;
-  try {
-    const url = new URL(origin);
-    if (url.origin !== origin || url.username || url.password) return null;
-    if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) return null;
-    return `${url.origin}/login`;
-  } catch {
-    return null;
-  }
 }
 
 export function prismaInternalStore(prisma: PrismaClient): InternalStore {
@@ -85,10 +76,22 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
         return true;
       });
     },
+    async getTheme(npsn) {
+      const school = await prisma.sekolah.findUnique({ where: { npsn }, select: { themeKey: true } });
+      return school?.themeKey ?? null;
+    },
+    async updateTheme(themeKey, sekolahId, npsn) {
+      const where = sekolahId ? { id: sekolahId } : npsn ? { npsn } : {
+        status: "ACTIVE" as const,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      };
+      const result = await prisma.sekolah.updateMany({ where, data: { themeKey } });
+      return result.count;
+    },
   };
 }
 
-export function internalProvisionRouter(store: InternalStore, settings: { secret: () => string | undefined; origin: () => string | undefined; production: boolean; allowProductionTest?: boolean }) {
+export function internalProvisionRouter(store: InternalStore, settings: { secret: () => string | undefined }) {
   const router = Router();
   router.use((req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
@@ -97,26 +100,51 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     const actual = createHash("sha256").update(match?.[1] ?? "").digest();
     const expected = createHash("sha256").update(secret ?? "").digest();
     if (!secret || !secret.trim() || !match || !timingSafeEqual(actual, expected)) return res.status(401).json({ error: "Unauthorized." });
-    const productionProvision = req.method === "POST" && req.path === "/provision";
-    const testHealth = settings.allowProductionTest && req.method === "GET" && req.path === "/health";
-    if (settings.production && !productionProvision && !testHealth) return res.status(503).json({ error: "Endpoint internal ini hanya tersedia untuk pengujian." });
     if (req.get("origin") || req.get("sec-fetch-site")) return res.status(403).json({ error: "Endpoint hanya menerima permintaan antar-server." });
     return next();
   });
   router.use(express.json({ limit: "16kb" }));
   router.get("/health", (_req, res) => res.json({ success: true }));
+  router.get("/tenant-theme/capabilities", (_req, res) => res.json({ success: true, bulkScope: "active-unexpired" }));
+  router.get("/tenant-theme", async (req, res) => {
+    const npsn = req.query.npsn;
+    if (typeof npsn !== "string" || !/^(?:\d{8}|[PK]\d{7})$/.test(npsn)) return res.status(400).json({ error: "NPSN tidak valid." });
+    try {
+      const themeKey = await store.getTheme(npsn);
+      if (themeKey === null) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+      return res.json({ success: true, themeKey });
+    } catch (error) {
+      console.error("Gagal membaca tema tenant:", error);
+      return res.status(503).json({ error: "Tema tenant belum dapat dibaca." });
+    }
+  });
+  router.patch("/tenant-theme", async (req, res) => {
+    const body: unknown = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return res.status(400).json({ error: "Permintaan tema tidak valid." });
+    const input = body as Record<string, unknown>;
+    const themeKey = input.themeKey;
+    const id = input.sekolahId;
+    const npsn = input.npsn;
+    const all = input.applyToAll;
+    const validId = typeof id === "string" && id.length > 0 && id.length <= 100 && id === id.trim();
+    const validNpsn = typeof npsn === "string" && /^(?:\d{8}|[PK]\d{7})$/.test(npsn);
+    if ((themeKey !== "ocean" && themeKey !== "emerald" && themeKey !== "sunset" && themeKey !== "dark") || !((all === true && id === undefined && npsn === undefined) || (all === undefined && ((validId && npsn === undefined) || (id === undefined && validNpsn))))) return res.status(400).json({ error: "Tema atau target sekolah tidak valid." });
+    try {
+      const count = await store.updateTheme(themeKey, validId ? id : null, validNpsn ? npsn : undefined);
+      if (all !== true && count === 0) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+      return res.json({ success: true, updated: count });
+    } catch (error) {
+      console.error("Gagal memperbarui tema tenant:", error);
+      return res.status(503).json({ error: "Tema tenant belum dapat diperbarui." });
+    }
+  });
   router.post("/provision", async (req, res) => {
     const data = provisionInput(req.body);
-    if (!data) return res.status(400).json({ error: "Data tenant tidak valid. Periksa NPSN, subdomain, kontak, paket, dan expiresAt UTC di masa depan." });
-    const url = loginUrl(settings.origin());
-    if (!url) {
-      console.error("APP_ORIGIN tidak valid untuk provisioning internal.");
-      return res.status(503).json({ error: "Konfigurasi URL login tidak tersedia." });
-    }
+    if (!data) return res.status(400).json({ error: "Data tenant tidak valid. Subdomain harus 1–63 huruf kecil atau angka tanpa spasi dan strip, serta bukan www; periksa juga NPSN, kontak, paket, dan expiresAt UTC di masa depan." });
     try {
       const temporaryPassword = generateTemporaryPassword();
       const tenantId = await store.provision(data, await hashPassword(temporaryPassword));
-      return res.status(201).json({ success: true, tenantId, loginUrl: url, initialUsername: data.adminEmail, temporaryPassword });
+      return res.status(201).json({ success: true, tenantId, loginUrl: `https://${data.subdomain}.rsch.my.id/login`, initialUsername: data.adminEmail, temporaryPassword });
     } catch (error) {
       if (error instanceof ProvisionConflict) return res.status(409).json({ error: error.message });
       console.error("Gagal memproses provisioning internal:", error);
@@ -142,8 +170,5 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
 export function internalProvisionRoutes(prisma: PrismaClient) {
   return internalProvisionRouter(prismaInternalStore(prisma), {
     secret: () => process.env.MASTER_PROVISION_SECRET,
-    origin: () => process.env.APP_ORIGIN,
-    production: process.env.NODE_ENV === "production",
-    allowProductionTest: process.env.LMS_ENABLE_PROVISIONING_TEST === "true",
   });
 }

@@ -14,6 +14,7 @@ test("production requires an exact HTTPS origin", () => {
 
 test("production API enforces origin and applies security headers, including errors", async () => {
   const app = express();
+  app.use((req, _res, next) => { if (req.get("x-test-host")) req.headers.host = req.get("x-test-host"); next(); });
   app.use(httpSecurity({ production: true, origin: productionOrigin("https://lms.example.com") }));
   app.use(express.json({ limit: "16b" }));
   app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -32,16 +33,47 @@ test("production API enforces origin and applies security headers, including err
     assert.equal(health.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'");
     assert.equal(health.headers.get("referrer-policy"), "no-referrer");
     for (const origin of [undefined, "http://lms.example.com", "https://evil.example.com", "https://lms.example.com.evil.example.com", "null", "https://lms.example.com/path"]) {
-      const response = await fetch(`${url}/change`, { method: "POST", headers: origin ? { origin } : {} });
+      const response = await fetch(`${url}/change`, { method: "POST", headers: origin ? { origin, "x-test-host": "lms.example.com" } : { "x-test-host": "lms.example.com" } });
       assert.equal(response.status, 403);
       assert.equal(response.headers.get("cache-control"), "no-store");
     }
-    const headers = { origin: "https://lms.example.com" };
+    const headers = { origin: "https://lms.example.com", "x-test-host": "lms.example.com" };
     assert.equal((await fetch(`${url}/change`, { method: "POST", headers })).status, 200);
     assert.equal((await fetch(`${url}/change`, { method: "POST", headers: { ...headers, "sec-fetch-site": "cross-site" } })).status, 403);
     const tooLarge = await fetch(`${url}/change`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ value: "x".repeat(32) }) });
     assert.equal(tooLarge.status, 413);
     assert.equal(tooLarge.headers.get("x-content-type-options"), "nosniff");
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("school subdomains require HTTPS and the same request host", async () => {
+  const app = express();
+  app.use((req, _res, next) => { if (req.get("x-test-host")) req.headers.host = req.get("x-test-host"); next(); });
+  app.use(httpSecurity({ production: true, origin: "https://rsch.my.id" }));
+  app.post("/change", (_req, res) => res.sendStatus(204));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const url = `http://127.0.0.1:${address.port}/change`;
+  try {
+    for (const host of ["rsch.my.id", "www.rsch.my.id", "sekolah.rsch.my.id", "sekolah-lama.rsch.my.id"]) {
+      assert.equal((await fetch(url, { method: "POST", headers: { "x-test-host": host, origin: `https://${host}` } })).status, 204);
+    }
+    for (const [host, origin] of [
+      ["sekolah.rsch.my.id", "https://lain.rsch.my.id"],
+      ["rsch.my.id", "https://sekolah.rsch.my.id"],
+      ["sekolah.rsch.my.id", "http://sekolah.rsch.my.id"],
+      ["sekolah.rsch.my.id:444", "https://sekolah.rsch.my.id:444"],
+      ["evilrsch.my.id", "https://evilrsch.my.id"],
+      ["sekolah.rsch.my.id.evil.invalid", "https://sekolah.rsch.my.id.evil.invalid"],
+      ["foo.bar.rsch.my.id", "https://foo.bar.rsch.my.id"],
+    ]) {
+      assert.equal((await fetch(url, { method: "POST", headers: { "x-test-host": host, origin } })).status, 403);
+    }
   } finally {
     server.close();
     await once(server, "close");

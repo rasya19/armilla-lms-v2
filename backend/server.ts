@@ -880,7 +880,7 @@ app.post("/api/sekolah/penempatan-massal", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const kelasId = req.body?.kelasId;
     const students: unknown = req.body?.siswa;
-    if (typeof kelasId !== "string" || !parsePlacement({ kelasId, expectedKelasId: null }) || !Array.isArray(students) || students.length < 1 || students.length > 25) return res.status(400).json({ error: "Pilih kelas dan 1 sampai 25 siswa." });
+    if (typeof kelasId !== "string" || !parsePlacement({ kelasId, expectedKelasId: null }) || !Array.isArray(students) || students.length < 1 || students.length > 50) return res.status(400).json({ error: "Pilih kelas dan 1 sampai 50 siswa." });
     const parsed: { id: string; expectedKelasId: string | null }[] = [];
     for (const student of students) {
       if (typeof student !== "object" || student === null || Array.isArray(student) || typeof student.id !== "string" || !student.id || student.id.length > 100 || student.id !== student.id.trim()) return res.status(400).json({ error: "Data siswa tidak valid." });
@@ -933,10 +933,14 @@ app.get("/api/sekolah/:jenis", async (req, res) => {
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const pageValue = req.query.page;
+    const limitValue = req.query.limit;
     if (pageValue !== undefined && (typeof pageValue !== "string" || !/^[1-9]\d{0,5}$/.test(pageValue))) return res.status(400).json({ error: "Nomor halaman tidak valid." });
+    if (limitValue !== undefined && limitValue !== "10" && limitValue !== "25" && limitValue !== "50") return res.status(400).json({ error: "Ukuran halaman tidak valid." });
     const page = pageValue === undefined ? 1 : Number(pageValue);
-    const pagination = { skip: (page - 1) * 25, take: 26 };
+    const pageSize = limitValue === undefined ? 25 : Number(limitValue);
+    const pagination = { skip: (page - 1) * pageSize, take: pageSize + 1 };
     let rows: { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null }[];
+    let total: number;
     if (req.params.jenis === "siswa") {
       const filter = req.query.kelas;
       const active = req.query.aktif;
@@ -945,8 +949,18 @@ app.get("/api/sekolah/:jenis", async (req, res) => {
       if (active !== undefined && active !== "1") return res.status(400).json({ error: "Filter status tidak valid." });
       if (search !== undefined && (typeof search !== "string" || search.trim().length > 100)) return res.status(400).json({ error: "Pencarian maksimal 100 karakter." });
       const term = typeof search === "string" ? search.trim().replace(/[\\%_]/g, "\\$&") : "";
-      const data = await prisma.siswa.findMany({ where: { sekolahId, ...(active === "1" ? { status: "Aktif" } : {}), ...(filter === "belum" ? { kelasId: null } : filter === "sudah" ? { kelasId: { not: null } } : {}), ...(term ? { OR: [{ nama: { contains: term, mode: "insensitive" } }, { nisn: { contains: term, mode: "insensitive" } }] } : {}) }, select: { id: true, nama: true, nisn: true, kelasId: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination });
+      const where: Prisma.SiswaWhereInput = {
+        sekolahId,
+        ...(active === "1" ? { status: "Aktif" } : {}),
+        ...(filter === "belum" ? { kelasId: null } : filter === "sudah" ? { kelasId: { not: null } } : {}),
+        ...(term ? { OR: [{ nama: { contains: term, mode: "insensitive" } }, { nisn: { contains: term, mode: "insensitive" } }] } : {}),
+      };
+      const [data, count] = await Promise.all([
+        prisma.siswa.findMany({ where, select: { id: true, nama: true, nisn: true, kelasId: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination }),
+        prisma.siswa.count({ where }),
+      ]);
       rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.nisn, kelasId: item.kelasId, status: item.status, punyaAkun: !!item.akun }));
+      total = count;
     } else if (req.params.jenis === "guru") {
       const search = req.query.q;
       if (search !== undefined && (typeof search !== "string" || search.trim().length > 100)) return res.status(400).json({ error: "Pencarian maksimal 100 karakter." });
@@ -959,17 +973,21 @@ app.get("/api/sekolah/:jenis", async (req, res) => {
           { email: { contains: term, mode: "insensitive" } },
         ] } : {}),
       };
-      const [data, total] = await Promise.all([
+      const [data, count] = await Promise.all([
         prisma.guru.findMany({ where, select: { id: true, nama: true, nuptk: true, email: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination }),
         prisma.guru.count({ where }),
       ]);
       rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.nuptk || "Belum ada", email: item.email, status: item.status, punyaAkun: !!item.akun }));
-      return res.json({ rows: rows.slice(0, 25), page, hasNext: rows.length > 25, total });
+      total = count;
     } else if (req.params.jenis === "ppdb") {
-      const data = await prisma.pPDB.findMany({ where: { sekolahId }, select: { id: true, nama: true, noDaftar: true, status: true, email: true, telepon: true, alamat: true, jenjang: true, catatanTinjauan: true }, orderBy: { id: "asc" }, ...pagination });
+      const [data, count] = await Promise.all([
+        prisma.pPDB.findMany({ where: { sekolahId }, select: { id: true, nama: true, noDaftar: true, status: true, email: true, telepon: true, alamat: true, jenjang: true, catatanTinjauan: true }, orderBy: { id: "asc" }, ...pagination }),
+        prisma.pPDB.count({ where: { sekolahId } }),
+      ]);
       rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.noDaftar, status: item.status, email: item.email, telepon: item.telepon, alamat: item.alamat, jenjang: item.jenjang, catatan: item.catatanTinjauan }));
+      total = count;
     } else return res.status(404).json({ error: "Menu tidak ditemukan." });
-    return res.json({ rows: rows.slice(0, 25), page, hasNext: rows.length > 25 });
+    return res.json({ rows: rows.slice(0, pageSize), page, pageSize, hasNext: rows.length > pageSize, total });
   } catch (error) {
     console.error("Gagal memuat data sekolah:", error);
     return res.status(503).json({ error: "Data sekolah belum dapat dimuat." });

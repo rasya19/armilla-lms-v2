@@ -93,7 +93,7 @@ test("production routes work without an opt-in while enforcing authentication an
       configurable: true,
       value: async ({ where }: { where: { sekolahId: string; status?: string } }) => {
         assert.equal(where.sekolahId, "school-id");
-        assert.equal(where.status, expectedStatus);
+        if (model !== prisma.siswa || where.status !== undefined) assert.equal(where.status, expectedStatus);
         if (summaryFails) throw new Error("database unavailable");
         return count;
       },
@@ -285,16 +285,31 @@ test("production routes work without an opt-in while enforcing authentication an
     const classList = await request("GET", "/api/sekolah/kelas", { cookie });
     assert.equal(classList.status, 200);
     assert.equal((await classList.json()).kelas[0].jumlahSiswa, 2);
-    Object.defineProperty(prisma.siswa, "findMany", { configurable: true, value: async ({ where, skip, take }: { where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] }; skip: number; take: number }) => {
+    const studentEntries = Array.from({ length: 28 }, (_, index) => ({ id: `s${index}`, nama: `Siswa ${index}`, nisn: String(index).padStart(10, "0"), kelasId: index % 2 ? "class-a" : null, status: index === 0 ? "Nonaktif" : "Aktif", akun: null }));
+    const matchStudents = (where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] }) => {
       assert.equal(where.sekolahId, "school-id");
-      const entries = Array.from({ length: 28 }, (_, index) => ({ id: `s${index}`, nama: `Siswa ${index}`, nisn: String(index).padStart(10, "0"), kelasId: index % 2 ? "class-a" : null, status: index === 0 ? "Nonaktif" : "Aktif", akun: null }));
-      return entries.filter((entry) => (!where.status || entry.status === where.status) && (where.kelasId === undefined || (where.kelasId === null ? entry.kelasId === null : entry.kelasId !== null)) && (!where.OR || entry.nama.toLowerCase().includes(where.OR[0].nama?.contains.toLowerCase() ?? "") || entry.nisn.includes(where.OR[1].nisn?.contains ?? ""))).slice(skip, skip + take);
-    } });
+      return studentEntries.filter((entry) => (!where.status || entry.status === where.status) && (where.kelasId === undefined || (where.kelasId === null ? entry.kelasId === null : entry.kelasId !== null)) && (!where.OR || entry.nama.toLowerCase().includes(where.OR[0].nama?.contains.toLowerCase() ?? "") || entry.nisn.includes(where.OR[1].nisn?.contains ?? "")));
+    };
+    Object.defineProperty(prisma.siswa, "findMany", { configurable: true, value: async ({ where, skip, take }: { where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] }; skip: number; take: number }) => matchStudents(where).slice(skip, skip + take) });
+    Object.defineProperty(prisma.siswa, "count", { configurable: true, value: async ({ where }: { where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] } }) => matchStudents(where).length });
     const filtered = await (await request("GET", "/api/sekolah/siswa?kelas=belum&aktif=1&q=siswa%202", { cookie })).json();
     assert.ok(filtered.rows.length > 0);
     assert.ok(filtered.rows.every((row: { status: string; kelasId: string | null; nama: string }) => row.status === "Aktif" && row.kelasId === null && row.nama.toLowerCase().includes("siswa 2")));
     const secondPage = await (await request("GET", "/api/sekolah/siswa?page=2", { cookie })).json();
     assert.equal(secondPage.rows.length, 3);
+    assert.equal(secondPage.total, 28);
+    assert.equal(secondPage.pageSize, 25);
+    const limitTen = await (await request("GET", "/api/sekolah/siswa?page=1&limit=10", { cookie })).json();
+    assert.equal(limitTen.rows.length, 10);
+    assert.equal(limitTen.total, 28);
+    assert.equal(limitTen.pageSize, 10);
+    assert.equal(limitTen.hasNext, true);
+    const limitFifty = await (await request("GET", "/api/sekolah/siswa?page=1&limit=50", { cookie })).json();
+    assert.equal(limitFifty.rows.length, 28);
+    assert.equal(limitFifty.total, 28);
+    assert.equal(limitFifty.pageSize, 50);
+    assert.equal(limitFifty.hasNext, false);
+    assert.equal((await request("GET", "/api/sekolah/siswa?limit=99", { cookie })).status, 400);
     assert.equal((await request("GET", "/api/sekolah/siswa?kelas=lain", { cookie })).status, 400);
     assert.equal((await request("GET", "/api/sekolah/siswa?aktif=0", { cookie })).status, 400);
     const transaction = prisma.$transaction;

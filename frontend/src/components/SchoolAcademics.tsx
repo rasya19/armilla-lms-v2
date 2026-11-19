@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { EmptyState } from "./DashboardUI";
+import { getCached, invalidateCache, setCached } from "./schoolCache";
 
 type Named = { id: string; nama: string };
 type Year = Named & { semester: string; mulai: string; selesai: string };
@@ -34,7 +35,7 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
 
 export function SchoolAcademics({ mode }: { mode: "mapel" | "akademik" }) {
   const confirm = useGlassConfirm();
-  const [data, setData] = useState<Data | null>(null);
+  const [data, setData] = useState<Data | null>(() => getCached<Data>("/api/sekolah/akademik"));
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -51,11 +52,17 @@ export function SchoolAcademics({ mode }: { mode: "mapel" | "akademik" }) {
 
   useEffect(() => {
     let active = true;
+    const cached = getCached<Data>("/api/sekolah/akademik");
+    if (cached) setData(cached);
     request("").then((result) => {
       if (!isData(result)) throw new Error("Respons akademik tidak valid.");
-      if (active) setData(result);
+      setCached("/api/sekolah/akademik", result);
+      if (active) { setData(result); setError(""); }
     }).catch((failure: unknown) => {
-      if (active) { console.error("Gagal memuat akademik:", failure); setData(null); setError(failure instanceof Error ? failure.message : "Data belum dapat dimuat."); }
+      if (active) {
+        console.error("Gagal memuat akademik:", failure);
+        if (!cached) { setData(null); setError(failure instanceof Error ? failure.message : "Data belum dapat dimuat."); }
+      }
     });
     return () => { active = false; };
   }, [version]);
@@ -64,6 +71,7 @@ export function SchoolAcademics({ mode }: { mode: "mapel" | "akademik" }) {
     setBusy(true); setError(""); setMessage("");
     try {
       await request(path, method, body);
+      invalidateCache(["/api/sekolah/akademik", "/api/sekolah/kelas", "/api/sekolah/ringkasan"]);
       setMessage(success); setVersion((v) => v + 1);
       return true;
     } catch (failure) {

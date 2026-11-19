@@ -7,6 +7,8 @@ import { LoginNavigation } from "./LoginNavigation";
 import { DashboardHero } from "./DashboardUI";
 import { Classroom } from "./Classroom";
 import { TenantThemeProvider } from "./TenantThemeProvider";
+import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { resetStandardClassesCache } from "./standardClasses";
 
 type SchoolView = SchoolDataKind | "dashboard" | "password" | "ruang-kbm";
 type SchoolMenuItem = { label: string; icon: LucideIcon; target: SchoolDataKind | "password" | "ruang-kbm" };
@@ -96,6 +98,8 @@ export function SchoolHome() {
     try {
       const response = await fetch("/api/auth/sekolah/logout", { method: "POST" });
       if (!response.ok) throw new Error("Gagal keluar. Coba lagi.");
+      invalidateCache();
+      resetStandardClassesCache();
       navigate("/login");
     } catch (error) { console.error(error); setError("Gagal keluar. Coba lagi."); }
   }
@@ -160,18 +164,27 @@ export function SchoolHome() {
 type Summary = { siswa: number; guru: number; kelas: number; ppdb: number; ppdbDiterima: number; ppdbDitolak: number };
 
 function SchoolOverview({ school, onSelect }: { school: string; onSelect: (view: SchoolDataKind) => void }) {
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(() => getCached<Summary>("/api/sekolah/ringkasan"));
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setSummary(null); setError("");
+    const cached = getCached<Summary>("/api/sekolah/ringkasan");
+    if (cached) setSummary(cached);
+    setError("");
     fetch("/api/sekolah/ringkasan", { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Ringkasan sekolah belum dapat dimuat.");
       const data: unknown = await response.json();
       if (typeof data !== "object" || data === null || !("siswa" in data) || typeof data.siswa !== "number" || !("guru" in data) || typeof data.guru !== "number" || !("kelas" in data) || typeof data.kelas !== "number" || !("ppdb" in data) || typeof data.ppdb !== "number" || !("ppdbDiterima" in data) || typeof data.ppdbDiterima !== "number" || !("ppdbDitolak" in data) || typeof data.ppdbDitolak !== "number") throw new Error("Respons ringkasan tidak valid.");
-      setSummary({ siswa: data.siswa, guru: data.guru, kelas: data.kelas, ppdb: data.ppdb, ppdbDiterima: data.ppdbDiterima, ppdbDitolak: data.ppdbDitolak });
-    }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat ringkasan:", failure); setError(failure instanceof Error ? failure.message : "Ringkasan sekolah belum dapat dimuat."); } });
+      const next: Summary = { siswa: data.siswa, guru: data.guru, kelas: data.kelas, ppdb: data.ppdb, ppdbDiterima: data.ppdbDiterima, ppdbDitolak: data.ppdbDitolak };
+      setCached("/api/sekolah/ringkasan", next);
+      setSummary(next);
+    }).catch((failure: unknown) => {
+      if (!controller.signal.aborted) {
+        console.error("Gagal memuat ringkasan:", failure);
+        if (!cached) setError(failure instanceof Error ? failure.message : "Ringkasan sekolah belum dapat dimuat.");
+      }
+    });
     return () => controller.abort();
   }, [version]);
   const cards = [

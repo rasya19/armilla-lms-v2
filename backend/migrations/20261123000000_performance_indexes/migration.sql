@@ -1,0 +1,14 @@
+CREATE INDEX IF NOT EXISTS "Siswa_sekolahId_status_idx" ON "Siswa"("sekolahId", "status");
+CREATE INDEX IF NOT EXISTS "Siswa_sekolahId_kelasId_status_idx" ON "Siswa"("sekolahId", "kelasId", "status");
+CREATE INDEX IF NOT EXISTS "Guru_sekolahId_status_idx" ON "Guru"("sekolahId", "status");
+CREATE INDEX IF NOT EXISTS "Mapel_sekolahId_nama_idx" ON "Mapel"("sekolahId", "nama");
+CREATE INDEX IF NOT EXISTS "Kelas_sekolahId_nama_idx" ON "Kelas"("sekolahId", "nama");
+CREATE INDEX IF NOT EXISTS "PPDB_sekolahId_tanggalDaftar_idx" ON "PPDB"("sekolahId", "tanggalDaftar");
+CREATE INDEX IF NOT EXISTS "PendaftaranSekolah_dibuatPada_idx" ON "PendaftaranSekolah"("dibuatPada");
+CREATE INDEX IF NOT EXISTS "PendaftaranSekolah_npsn_status_idx" ON "PendaftaranSekolah"("npsn", "status");
+CREATE INDEX IF NOT EXISTS "Sekolah_status_createdAt_idx" ON "Sekolah"("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "Sekolah_createdAt_idx" ON "Sekolah"("createdAt");
+CREATE INDEX IF NOT EXISTS "Akun_sekolahId_peran_aktif_idx" ON "Akun"("sekolahId", "peran", "aktif");
+CREATE INDEX IF NOT EXISTS "Akun_peran_createdAt_idx" ON "Akun"("peran", "createdAt");
+CREATE INDEX IF NOT EXISTS "SesiAkun_akunId_revokedAt_idx" ON "SesiAkun"("akunId", "revokedAt");
+CREATE INDEX IF NOT EXISTS "TahunAjaran_sekolahId_mulai_selesai_idx" ON "TahunAjaran"("sekolahId", "mulai", "selesai");

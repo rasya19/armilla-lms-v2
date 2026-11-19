@@ -141,15 +141,17 @@ export function academicRoutes(schoolForRequest: (req: Request) => Promise<strin
       const sekolahId: string = res.locals.sekolahId;
       const result = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT "id" FROM "Sekolah" WHERE "id" = ${sekolahId} FOR UPDATE`;
-        const [year, klass, subject, teacher] = await Promise.all([
+        const [year, klass, subject, teacher, scheduleCount, duplicate] = await Promise.all([
           tx.tahunAjaran.findFirst({ where: { id: data.tahunAjaranId, sekolahId }, select: { id: true } }),
           tx.kelas.findFirst({ where: { id: data.kelasId, sekolahId }, select: { id: true } }),
           tx.mapel.findFirst({ where: { id: data.mapelId, sekolahId }, select: { id: true } }),
           tx.guru.findFirst({ where: { id: data.guruId, sekolahId, status: "Aktif" }, select: { id: true } }),
+          tx.jadwalPelajaran.count({ where: { sekolahId } }),
+          tx.jadwalPelajaran.findFirst({ where: { ...data, sekolahId }, select: { id: true } }),
         ]);
         if (!year || !klass || !subject || !teacher) throw new Error("INVALID_REFERENCE");
-        if (await tx.jadwalPelajaran.count({ where: { sekolahId } }) >= 2000) throw new Error("LIMIT");
-        if (await tx.jadwalPelajaran.findFirst({ where: { ...data, sekolahId }, select: { id: true } })) throw new Error("DUPLICATE");
+        if (scheduleCount >= 2000) throw new Error("LIMIT");
+        if (duplicate) throw new Error("DUPLICATE");
         return tx.jadwalPelajaran.create({ data: { ...data, sekolahId }, select: { id: true } });
       });
       return res.status(201).json(result);
@@ -169,14 +171,15 @@ export function academicRoutes(schoolForRequest: (req: Request) => Promise<strin
       const sekolahId: string = res.locals.sekolahId;
       const result = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT "id" FROM "Sekolah" WHERE "id" = ${sekolahId} FOR UPDATE`;
-        const [year, klass, subject, teacher] = await Promise.all([
+        const [year, klass, subject, teacher, duplicate] = await Promise.all([
           tx.tahunAjaran.findFirst({ where: { id: data.tahunAjaranId, sekolahId }, select: { id: true } }),
           tx.kelas.findFirst({ where: { id: data.kelasId, sekolahId }, select: { id: true } }),
           tx.mapel.findFirst({ where: { id: data.mapelId, sekolahId }, select: { id: true } }),
           tx.guru.findFirst({ where: { id: data.guruId, sekolahId, status: "Aktif" }, select: { id: true } }),
+          tx.jadwalPelajaran.findFirst({ where: { ...data, sekolahId, id: { not: req.params.id } }, select: { id: true } }),
         ]);
         if (!year || !klass || !subject || !teacher) throw new Error("INVALID_REFERENCE");
-        if (await tx.jadwalPelajaran.findFirst({ where: { ...data, sekolahId, id: { not: req.params.id } }, select: { id: true } })) throw new Error("DUPLICATE");
+        if (duplicate) throw new Error("DUPLICATE");
         return tx.jadwalPelajaran.updateMany({ where: { id: req.params.id, sekolahId }, data });
       });
       if (!result.count) return res.status(404).json({ error: "Jadwal tidak ditemukan." });

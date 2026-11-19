@@ -4,6 +4,7 @@ import { promisify } from "util";
 const scrypt = promisify(scryptCallback);
 
 export const DEFAULT_STUDENT_PASSWORD = "123456";
+export const DEFAULT_ACCOUNT_PASSWORD = "123456";
 
 export function generateTemporaryPassword(): string {
   return randomBytes(18).toString("base64url");

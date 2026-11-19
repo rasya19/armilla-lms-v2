@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { DEFAULT_STUDENT_PASSWORD, generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
+import { DEFAULT_ACCOUNT_PASSWORD, DEFAULT_STUDENT_PASSWORD, generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
 
 test("temporary passwords use 144 random bits and URL-safe characters", () => {
   const first = generateTemporaryPassword();
@@ -10,11 +10,12 @@ test("temporary passwords use 144 random bits and URL-safe characters", () => {
   assert.notEqual(first, second);
 });
 
-test("default student password is 123456 and satisfies length validation and hashing", async () => {
+test("default student and teacher account password is 123456 and satisfies length validation and hashing", async () => {
   assert.equal(DEFAULT_STUDENT_PASSWORD, "123456");
-  assert.equal(isValidPasswordLength(DEFAULT_STUDENT_PASSWORD), true);
-  const hashed = await hashPassword(DEFAULT_STUDENT_PASSWORD);
-  assert.notEqual(hashed, DEFAULT_STUDENT_PASSWORD);
+  assert.equal(DEFAULT_ACCOUNT_PASSWORD, "123456");
+  assert.equal(isValidPasswordLength(DEFAULT_ACCOUNT_PASSWORD), true);
+  const hashed = await hashPassword(DEFAULT_ACCOUNT_PASSWORD);
+  assert.notEqual(hashed, DEFAULT_ACCOUNT_PASSWORD);
   assert.equal(await verifyPassword("123456", hashed), true);
   assert.equal(await verifyPassword("654321", hashed), false);
 });

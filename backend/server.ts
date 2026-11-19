@@ -1,7 +1,7 @@
 import express from "express";
 import { createHash, randomBytes } from "crypto";
 import { loginPool, pool, prisma } from "./db.js";
-import { DEFAULT_STUDENT_PASSWORD, generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
+import { DEFAULT_ACCOUNT_PASSWORD, DEFAULT_STUDENT_PASSWORD, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
 import { extractPaketFromNote, registrationRateLimit, registrationRoutes, saveRegistrationRecord } from "./registration-routes.js";
 import { parseStudentImport } from "./student-import.js";
 import { parseApplicant, parseTeacher } from "./school-input.js";
@@ -276,7 +276,7 @@ app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
     if (jenis !== "siswa" && jenis !== "guru") return res.status(404).json({ error: "Jenis akun tidak ditemukan." });
-    const temporaryPassword = jenis === "siswa" ? DEFAULT_STUDENT_PASSWORD : generateTemporaryPassword();
+    const temporaryPassword = DEFAULT_ACCOUNT_PASSWORD;
     const passwordHash = await hashPassword(temporaryPassword);
     await prisma.$transaction(async (tx) => {
       if (jenis === "siswa") {
@@ -307,7 +307,7 @@ app.post("/api/sekolah/:jenis/:id/reset-password", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
     if (jenis !== "siswa" && jenis !== "guru") return res.status(404).json({ error: "Jenis akun tidak ditemukan." });
-    const temporaryPassword = jenis === "siswa" ? DEFAULT_STUDENT_PASSWORD : generateTemporaryPassword();
+    const temporaryPassword = DEFAULT_ACCOUNT_PASSWORD;
     const passwordHash = await hashPassword(temporaryPassword);
     const changed = await prisma.$transaction(async (tx) => {
       const account = await tx.akun.findFirst({
@@ -1120,27 +1120,29 @@ app.delete("/api/master/pendaftaran-sekolah/:id", async (req, res) => {
       if (!registration) return "not-found";
       if (registration.sekolahId) {
         const sekolahId = registration.sekolahId;
-        const school = await tx.sekolah.findUnique({
-          where: { id: sekolahId },
-          select: {
-            _count: {
-              select: {
-                siswa: true, guru: true, mapel: true, kelas: true, ppdb: true, nilai: true,
-                tahunAjaran: true, jadwal: true, agenda: true, presensi: true, materi: true,
-                tugas: true, berkas: true, ujian: true,
+        const [school, settings, accounts] = await Promise.all([
+          tx.sekolah.findUnique({
+            where: { id: sekolahId },
+            select: {
+              _count: {
+                select: {
+                  siswa: true, guru: true, mapel: true, kelas: true, ppdb: true, nilai: true,
+                  tahunAjaran: true, jadwal: true, agenda: true, presensi: true, materi: true,
+                  tugas: true, berkas: true, ujian: true,
+                },
               },
             },
-          },
-        });
+          }),
+          tx.websiteSettings.findUnique({ where: { school_id: sekolahId }, select: { school_id: true } }),
+          tx.akun.findMany({
+            where: { sekolahId },
+            select: {
+              peran: true, siswaId: true, guruId: true,
+              _count: { select: { tinjauan: true, tinjauanSekolah: true, berkas: true } },
+            },
+          }),
+        ]);
         if (!school) return "not-found";
-        const settings = await tx.websiteSettings.findUnique({ where: { school_id: sekolahId }, select: { school_id: true } });
-        const accounts = await tx.akun.findMany({
-          where: { sekolahId },
-          select: {
-            peran: true, siswaId: true, guruId: true,
-            _count: { select: { tinjauan: true, tinjauanSekolah: true, berkas: true } },
-          },
-        });
         if (settings || Object.values(school._count).some((count) => count > 0) ||
           accounts.some((account) => account.peran !== "ADMIN" || account.siswaId || account.guruId ||
             Object.values(account._count).some((count) => count > 0))) return "has-data";

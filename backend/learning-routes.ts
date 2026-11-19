@@ -57,17 +57,27 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     if (s.peran === "ADMIN" && !kelasId) return res.status(400).json({ error: "Pilih kelas terlebih dahulu." });
     if (s.peran === "SISWA" && kelasId && kelasId !== s.kelasId) return res.status(404).json({ error: "Kelas tidak ditemukan." });
     try {
-      if (typeof kelasId === "string" && !await prisma.kelas.findFirst({ where: { id: kelasId, sekolahId: s.sekolahId }, select: { id: true } })) return res.status(404).json({ error: "Kelas tidak ditemukan." });
       const base = scope(s);
       const where = typeof kelasId === "string"
         ? { sekolahId: base.sekolahId, kelasId, kelas: base.kelas, guru: base.guru, mapel: base.mapel, tahunAjaran: base.tahunAjaran, ...(typeof mapelId === "string" ? { mapelId } : {}) }
         : base;
       const common = { where, orderBy: [{ createdAt: "desc" as const }, { id: "desc" as const }], skip: (p - 1) * 25, take: 26 };
+      const checkClass = typeof kelasId === "string"
+        ? prisma.kelas.findFirst({ where: { id: kelasId, sekolahId: s.sekolahId }, select: { id: true } })
+        : Promise.resolve({ id: "ok" });
       if (req.params.kind === "materi") {
-        const rows = await prisma.materiAjar.findMany({ ...common, select: { ...select, deskripsi: true, tautan: true } });
+        const [validClass, rows] = await Promise.all([
+          checkClass,
+          prisma.materiAjar.findMany({ ...common, select: { ...select, deskripsi: true, tautan: true } }),
+        ]);
+        if (!validClass) return res.status(404).json({ error: "Kelas tidak ditemukan." });
         return res.json({ rows: rows.slice(0, 25), page: p, hasNext: rows.length > 25 });
       }
-      const rows = await prisma.tugas.findMany({ ...common, select: { ...select, guruId: true, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } });
+      const [validClass, rows] = await Promise.all([
+        checkClass,
+        prisma.tugas.findMany({ ...common, select: { ...select, guruId: true, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } }),
+      ]);
+      if (!validClass) return res.status(404).json({ error: "Kelas tidak ditemukan." });
       return res.json({ rows: rows.slice(0, 25).map(({ guruId, ...row }) => ({ ...row, bisaMenilai: s.peran === "GURU" && guruId === s.guruId })), page: p, hasNext: rows.length > 25 });
     } catch (error) {
       console.error("Gagal memuat materi atau tugas:", error);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { getPlanBySlug, resolvePlanSlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
 
 const inputClass = "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-[#142137]";
@@ -117,7 +117,10 @@ export function SchoolRegistration() {
         <label className="block text-sm font-semibold">Email penanggung jawab<input className={inputClass} type="email" required maxLength={254} value={form.emailKontak} onChange={(e) => setForm({ ...form, emailKontak: e.target.value })} /></label>
         <label className="block text-sm font-semibold">Nomor telepon<input className={inputClass} type="tel" required minLength={6} maxLength={30} value={form.teleponKontak} onChange={(e) => setForm({ ...form, teleponKontak: e.target.value })} /></label>
         {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
-        <button disabled={busy} className="w-full rounded-xl bg-[#0c192d] px-4 py-3 font-bold text-white disabled:opacity-50">{busy ? "Mengirim..." : "Kirim pendaftaran"}</button>
+        <button disabled={busy} className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-[#0c192d] px-4 py-3 font-bold text-white transition hover:bg-[#132643] disabled:cursor-not-allowed disabled:opacity-75">
+          {busy && <Loader2 size={18} className="animate-spin" aria-hidden="true" />}
+          <span>{busy ? "Mengirim & menyinkronkan pendaftaran..." : "Kirim pendaftaran"}</span>
+        </button>
       </form>}
     <Link to="/" className="mt-6 inline-block text-sm font-semibold text-[#80643a] underline">Kembali ke beranda</Link>
   </div></main>;

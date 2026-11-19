@@ -41,9 +41,14 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
     async provision(data, passwordHash) {
       try {
         return await prisma.$transaction(async (tx) => {
-          if (await tx.sekolah.findUnique({ where: { npsn: data.npsn }, select: { id: true } })) throw new ProvisionConflict("NPSN sudah terdaftar.");
-          if (await tx.sekolah.findUnique({ where: { slug: data.subdomain }, select: { id: true } })) throw new ProvisionConflict("Subdomain sudah terdaftar.");
-          if (await tx.akun.findUnique({ where: { email: data.adminEmail }, select: { id: true } })) throw new ProvisionConflict("Email admin sudah terdaftar.");
+          const [dupNpsn, dupSlug, dupEmail] = await Promise.all([
+            tx.sekolah.findUnique({ where: { npsn: data.npsn }, select: { id: true } }),
+            tx.sekolah.findUnique({ where: { slug: data.subdomain }, select: { id: true } }),
+            tx.akun.findUnique({ where: { email: data.adminEmail }, select: { id: true } }),
+          ]);
+          if (dupNpsn) throw new ProvisionConflict("NPSN sudah terdaftar.");
+          if (dupSlug) throw new ProvisionConflict("Subdomain sudah terdaftar.");
+          if (dupEmail) throw new ProvisionConflict("Email admin sudah terdaftar.");
           const school = await tx.sekolah.create({ data: { nama: data.institutionName, npsn: data.npsn, slug: data.subdomain, status: "ACTIVE", expiresAt: data.expiresAt, plan: data.plan, adminPhone: data.adminPhone } });
           await tx.akun.create({ data: { sekolahId: school.id, nama: data.adminName, email: data.adminEmail, passwordHash, peran: "ADMIN" } });
           await tx.pendaftaranSekolah.updateMany({

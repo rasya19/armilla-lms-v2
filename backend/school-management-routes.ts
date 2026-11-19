@@ -93,8 +93,10 @@ export function schoolManagementRoutes(schoolForRequest: (req: Request) => Promi
         const account = await tx.akun.findFirst({ where: data.kind === "guru" ? { guruId: id } : { siswaId: id }, select: { id: true, sekolahId: true, peran: true } });
         if (account) {
           if (account.sekolahId !== sekolahId || account.peran !== (data.kind === "guru" ? "GURU" : "SISWA")) throw new Error("ACCOUNT_CONFLICT");
-          await tx.akun.update({ where: { id: account.id }, data: { nama: data.value.nama, ...(data.kind === "guru" ? { email: data.value.email } : {}) } });
-          await tx.sesiAkun.updateMany({ where: { akunId: account.id, revokedAt: null }, data: { revokedAt: new Date() } });
+          await Promise.all([
+            tx.akun.update({ where: { id: account.id }, data: { nama: data.value.nama, ...(data.kind === "guru" ? { email: data.value.email } : {}) } }),
+            tx.sesiAkun.updateMany({ where: { akunId: account.id, revokedAt: null }, data: { revokedAt: new Date() } }),
+          ]);
         }
         return true;
       });

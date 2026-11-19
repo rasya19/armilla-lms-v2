@@ -3,15 +3,20 @@ import express, { Router } from "express";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { generateTemporaryPassword, hashPassword } from "./password.js";
 import { parseRegistration } from "./school-registration.js";
+import { toCleanPlanCode } from "./lms-plan-sync.js";
+import type { TenantPlan } from "./plan-utils.js";
 
 type Status = "ACTIVE" | "SUSPENDED";
 type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date };
+type PlanUpdate = { npsn: string | null; slug: string | null; plan: TenantPlan };
+type UpdatedTenantPlan = { id: string; nama: string; slug: string; npsn: string | null; plan: string | null };
 type InternalStore = {
   provision: (data: Provision, passwordHash: string) => Promise<string>;
   updateStatus: (npsn: string, status: Status, expiresAt: Date) => Promise<boolean>;
   getTheme: (npsn: string) => Promise<string | null>;
   updateTheme: (themeKey: ThemeKey, sekolahId: string | null, npsn?: string) => Promise<number>;
+  updatePlan?: (data: PlanUpdate) => Promise<UpdatedTenantPlan | null>;
 };
 
 export class ProvisionConflict extends Error {}
@@ -93,6 +98,17 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
       const result = await prisma.sekolah.updateMany({ where, data: { themeKey } });
       return result.count;
     },
+    async updatePlan({ npsn, slug, plan }) {
+      const school =
+        (npsn ? await prisma.sekolah.findUnique({ where: { npsn }, select: { id: true } }) : null) ??
+        (slug ? await prisma.sekolah.findUnique({ where: { slug }, select: { id: true } }) : null);
+      if (!school) return null;
+      return prisma.sekolah.update({
+        where: { id: school.id },
+        data: { plan },
+        select: { id: true, nama: true, slug: true, npsn: true, plan: true },
+      });
+    },
   };
 }
 
@@ -143,7 +159,75 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
       return res.status(503).json({ error: "Tema tenant belum dapat diperbarui." });
     }
   });
+  function parsePlanUpdate(body: unknown, paramNpsn?: string): PlanUpdate | { error: string } {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return { error: "Data perubahan paket tidak valid." };
+    }
+    const input = body as Record<string, unknown>;
+    const cleanPlan = toCleanPlanCode(input.plan ?? input.paket);
+    if (!cleanPlan) {
+      return { error: "Kode paket tidak valid. Gunakan basic, reguler, atau pro." };
+    }
+    const rawNpsn = typeof paramNpsn === "string" ? paramNpsn : typeof input.npsn === "string" ? input.npsn : "";
+    const trimmedNpsn = rawNpsn.trim().toUpperCase();
+    const npsn = trimmedNpsn ? (/^(?:\d{8}|[PK]\d{7})$/.test(trimmedNpsn) ? trimmedNpsn : null) : null;
+    if (trimmedNpsn && !npsn) {
+      return { error: "Format NPSN tidak valid." };
+    }
+    const rawSlug = typeof input.slug === "string" ? input.slug : typeof input.subdomain === "string" ? input.subdomain : "";
+    const trimmedSlug = rawSlug.trim().toLowerCase();
+    const slug = trimmedSlug ? (/^[a-z0-9]{1,63}$/.test(trimmedSlug) && trimmedSlug !== "www" ? trimmedSlug : null) : null;
+    if (trimmedSlug && !slug) {
+      return { error: "Format slug/subdomain tidak valid." };
+    }
+    if (!npsn && !slug) {
+      return { error: "NPSN atau slug sekolah wajib disertakan untuk pembaruan paket." };
+    }
+    return { npsn, slug, plan: cleanPlan };
+  }
+
+  function isPlanUpdateRequest(body: unknown): boolean {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+    const input = body as Record<string, unknown>;
+    if (input.action === "update-plan" || input.type === "update-plan") return true;
+    const hasPlan = "plan" in input || "paket" in input;
+    const hasTarget = "npsn" in input || "slug" in input || "subdomain" in input;
+    const hasCreationFields = "institutionName" in input || "adminEmail" in input || "expiresAt" in input;
+    return hasPlan && hasTarget && !hasCreationFields;
+  }
+
+  async function handlePlanUpdate(req: express.Request, res: express.Response, paramNpsn?: string) {
+    if (!store.updatePlan) {
+      return res.status(503).json({ error: "Pembaruan paket belum tersedia." });
+    }
+    const parsed = parsePlanUpdate(req.body, paramNpsn);
+    if ("error" in parsed) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    try {
+      const updated = await store.updatePlan(parsed);
+      if (!updated) {
+        return res.status(404).json({ error: "Tenant tidak ditemukan di LMS." });
+      }
+      return res.json({
+        success: true,
+        plan: parsed.plan,
+        sekolah: updated,
+        message: `Paket tenant ${updated.nama} berhasil diperbarui ke ${parsed.plan}.`,
+      });
+    } catch (error) {
+      console.error("Gagal memperbarui paket tenant:", error);
+      return res.status(503).json({ error: "Paket tenant belum dapat diperbarui." });
+    }
+  }
+
+  router.patch("/provision", (req, res) => handlePlanUpdate(req, res));
+  router.patch("/tenants/:npsn/plan", (req, res) => handlePlanUpdate(req, res, req.params.npsn));
+
   router.post("/provision", async (req, res) => {
+    if (isPlanUpdateRequest(req.body)) {
+      return handlePlanUpdate(req, res);
+    }
     const data = provisionInput(req.body);
     if (!data) return res.status(400).json({ error: "Data tenant tidak valid. Subdomain harus 1–63 huruf kecil atau angka tanpa spasi dan strip, serta bukan www; periksa juga NPSN, kontak, paket, dan expiresAt UTC di masa depan." });
     try {

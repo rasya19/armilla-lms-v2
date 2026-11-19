@@ -20,6 +20,7 @@ import { tenantHostMiddleware } from "./tenant-host.js";
 import { schoolManagementRoutes } from "./school-management-routes.js";
 import { normalizeTenantPlan } from "./plan-utils.js";
 import { schoolTierRoutes } from "./school-tier-routes.js";
+import { syncTenantPlanToLms, toCleanPlanCode } from "./lms-plan-sync.js";
 
 const app = express();
 export default app;
@@ -1053,15 +1054,60 @@ app.get("/api/master/sekolah", async (req, res) => {
     const page = pageValue === undefined ? 1 : Number(pageValue);
     const pageSize = 25;
     const schools = await prisma.sekolah.findMany({
-      select: { id: true, nama: true, slug: true, npsn: true, createdAt: true },
+      select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, createdAt: true },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize + 1,
     });
-    return res.json({ sekolah: schools.slice(0, pageSize), page, hasNext: schools.length > pageSize });
+    return res.json({
+      sekolah: schools.slice(0, pageSize).map((school) => ({
+        ...school,
+        plan: normalizeTenantPlan(school.plan),
+      })),
+      page,
+      hasNext: schools.length > pageSize,
+    });
   } catch (error) {
     console.error("Gagal memuat daftar sekolah:", error);
     return res.status(503).json({ error: "Daftar sekolah tidak tersedia. Coba lagi nanti." });
+  }
+});
+
+app.post("/api/master/sekolah/:id/paket", async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const cleanPlan = toCleanPlanCode(req.body?.plan ?? req.body?.paket);
+    if (!cleanPlan) {
+      return res.status(400).json({ error: "Pilihan paket tidak valid. Pilih Paket Basic, Reguler, atau Pro." });
+    }
+    const school = await prisma.sekolah.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, nama: true, slug: true, npsn: true },
+    });
+    if (!school) {
+      return res.status(404).json({ error: "Tenant sekolah tidak ditemukan." });
+    }
+    const syncResult = await syncTenantPlanToLms({
+      npsn: school.npsn,
+      slug: school.slug,
+      plan: cleanPlan,
+    });
+    if ("error" in syncResult) {
+      return res.status(syncResult.status).json({ error: syncResult.error });
+    }
+    await prisma.sekolah.update({
+      where: { id: school.id },
+      data: { plan: cleanPlan },
+    });
+    return res.json({
+      success: true,
+      plan: cleanPlan,
+      message: syncResult.message,
+    });
+  } catch (error) {
+    console.error("Gagal menyinkronkan paket tenant ke LMS:", error);
+    return res.status(503).json({ error: "Sinkronisasi paket tenant belum dapat diproses." });
   }
 });
 

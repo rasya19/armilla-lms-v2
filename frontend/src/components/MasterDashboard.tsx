@@ -13,7 +13,7 @@ type MenuItem = { id: string; label: string; icon: LucideIcon; description: stri
 const menuItems: MenuItem[] = [
   { id: "dashboard", label: "Ringkasan", icon: LayoutDashboard, description: "Ikhtisar aktivitas platform." },
   { id: "verifikasi", label: "Pendaftaran Sekolah", icon: ClipboardList, description: "Tinjau permohonan pendaftaran lembaga." },
-  { id: "tenant", label: "Lembaga Terdaftar", icon: Building2, description: "Daftar lembaga yang tercatat." },
+  { id: "tenant", label: "Kelola Tenant", icon: Building2, description: "Kelola tenant, paket langganan, dan sinkronisasi ke LMS." },
   { id: "linimasa", label: "Linimasa", icon: CalendarDays, description: "Linimasa pendaftaran lembaga." },
   { id: "tim", label: "Tim Admin", icon: UsersRound, description: "Kelola tim administrasi." },
   { id: "berkas", label: "Berkas", icon: FileText, description: "Kelola berkas platform." },

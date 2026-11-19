@@ -13,6 +13,8 @@ import { BulkPlacementAction } from "./BulkPlacementAction";
 import type { PlacementClass, PlacementNotice } from "./BulkPlacementAction";
 import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
+import { Lock } from "lucide-react";
 
 type Row = { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null };
 type Result = { rows: Row[]; page: number; pageSize?: number; hasNext: boolean; total?: number };
@@ -26,7 +28,20 @@ function isResult(data: unknown): data is Result {
   return data.rows.every((row: unknown) => typeof row === "object" && row !== null && "id" in row && typeof row.id === "string" && "nama" in row && typeof row.nama === "string" && "keterangan" in row && typeof row.keterangan === "string" && "status" in row && typeof row.status === "string");
 }
 
-export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; visible: boolean }) {
+export function SchoolData({
+  slug,
+  kind,
+  visible,
+  plan = "basic",
+  onRequireUpgrade,
+}: {
+  slug: string;
+  kind: Kind;
+  visible: boolean;
+  plan?: PlanSlug;
+  onRequireUpgrade?: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
+}) {
+  const canUseReguler = hasPlanAccess(plan, "reguler");
   const confirm = useGlassConfirm();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -167,7 +182,7 @@ export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; 
     } finally { setAccountBusy(false); }
   }
   return <section hidden={!visible} className="dashboard-glass p-4 sm:p-6">
-    <DashboardHero title={labels[kind]} description="Kelola data dan kegiatan untuk sekolah Anda." badge={kind === "guru" && data ? `${data.total} ${term ? "hasil pencarian" : "guru"}` : undefined} action={kind === "guru" ? <button type="button" onClick={() => setTeacherOpen(true)} className="dashboard-hero-action"><Plus size={18} />Tambah Guru</button> : kind === "siswa" ? <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setStudentOpen(true)} className="dashboard-hero-action"><Plus size={18} />Tambah Siswa</button><button type="button" onClick={() => setImportOpen(true)} className="dashboard-hero-action dashboard-hero-secondary">Impor Siswa</button></div> : undefined} />
+    <DashboardHero title={labels[kind]} description="Kelola data dan kegiatan untuk sekolah Anda." badge={kind === "guru" && data ? `${data.total} ${term ? "hasil pencarian" : "guru"}` : undefined} action={kind === "guru" ? <button type="button" onClick={() => setTeacherOpen(true)} className="dashboard-hero-action"><Plus size={18} />Tambah Guru</button> : kind === "siswa" ? <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setStudentOpen(true)} className="dashboard-hero-action"><Plus size={18} />Tambah Siswa</button><button type="button" onClick={() => { if (!canUseReguler) { onRequireUpgrade?.("Impor Massal Dapodik", "reguler"); return; } setImportOpen(true); }} className="dashboard-hero-action dashboard-hero-secondary">{!canUseReguler && <Lock size={14} aria-hidden="true" />}Impor Siswa{!canUseReguler && <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-extrabold uppercase">Reguler</span>}</button></div> : undefined} />
     {kind === "guru" && <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
       <label className="relative block"><span className="sr-only">Cari nama, NUPTK, atau email guru</span><Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} maxLength={100} type="search" placeholder="Cari nama, NUPTK, atau email" className="glass-input w-full rounded-xl py-3 pl-10 pr-3 text-sm" /></label>
       <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-white"><Users size={20} /><div><p className="text-xs font-semibold">{term ? "Hasil pencarian" : "Total guru"}</p><p className="text-lg font-bold">{data?.total ?? "—"}</p></div></div>
@@ -177,7 +192,7 @@ export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; 
     {accountError && <p role="alert" className="mt-4 text-sm text-rose-700">{accountError}</p>}
     {kind === "siswa" && importResult && <div role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><div className="flex items-start justify-between gap-3"><p className="font-semibold">Impor selesai: {importResult.created} siswa baru, {importResult.updated} siswa diperbarui; {importResult.skipped.length} siswa tanpa NISN dilewati.</p><button type="button" onClick={() => setImportResult(null)} className="shrink-0 font-bold underline">Tutup</button></div>{importResult.skipped.length > 0 && <><ul className="mt-2 list-inside list-disc">{importResult.skipped.map((row) => <li key={row.number}>Baris {row.number}: {row.nama || "(nama kosong)"}</li>)}</ul><p className="mt-2">Lengkapi NISN di file sebelum mengimpor siswa tersebut.</p></>}</div>}
     {credential && <div role="status" className="mt-4 rounded-xl border border-amber-400 bg-amber-100/95 p-4 text-sm text-amber-950 shadow-sm"><p className="font-bold text-amber-950">Password sementara untuk {credential.nama}</p><div className="mt-2 flex flex-wrap items-center gap-2"><code className="break-all rounded-lg border border-amber-300 bg-amber-200/80 px-3 py-1.5 font-mono text-base font-bold tracking-wider text-slate-950">{credential.password}</code><button type="button" onClick={() => { if (navigator.clipboard?.writeText) { void navigator.clipboard.writeText(credential.password).then(() => { setCopiedCredential(true); window.setTimeout(() => setCopiedCredential(false), 2500); }).catch(() => {}); } }} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-slate-950 shadow-xs transition hover:bg-amber-50">{copiedCredential ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copiedCredential ? "Tersalin" : "Salin"}</button></div><p className="mt-2 leading-relaxed text-amber-950">Hanya ditampilkan sekarang. Sampaikan langsung melalui cara yang aman; pengguna wajib menggantinya saat masuk. Jika hilang, reset kembali.</p><button type="button" onClick={() => { setCredential(null); setCopiedCredential(false); }} className="mt-3 inline-flex items-center rounded-lg border border-amber-400 bg-amber-200/75 px-3 py-1.5 text-xs font-bold text-amber-950 underline transition hover:bg-amber-200">Saya sudah menyimpan dengan aman</button></div>}
-    {kind === "kelas" ? <SchoolClasses /> : kind === "mapel" || kind === "akademik" ? <SchoolAcademics mode={kind} /> : <>
+    {kind === "kelas" ? <SchoolClasses plan={plan} onRequireUpgrade={onRequireUpgrade} /> : kind === "mapel" || kind === "akademik" ? <SchoolAcademics mode={kind} /> : <>
     {kind === "siswa" && importOpen && <SchoolModal title="Impor Siswa dari Excel" titleIcon={<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><FileSpreadsheet size={22} aria-hidden="true" /></span>} busy={importBusy} onClose={() => setImportOpen(false)}><StudentImport onBusyChange={setImportBusy} onImported={(result) => { invalidateCache(["/api/sekolah/siswa", "/api/sekolah/ringkasan"]); setImportOpen(false); setImportResult(result); setPagination({ kind: "siswa", page: 1, term: "" }); setVersion((value) => value + 1); }} /></SchoolModal>}
     {kind === "siswa" && studentOpen && <SchoolModal title="Tambah Siswa" wide busy={studentBusy} onClose={() => setStudentOpen(false)}><StudentEditor onCancel={() => setStudentOpen(false)} onBusyChange={setStudentBusy} onSaved={() => { invalidateCache(["/api/sekolah/siswa", "/api/sekolah/kelas", "/api/sekolah/ringkasan"]); setStudentOpen(false); setPagination({ kind: "siswa", page: 1, term: "" }); setVersion((value) => value + 1); setToast("Data siswa tersimpan. Akun siswa belum dibuat."); }} /></SchoolModal>}
     {teacherOpen && kind === "guru" && <SchoolModal title="Tambah Guru" busy={teacherBusy} onClose={() => setTeacherOpen(false)}><TeacherForm onBusyChange={setTeacherBusy} onSaved={() => { invalidateCache(["/api/sekolah/guru", "/api/sekolah/kelas", "/api/sekolah/akademik", "/api/sekolah/ringkasan"]); setTeacherOpen(false); setSearchInput(""); setSearch(""); setPagination({ kind: "guru", page: 1, term: "" }); setVersion((value) => value + 1); setToast("Data guru tersimpan. Akun guru belum dibuat."); }} /></SchoolModal>}

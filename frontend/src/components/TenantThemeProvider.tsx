@@ -1,9 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
+export type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 
-function isThemeKey(value: unknown): value is ThemeKey {
+export const TENANT_THEME_EVENT = "armilla:tenant-theme-changed";
+
+export function isThemeKey(value: unknown): value is ThemeKey {
   return value === "ocean" || value === "emerald" || value === "sunset" || value === "dark";
+}
+
+export function dispatchTenantThemeChange(themeKey: ThemeKey) {
+  window.dispatchEvent(new CustomEvent<ThemeKey>(TENANT_THEME_EVENT, { detail: themeKey }));
 }
 
 export function TenantThemeProvider({ scope, children }: { scope: "sekolah" | "lms"; children: ReactNode }) {
@@ -27,6 +33,18 @@ export function TenantThemeProvider({ scope, children }: { scope: "sekolah" | "l
     });
     return () => controller.abort();
   }, [scope]);
+
+  useEffect(() => {
+    function handleThemeChange(event: Event) {
+      const custom = event as CustomEvent<unknown>;
+      if (isThemeKey(custom.detail)) {
+        setTheme(custom.detail);
+        setError(false);
+      }
+    }
+    window.addEventListener(TENANT_THEME_EVENT, handleThemeChange);
+    return () => window.removeEventListener(TENANT_THEME_EVENT, handleThemeChange);
+  }, []);
 
   return <div data-tenant-theme={theme}>
     {error && <p role="alert" className="relative z-50 bg-amber-100 px-4 py-2 text-sm text-amber-950">Tema sekolah belum dapat dimuat. Tampilan sementara menggunakan tema Ocean; muat ulang untuk mencoba kembali.</p>}

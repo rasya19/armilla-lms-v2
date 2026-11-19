@@ -18,6 +18,8 @@ import { forwardRegistrationToMaster } from "./master-admin-registration.js";
 import { tenantAccessible } from "./tenant-access.js";
 import { tenantHostMiddleware } from "./tenant-host.js";
 import { schoolManagementRoutes } from "./school-management-routes.js";
+import { normalizeTenantPlan } from "./plan-utils.js";
+import { schoolTierRoutes } from "./school-tier-routes.js";
 
 const app = express();
 export default app;
@@ -222,9 +224,16 @@ app.get("/api/auth/sekolah/session", async (req, res) => {
   try {
     const session = await getSession(req, "ADMIN");
     if (!session || !session.akun.sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
-    const school = await prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true } });
+    const school = await prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true, plan: true, themeKey: true } });
     if (!school) return res.status(401).json({ error: "Sesi tidak valid." });
-    return res.json({ nama: session.akun.nama, sekolah: school.nama, slug: school.slug });
+    return res.json({
+      nama: session.akun.nama,
+      sekolah: school.nama,
+      slug: school.slug,
+      plan: normalizeTenantPlan(school.plan),
+      rawPlan: school.plan ?? null,
+      themeKey: school.themeKey ?? "ocean",
+    });
   } catch (error) {
     console.error("Gagal memeriksa sesi sekolah:", error);
     return res.status(503).json({ error: "Layanan sesi tidak tersedia." });
@@ -583,6 +592,7 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
 });
 
 app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
+app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 
 app.post("/api/sekolah/siswa/import", async (req, res) => {
   try {

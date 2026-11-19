@@ -73,11 +73,37 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   },
 ];
 
+export const PLAN_RANK: Record<PlanSlug, number> = {
+  basic: 1,
+  reguler: 2,
+  pro: 3,
+};
+
 export function resolvePlanSlug(value: string | null | undefined): PlanSlug {
-  const normalized = value?.trim().toLowerCase();
-  if (normalized === 'reguler' || normalized === 'paket reguler') return 'reguler';
-  if (normalized === 'pro' || normalized === 'paket pro') return 'pro';
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, ' ') ?? '';
+  if (
+    normalized === 'reguler' ||
+    normalized === 'paket reguler' ||
+    normalized === 'regular' ||
+    normalized === 'paket regular'
+  ) {
+    return 'reguler';
+  }
+  if (
+    normalized === 'pro' ||
+    normalized === 'paket pro' ||
+    normalized === 'tahunan' ||
+    normalized === 'paket tahunan' ||
+    normalized === 'enterprise' ||
+    normalized === 'paket enterprise'
+  ) {
+    return 'pro';
+  }
   return 'basic';
+}
+
+export function hasPlanAccess(currentPlan: PlanSlug, requiredPlan: PlanSlug): boolean {
+  return PLAN_RANK[currentPlan] >= PLAN_RANK[requiredPlan];
 }
 
 export function getPlanBySlug(slug: PlanSlug): SubscriptionPlan {

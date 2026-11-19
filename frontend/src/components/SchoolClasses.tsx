@@ -6,6 +6,8 @@ import { ClassPromotion } from "./ClassPromotion";
 import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
+import { Lock } from "lucide-react";
 
 type ClassItem = { id: string; nama: string; waliGuruId: string | null; jumlahSiswa: number };
 type Teacher = { id: string; nama: string };
@@ -31,7 +33,14 @@ async function request(url: string, method = "GET", body?: object): Promise<unkn
 const field = "mt-2 w-full rounded-xl border border-slate-300 bg-white p-3";
 const action = "mt-3 rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
 
-export function SchoolClasses() {
+export function SchoolClasses({
+  plan = "basic",
+  onRequireUpgrade,
+}: {
+  plan?: PlanSlug;
+  onRequireUpgrade?: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
+}) {
+  const canUseReguler = hasPlanAccess(plan, "reguler");
   const confirm = useGlassConfirm();
   const [data, setData] = useState<ClassData | null>(() => getCached<ClassData>("/api/sekolah/kelas"));
   const [version, setVersion] = useState(0);
@@ -97,8 +106,8 @@ export function SchoolClasses() {
     {error && !classOpen && <p role="alert" className="text-sm text-rose-700">{error}</p>}
     {message && <p role="status" className="text-sm text-green-700">{message}</p>}
     {!data ? <button type="button" onClick={() => { setError(""); setVersion((value) => value + 1); }} className="text-sm font-bold underline">Muat ulang kelas</button> : <>
-      <div className="flex flex-wrap gap-2"><button type="button" aria-pressed={tab === "list"} onClick={() => setTab("list")} className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "list" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Daftar Kelas</button><button type="button" aria-pressed={tab === "promotion"} onClick={() => { setError(""); setMessage(""); setTab("promotion"); }} className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "promotion" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Kenaikan Kelas Massal</button></div>
-      {tab === "promotion" ? <ClassPromotion classes={data.kelas} onMoved={handleMoved} /> : <>
+      <div className="flex flex-wrap gap-2"><button type="button" aria-pressed={tab === "list"} onClick={() => setTab("list")} className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "list" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Daftar Kelas</button><button type="button" aria-pressed={tab === "promotion"} onClick={() => { if (!canUseReguler) { onRequireUpgrade?.("Kenaikan Kelas Massal", "reguler"); return; } setError(""); setMessage(""); setTab("promotion"); }} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${tab === "promotion" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>{!canUseReguler && <Lock size={14} aria-hidden="true" />}Kenaikan Kelas Massal{!canUseReguler && <span className="rounded bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-extrabold uppercase text-indigo-950">Reguler</span>}</button></div>
+      {tab === "promotion" && canUseReguler ? <ClassPromotion classes={data.kelas} onMoved={handleMoved} /> : <>
       <div className="flex flex-wrap items-center justify-between gap-3"><label className="text-sm"><span className="sr-only">Cari kelas</span><input type="search" className={field} placeholder="Cari nama kelas" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button type="button" className="master-primary" onClick={() => { setError(""); setEditing(null); setNama(""); setWali(""); setClassOpen(true); }}>+ Tambah Kelas</button></div>
       {classOpen && <SchoolModal title={editing ? "Ubah kelas" : "Tambah kelas"} busy={busy} onClose={() => { setClassOpen(false); setError(""); }}>
       <form onSubmit={saveClass}>
@@ -109,7 +118,20 @@ export function SchoolClasses() {
         <button disabled={busy} className={action}>{editing ? "Simpan perubahan kelas" : "Tambah kelas"}</button>
       </form></SchoolModal>}
       <section><h3 className="font-bold">Daftar kelas <span className="text-sm font-normal text-slate-600">({data.kelas.length})</span></h3>{!data.kelas.filter((item) => item.nama.toLowerCase().includes(search.trim().toLowerCase())).length ? <EmptyState title={search ? "Kelas tidak ditemukan" : "Belum ada kelas"} description={search ? "Coba nama kelas lain." : "Tambahkan kelas dan pilih wali kelas untuk memulai."} action={!search && <button type="button" className="master-primary" onClick={() => { setEditing(null); setNama(""); setWali(""); setClassOpen(true); }}>Tambah Kelas</button>} /> : <ul className="mt-2 space-y-2">{data.kelas.filter((item) => item.nama.toLowerCase().includes(search.trim().toLowerCase())).map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm transition hover:bg-indigo-50/60"><strong>{item.nama}</strong> ({item.id.slice(0, 8)}) · {item.jumlahSiswa} siswa aktif · Wali: {item.waliGuruId ? data.guru.find((teacher) => teacher.id === item.waliGuruId)?.nama ?? "Guru tidak aktif atau tidak ditemukan" : "Belum ditentukan"} <button type="button" disabled={busy} onClick={() => { setError(""); setEditing(item.id); setNama(item.nama); setWali(item.waliGuruId ?? ""); setClassOpen(true); }} className="ml-2 font-bold text-indigo-700 underline disabled:opacity-50">Ubah</button><button type="button" disabled={busy} onClick={() => deleteClass(item)} className="ml-3 font-bold text-rose-700 underline disabled:opacity-50">Hapus</button></li>)}</ul>}</section>
-      <BulkClassPlacement classes={data.kelas} onMoved={handleMoved} />
+      {canUseReguler ? <BulkClassPlacement classes={data.kelas} onMoved={handleMoved} /> : (
+        <section className="dashboard-glass flex flex-wrap items-center justify-between gap-4 p-5">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-slate-900">Penempatan Siswa Massal</h3>
+              <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-indigo-900"><Lock size={11} aria-hidden="true" />Reguler</span>
+            </div>
+            <p className="mt-1 text-sm text-slate-600">Tempatkan hingga 50 siswa ke kelas tujuan sekaligus. Tersedia pada Paket Reguler dan Paket Pro.</p>
+          </div>
+          <button type="button" onClick={() => onRequireUpgrade?.("Penempatan Siswa Massal", "reguler")} className="master-primary shrink-0">
+            Lihat Info Upgrade
+          </button>
+        </section>
+      )}
       </>}
     </>}
   </div>;

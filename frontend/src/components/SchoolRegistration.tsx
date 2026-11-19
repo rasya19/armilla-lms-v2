@@ -31,7 +31,11 @@ export function SchoolRegistration() {
       const response = await fetch("/api/pendaftaran-sekolah", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, paket: activePlan.planValue }),
+        body: JSON.stringify({
+          ...form,
+          paket: activePlan.planValue,
+          nominalTahunan: activePlan.annualPrice,
+        }),
       });
       if (!response.ok) {
         let detail = "Pendaftaran belum dapat disimpan. Pastikan server berjalan dan coba lagi.";
@@ -45,7 +49,7 @@ export function SchoolRegistration() {
         }
         throw new Error(detail);
       }
-      setMessage(`Pendaftaran untuk ${activePlan.name} terkirim ke Rasyatech Admin dan menunggu verifikasi. Akun LMS dibuat setelah disetujui.`);
+      setMessage(`Pendaftaran untuk ${activePlan.name} (${activePlan.annualPriceLabel}) terkirim ke Rasyatech Admin dan menunggu verifikasi. Akun LMS dibuat setelah disetujui.`);
       setForm({ namaSekolah: "", npsn: "", wilayah: "", namaKontak: "", emailKontak: "", teleponKontak: "" });
     } catch (error) {
       console.error("Gagal mengirim pendaftaran sekolah:", error);
@@ -92,15 +96,19 @@ export function SchoolRegistration() {
                         </span>
                       )}
                     </div>
-                    <p className="mt-2 text-lg font-extrabold text-indigo-800">
-                      {plan.price} <span className="text-xs font-medium text-slate-600">{plan.period}</span>
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">{plan.duration}</p>
+                    <p className="mt-2 text-base font-extrabold text-indigo-800">{plan.annualPriceLabel}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-600">{plan.price} {plan.period}</p>
+                    <span className="mt-2 inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-900">
+                      {plan.popular ? "Populer • Hemat 2 Bulan" : plan.badge}
+                    </span>
                   </div>
                 </label>
               );
             })}
           </div>
+          <p className="text-xs text-slate-600">
+            Terpilih: <span className="font-semibold text-[#142137]">{activePlan.name} — {activePlan.annualPriceLabel}</span> ({activePlan.billingNote}).
+          </p>
         </fieldset>
         <label className="block text-sm font-semibold">Nama sekolah<input className={inputClass} required minLength={2} maxLength={200} value={form.namaSekolah} onChange={(e) => setForm({ ...form, namaSekolah: e.target.value })} /></label>
         <label className="block text-sm font-semibold">NPSN<input className={inputClass} required autoCapitalize="characters" pattern="([0-9]{8}|[PpKk][0-9]{7})" title="Masukkan 8 angka atau huruf P/K diikuti 7 angka." aria-describedby="npsn-help" maxLength={8} value={form.npsn} onChange={(e) => setForm({ ...form, npsn: e.target.value.toUpperCase() })} /><span id="npsn-help" className="mt-2 block text-xs font-normal text-slate-600">Wajib untuk pencocokan pendaftaran dan provisioning. Gunakan 8 angka, atau huruf P/K diikuti 7 angka.</span></label>

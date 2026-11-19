@@ -1,8 +1,8 @@
 import express from "express";
 import { createHash, randomBytes } from "crypto";
 import { loginPool, pool, prisma } from "./db.js";
-import { generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
-import { registrationRateLimit, registrationRoutes } from "./registration-routes.js";
+import { DEFAULT_STUDENT_PASSWORD, generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
+import { extractPaketFromNote, registrationRateLimit, registrationRoutes, saveRegistrationRecord } from "./registration-routes.js";
 import { parseStudentImport } from "./student-import.js";
 import { parseApplicant, parseTeacher } from "./school-input.js";
 import { parseClass, parsePlacement } from "./class-input.js";
@@ -149,16 +149,7 @@ app.use("/api/pendaftaran-sekolah", registrationRoutes({
   limit: registrationRateLimit(loginPool, limitSecret, !!process.env.VERCEL && process.env.VERCEL_ENV === "preview"),
   save: async (data, registrationId) => {
     await forwardRegistrationToMaster(registrationId, data);
-    try {
-      await prisma.pendaftaranSekolah.create({ data: { ...data, id: registrationId } });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022" && data.paket) {
-        const { paket: _ignored, ...withoutPaket } = data;
-        await prisma.pendaftaranSekolah.create({ data: { ...withoutPaket, id: registrationId } });
-        return;
-      }
-      throw error;
-    }
+    await saveRegistrationRecord(prisma.pendaftaranSekolah, registrationId, data);
   },
 }));
 
@@ -285,7 +276,7 @@ app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
     if (jenis !== "siswa" && jenis !== "guru") return res.status(404).json({ error: "Jenis akun tidak ditemukan." });
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = jenis === "siswa" ? DEFAULT_STUDENT_PASSWORD : generateTemporaryPassword();
     const passwordHash = await hashPassword(temporaryPassword);
     await prisma.$transaction(async (tx) => {
       if (jenis === "siswa") {
@@ -316,7 +307,7 @@ app.post("/api/sekolah/:jenis/:id/reset-password", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
     if (jenis !== "siswa" && jenis !== "guru") return res.status(404).json({ error: "Jenis akun tidak ditemukan." });
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = jenis === "siswa" ? DEFAULT_STUDENT_PASSWORD : generateTemporaryPassword();
     const passwordHash = await hashPassword(temporaryPassword);
     const changed = await prisma.$transaction(async (tx) => {
       const account = await tx.akun.findFirst({
@@ -566,7 +557,7 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
     if (session.akun.peran !== "GURU" || session.akun.wajibGantiPassword || !session.akun.guruId || !session.akun.sekolahId) return res.status(403).json({ error: "Akses ditolak. Guru harus mengganti password awal." });
     const sekolahId = session.akun.sekolahId;
     const guruId = session.akun.guruId;
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = DEFAULT_STUDENT_PASSWORD;
     const passwordHash = await hashPassword(temporaryPassword);
     const today = jakartaDate();
     const changed = await prisma.$transaction(async (tx) => {
@@ -1067,11 +1058,15 @@ app.get("/api/master/pendaftaran-sekolah", async (req, res) => {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") {
-        items = await prisma.pendaftaranSekolah.findMany({
+        const fallbackRows = await prisma.pendaftaranSekolah.findMany({
           select: selectBase,
           orderBy: [{ dibuatPada: "desc" }, { id: "desc" }],
           skip: (page - 1) * pageSize,
           take: pageSize + 1,
+        });
+        items = fallbackRows.map((item) => {
+          const parsedPaket = extractPaketFromNote(item.catatanTinjauan);
+          return parsedPaket ? { ...item, paket: parsedPaket } : item;
         });
       } else {
         throw error;
@@ -1132,11 +1127,11 @@ app.delete("/api/master/pendaftaran-sekolah/:id", async (req, res) => {
           accounts.some((account) => account.peran !== "ADMIN" || account.siswaId || account.guruId ||
             Object.values(account._count).some((count) => count > 0))) return "has-data";
 
-        await tx.pendaftaranSekolah.delete({ where: { id: req.params.id } });
+        await tx.pendaftaranSekolah.delete({ where: { id: req.params.id }, select: { id: true } });
         await tx.akun.deleteMany({ where: { sekolahId } });
-        await tx.sekolah.delete({ where: { id: sekolahId } });
+        await tx.sekolah.delete({ where: { id: sekolahId }, select: { id: true } });
       } else {
-        await tx.pendaftaranSekolah.delete({ where: { id: req.params.id } });
+        await tx.pendaftaranSekolah.delete({ where: { id: req.params.id }, select: { id: true } });
       }
       return "deleted";
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

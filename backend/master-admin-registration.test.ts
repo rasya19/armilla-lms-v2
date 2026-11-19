@@ -43,7 +43,7 @@ test("registration delivery forwards normalized data using a backend bearer toke
     adminPhone: registration.teleponKontak,
   });
 
-  await forwardRegistrationToMaster("4a9b327c-6761-49f7-8551-98d9eb093227", { ...registration, paket: "Pro" }, {
+  await forwardRegistrationToMaster("4a9b327c-6761-49f7-8551-98d9eb093227", { ...registration, paket: "Reguler", nominalTahunan: 1750000 }, {
     endpoint: "http://127.0.0.1:3000/api/lms-registrations",
     token: "shared-test-token",
     production: false,
@@ -57,8 +57,10 @@ test("registration delivery forwards normalized data using a backend bearer toke
     adminName: registration.namaKontak,
     adminEmail: registration.emailKontak,
     adminPhone: registration.teleponKontak,
-    plan: "Pro",
-    paket: "Pro",
+    plan: "Reguler",
+    paket: "Reguler",
+    annualPrice: 1750000,
+    nominalTahunan: 1750000,
   });
 });
 

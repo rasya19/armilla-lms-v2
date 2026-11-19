@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Check, Copy } from "lucide-react";
 import { useGlassConfirm } from "./GlassConfirm";
 
 type Student = { id: string; nama: string; nisn: string };
@@ -18,6 +19,7 @@ export function TeacherPasswordReset() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function search(event: React.FormEvent<HTMLFormElement>) {
@@ -37,13 +39,14 @@ export function TeacherPasswordReset() {
   }
 
   async function reset() {
-    if (!student || temporaryPassword || !await confirm(`Reset password ${student.nama} (NISN ${student.nisn}) dengan password sementara unik? Semua sesi siswa akan berakhir.`)) return;
+    if (!student || temporaryPassword || !await confirm(`Reset password ${student.nama} (NISN ${student.nisn}) ke password default 123456? Semua sesi siswa akan berakhir.`)) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const response = await fetch(`/api/lms/guru/siswa/${encodeURIComponent(student.id)}/reset-password`, { method: "POST" });
       if (!response.ok) throw new Error(await responseError(response));
       const body: unknown = await response.json();
-      if (typeof body !== "object" || body === null || !("temporaryPassword" in body) || typeof body.temporaryPassword !== "string" || !/^[A-Za-z0-9_-]{24}$/.test(body.temporaryPassword)) throw new Error("Respons tidak valid. Reset kembali untuk memperoleh password baru.");
+      if (typeof body !== "object" || body === null || !("temporaryPassword" in body) || typeof body.temporaryPassword !== "string" || !/^(?:123456|[A-Za-z0-9_-]{24})$/.test(body.temporaryPassword)) throw new Error("Respons tidak valid. Reset kembali untuk memperoleh password baru.");
+      setCopied(false);
       setTemporaryPassword(body.temporaryPassword);
       setMessage(`Password sementara untuk ${student.nama}:`);
       setStudent(null);
@@ -59,6 +62,6 @@ export function TeacherPasswordReset() {
     <form onSubmit={search} className="mt-4"><label className="block text-sm font-semibold">NISN siswa<input disabled={!!temporaryPassword} className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3" inputMode="numeric" pattern="[0-9]{10}" maxLength={10} required value={nisn} onChange={(e) => { setNisn(e.target.value); setStudent(null); setMessage(""); }} /></label><button disabled={busy || !!temporaryPassword} className="mt-3 rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Cari siswa</button></form>
     {student && <div className="mt-4 rounded-xl border border-[#e6dfd0] bg-white p-4"><p className="font-bold">{student.nama}</p><p className="mt-1 text-sm">NISN: {student.nisn}</p><button disabled={busy || !!temporaryPassword} type="button" onClick={reset} className="mt-3 rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50">Reset password</button></div>}
     {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}
-    {temporaryPassword && <div role="status" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm"><p className="font-bold">{message}</p><p className="mt-2 break-all font-mono">{temporaryPassword}</p><p className="mt-2">Hanya ditampilkan sekarang. Sampaikan langsung kepada siswa dengan cara yang aman. Siswa wajib menggantinya saat masuk; jika hilang, reset kembali.</p><button type="button" onClick={() => { setTemporaryPassword(""); setMessage(""); }} className="mt-3 font-bold underline">Saya sudah menyimpan dengan aman</button></div>}
+    {temporaryPassword && <div role="status" className="mt-3 rounded-xl border border-amber-400 bg-amber-100/95 p-4 text-sm text-amber-950 shadow-sm"><p className="font-bold text-amber-950">{message}</p><div className="mt-2 flex flex-wrap items-center gap-2"><code className="break-all rounded-lg border border-amber-300 bg-amber-200/80 px-3 py-1.5 font-mono text-base font-bold tracking-wider text-slate-950">{temporaryPassword}</code><button type="button" onClick={() => { if (navigator.clipboard?.writeText) { void navigator.clipboard.writeText(temporaryPassword).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 2500); }).catch(() => {}); } }} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-slate-950 shadow-xs transition hover:bg-amber-50">{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? "Tersalin" : "Salin"}</button></div><p className="mt-2 leading-relaxed text-amber-950">Hanya ditampilkan sekarang. Sampaikan langsung kepada siswa dengan cara yang aman. Siswa wajib menggantinya saat masuk; jika hilang, reset kembali.</p><button type="button" onClick={() => { setTemporaryPassword(""); setMessage(""); setCopied(false); }} className="mt-3 inline-flex items-center rounded-lg border border-amber-400 bg-amber-200/75 px-3 py-1.5 text-xs font-bold text-amber-950 underline transition hover:bg-amber-200">Saya sudah menyimpan dengan aman</button></div>}
   </section>;
 }

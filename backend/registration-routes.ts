@@ -39,6 +39,89 @@ export function registrationRateLimit(pool: Pool, secret: string, preview = fals
   };
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  return (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") ||
+    (typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "P2022");
+}
+
+function formatRupiah(amount: number): string {
+  return `Rp ${Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+}
+
+export function formatPaketNote(paket?: string, nominalTahunan?: number): string | null {
+  if (!paket) return null;
+  return typeof nominalTahunan === "number" ? `Paket: ${paket} (${formatRupiah(nominalTahunan)} / tahun)` : `Paket: ${paket}`;
+}
+
+export function extractPaketFromNote(note: string | null | undefined): string | null {
+  if (!note) return null;
+  const match = note.match(/(?:^|\|\s*)Paket:\s*([A-Za-z]+)/);
+  return match ? match[1] : null;
+}
+
+export type PendaftaranSekolahCreateArgs = {
+  data: {
+    id: string;
+    namaSekolah: string;
+    npsn: string;
+    wilayah?: string | null;
+    namaKontak: string;
+    emailKontak: string;
+    teleponKontak: string;
+    paket?: string;
+    catatanTinjauan?: string;
+  };
+  select: { id: true };
+};
+
+export async function saveRegistrationRecord(
+  pendaftaranSekolah: { create: (args: PendaftaranSekolahCreateArgs) => Promise<unknown> },
+  registrationId: string,
+  data: Registration,
+): Promise<void> {
+  const { nominalTahunan, paket, wilayah, namaSekolah, npsn, namaKontak, emailKontak, teleponKontak } = data;
+  const baseRequired = { id: registrationId, namaSekolah, npsn, namaKontak, emailKontak, teleponKontak };
+  const paketNote = formatPaketNote(paket, nominalTahunan);
+  const wilayahNote = wilayah ? `Wilayah: ${wilayah}` : null;
+
+  try {
+    await pendaftaranSekolah.create({
+      data: {
+        ...baseRequired,
+        wilayah,
+        ...(paket ? { paket } : {}),
+      },
+      select: { id: true },
+    });
+    return;
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+  }
+
+  try {
+    await pendaftaranSekolah.create({
+      data: {
+        ...baseRequired,
+        wilayah,
+        ...(paketNote ? { catatanTinjauan: paketNote } : {}),
+      },
+      select: { id: true },
+    });
+    return;
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+  }
+
+  const combinedNote = [paketNote, wilayahNote].filter((item): item is string => Boolean(item)).join(" | ");
+  await pendaftaranSekolah.create({
+    data: {
+      ...baseRequired,
+      ...(combinedNote ? { catatanTinjauan: combinedNote } : {}),
+    },
+    select: { id: true },
+  });
+}
+
 function databaseErrorCode(error: unknown): string {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     if (error.code === "P2021" || error.code === "P2022") return "REGISTRATION_SCHEMA_ERROR";

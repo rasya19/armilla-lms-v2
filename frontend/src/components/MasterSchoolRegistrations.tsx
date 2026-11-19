@@ -89,7 +89,12 @@ export function MasterSchoolRegistrations() {
         <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-bold">{item.namaSekolah}</h3><div className="flex items-center gap-4"><span className="text-xs font-bold text-[#80643a]">{item.status === "MENUNGGU" ? "Menunggu" : item.status === "DISETUJUI" ? "Disetujui" : "Ditolak"}</span><button type="button" disabled={deletingId !== null} onClick={() => void deleteRegistration(item)} className="text-xs font-bold text-rose-700 disabled:text-slate-400">{deletingId === item.id ? "Menghapus..." : "Hapus"}</button></div></div>
         <p className="mt-2 text-sm text-slate-600">NPSN: {item.npsn || "Belum diisi"}</p>
         <p className="mt-1 text-sm text-slate-600">Wilayah: {item.wilayah || "Belum diisi"}</p>
-        {item.paket && <p className="mt-1 text-sm font-medium text-indigo-800">Paket: {item.paket}</p>}
+        {item.paket && (
+          <p className="mt-1 text-sm font-medium text-indigo-800">
+            Paket: {item.paket}
+            {item.paket === "Basic" ? " — Rp 1.500.000 / tahun" : item.paket === "Reguler" ? " — Rp 1.750.000 / tahun" : item.paket === "Pro" ? " — Rp 2.000.000 / tahun" : ""}
+          </p>
+        )}
         <p className="mt-1 break-all text-sm text-slate-600">ID pendaftaran: {item.id}</p>
         {item.sekolahId && <p className="mt-1 text-sm text-slate-600">Sekolah dan akun admin sudah dibuat.</p>}
         <p className="mt-1 break-words text-sm text-slate-600">Kontak: {item.namaKontak} · {item.emailKontak} · {item.teleponKontak}</p>

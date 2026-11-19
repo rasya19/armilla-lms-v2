@@ -6,7 +6,7 @@ import express from "express";
 import { Pool } from "pg";
 import { Prisma } from "@prisma/client";
 import { httpSecurity } from "./http-security.js";
-import { registrationLimitKey, registrationRateLimit, registrationRoutes } from "./registration-routes.js";
+import { extractPaketFromNote, registrationLimitKey, registrationRateLimit, registrationRoutes, saveRegistrationRecord, type PendaftaranSekolahCreateArgs } from "./registration-routes.js";
 
 const valid = { namaSekolah: "Sekolah Uji", npsn: "P1234567", namaKontak: "Penguji", emailKontak: "test@example.invalid", teleponKontak: "0123456789" };
 const origin = "https://school.example.invalid";
@@ -98,6 +98,68 @@ test("production registration validates origin and input, saves, and reports saf
     server.close();
     await once(server, "close");
   }
+});
+
+test("saveRegistrationRecord uses select:{id:true} and falls back on P2022 missing columns without throwing REGISTRATION_SCHEMA_ERROR", async () => {
+  const attempts: PendaftaranSekolahCreateArgs[] = [];
+  await saveRegistrationRecord(
+    {
+      create: async (args) => {
+        attempts.push(args);
+        if ("paket" in args.data) {
+          throw new Prisma.PrismaClientKnownRequestError("column paket does not exist", { code: "P2022", clientVersion: "test" });
+        }
+        return { id: args.data.id };
+      },
+    },
+    "reg-1",
+    {
+      namaSekolah: "PKBM Uji",
+      npsn: "P1234567",
+      wilayah: "Bandung",
+      namaKontak: "Budi",
+      emailKontak: "budi@example.invalid",
+      teleponKontak: "08123456789",
+      paket: "Reguler",
+      nominalTahunan: 1750000,
+    },
+  );
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(attempts[0].select, { id: true });
+  assert.deepEqual(attempts[1].select, { id: true });
+  assert.equal(attempts[1].data.paket, undefined);
+  assert.equal(attempts[1].data.catatanTinjauan, "Paket: Reguler (Rp 1.750.000 / tahun)");
+  assert.equal(extractPaketFromNote(attempts[1].data.catatanTinjauan), "Reguler");
+
+  const legacyAttempts: PendaftaranSekolahCreateArgs[] = [];
+  await saveRegistrationRecord(
+    {
+      create: async (args) => {
+        legacyAttempts.push(args);
+        if ("paket" in args.data || "wilayah" in args.data) {
+          throw new Prisma.PrismaClientKnownRequestError("column missing", { code: "P2022", clientVersion: "test" });
+        }
+        return { id: args.data.id };
+      },
+    },
+    "reg-2",
+    {
+      namaSekolah: "PKBM Lama",
+      npsn: "P7654321",
+      wilayah: "Jakarta",
+      namaKontak: "Ani",
+      emailKontak: "ani@example.invalid",
+      teleponKontak: "08123456789",
+      paket: "Basic",
+      nominalTahunan: 1500000,
+    },
+  );
+  assert.equal(legacyAttempts.length, 3);
+  assert.deepEqual(legacyAttempts[2].select, { id: true });
+  assert.equal(legacyAttempts[2].data.paket, undefined);
+  assert.equal(legacyAttempts[2].data.wilayah, undefined);
+  assert.equal(legacyAttempts[2].data.catatanTinjauan, "Paket: Basic (Rp 1.500.000 / tahun) | Wilayah: Jakarta");
+  assert.equal(extractPaketFromNote(legacyAttempts[2].data.catatanTinjauan), "Basic");
 });
 
 test("database saves test registration and enforces a shared limit", { skip: process.env.RUN_REGISTRATION_INTEGRATION !== "1", timeout: 60000 }, async () => {

@@ -27,9 +27,17 @@ test("school registration rejects malformed input", () => {
   assert.equal(parseRegistration({ ...valid, namaKontak: "a".repeat(121) }), null);
   assert.equal(parseRegistration({ ...valid, wilayah: "a".repeat(201) }), null);
   assert.equal(parseRegistration({ ...valid, wilayah: 42 }), null);
+  assert.deepEqual(parseRegistration({ ...valid, paket: "basic" })?.paket, "Basic");
+  assert.equal(parseRegistration({ ...valid, paket: "basic" })?.nominalTahunan, 1500000);
+  assert.equal(parseRegistration({ ...valid, paket: "Paket Reguler" })?.paket, "Reguler");
+  assert.equal(parseRegistration({ ...valid, paket: "Paket Reguler" })?.nominalTahunan, 1750000);
   assert.equal(parseRegistration({ ...valid, paket: "pro" })?.paket, "Pro");
+  assert.equal(parseRegistration({ ...valid, paket: "pro" })?.nominalTahunan, 2000000);
+  assert.equal(parseRegistration({ ...valid, paket: "standar" })?.paket, "Standar");
   assert.equal(parseRegistration({ ...valid, paket: "Paket Tahunan" })?.paket, "Tahunan");
-  assert.equal(parseRegistration({ ...valid, paket: "enterprise" })?.paket, "Tahunan");
+  assert.equal(parseRegistration({ ...valid, paket: "enterprise" })?.paket, "Enterprise");
+  assert.equal(parseRegistration({ ...valid, plan: "Reguler" })?.paket, "Reguler");
+  assert.equal(parseRegistration({ ...valid, plan: "Reguler" })?.nominalTahunan, 1750000);
   assert.equal(parseRegistration({ ...valid, paket: "paket-tidak-ada" }), null);
   assert.equal(parseRegistration({ ...valid, paket: 123 }), null);
 });

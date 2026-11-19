@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileSpreadsheet, Plus, Search, Users } from "lucide-react";
+import { Check, Copy, FileSpreadsheet, Plus, Search, Users } from "lucide-react";
 import { StudentImport } from "./StudentImport";
 import type { StudentImportResult } from "./StudentImport";
 import { ReviewPPDB, SchoolPersonEditor, TeacherForm } from "./SchoolForms";
@@ -42,6 +42,7 @@ export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; 
   const [version, setVersion] = useState(0);
   const [accountBusy, setAccountBusy] = useState(false);
   const [credential, setCredential] = useState<{ nama: string; password: string } | null>(null);
+  const [copiedCredential, setCopiedCredential] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [teacherOpen, setTeacherOpen] = useState(false);
   const [teacherBusy, setTeacherBusy] = useState(false);
@@ -94,7 +95,14 @@ export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; 
   useEffect(() => { if (selectAll.current) selectAll.current.indeterminate = selected.size > 0 && selected.size < activeRows.length; }, [selected, activeRows.length]);
   const chosen = activeRows.filter((row) => selected.has(row.id) && row.kelasId !== undefined).map((row) => ({ id: row.id, nama: row.nama, nisn: row.keterangan, kelasId: row.kelasId ?? null }));
   async function manageAccount(row: Row, role: "siswa" | "guru", reset: boolean) {
-    if (credential || !await confirm(reset ? `Reset password akun ${row.nama}? Semua sesi akun akan berakhir.` : `Buat akun ${role} untuk ${row.nama} dengan password sementara unik?`)) return;
+    const confirmText = role === "siswa"
+      ? (reset
+        ? `Reset password akun ${row.nama} ke password default 123456? Semua sesi akun akan berakhir.`
+        : `Buat akun siswa untuk ${row.nama} dengan password default 123456?`)
+      : (reset
+        ? `Reset password akun ${row.nama}? Semua sesi akun akan berakhir.`
+        : `Buat akun ${role} untuk ${row.nama} dengan password sementara unik?`);
+    if (credential || !await confirm(confirmText)) return;
     setAccountBusy(true); setAccountError("");
     try {
       const response = await fetch(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/${reset ? "reset-password" : "akun"}`, { method: "POST" });
@@ -107,7 +115,8 @@ export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; 
         throw new Error(message);
       }
       const body: unknown = await response.json();
-      if (typeof body !== "object" || body === null || !("temporaryPassword" in body) || typeof body.temporaryPassword !== "string" || !/^[A-Za-z0-9_-]{24}$/.test(body.temporaryPassword)) throw new Error("Respons tidak valid. Muat ulang daftar dan reset password untuk memperoleh password baru.");
+      if (typeof body !== "object" || body === null || !("temporaryPassword" in body) || typeof body.temporaryPassword !== "string" || !/^(?:123456|[A-Za-z0-9_-]{24})$/.test(body.temporaryPassword)) throw new Error("Respons tidak valid. Muat ulang daftar dan reset password untuk memperoleh password baru.");
+      setCopiedCredential(false);
       setCredential({ nama: row.nama, password: body.temporaryPassword });
       setVersion((value) => value + 1);
     } catch (error) {
@@ -142,7 +151,7 @@ export function SchoolData({ slug, kind, visible }: { slug: string; kind: Kind; 
     {toast && <div role="status" className="fixed bottom-5 right-5 z-50 max-w-sm rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-lg">{toast}</div>}
     {accountError && <p role="alert" className="mt-4 text-sm text-rose-700">{accountError}</p>}
     {kind === "siswa" && importResult && <div role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><div className="flex items-start justify-between gap-3"><p className="font-semibold">Impor selesai: {importResult.created} siswa baru, {importResult.updated} siswa diperbarui; {importResult.skipped.length} siswa tanpa NISN dilewati.</p><button type="button" onClick={() => setImportResult(null)} className="shrink-0 font-bold underline">Tutup</button></div>{importResult.skipped.length > 0 && <><ul className="mt-2 list-inside list-disc">{importResult.skipped.map((row) => <li key={row.number}>Baris {row.number}: {row.nama || "(nama kosong)"}</li>)}</ul><p className="mt-2">Lengkapi NISN di file sebelum mengimpor siswa tersebut.</p></>}</div>}
-    {credential && <div role="status" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm"><p className="font-bold">Password sementara untuk {credential.nama}</p><p className="mt-2 break-all font-mono">{credential.password}</p><p className="mt-2">Hanya ditampilkan sekarang. Sampaikan langsung melalui cara yang aman; pengguna wajib menggantinya saat masuk. Jika hilang, reset kembali.</p><button type="button" onClick={() => setCredential(null)} className="mt-3 font-bold underline">Saya sudah menyimpan dengan aman</button></div>}
+    {credential && <div role="status" className="mt-4 rounded-xl border border-amber-400 bg-amber-100/95 p-4 text-sm text-amber-950 shadow-sm"><p className="font-bold text-amber-950">Password sementara untuk {credential.nama}</p><div className="mt-2 flex flex-wrap items-center gap-2"><code className="break-all rounded-lg border border-amber-300 bg-amber-200/80 px-3 py-1.5 font-mono text-base font-bold tracking-wider text-slate-950">{credential.password}</code><button type="button" onClick={() => { if (navigator.clipboard?.writeText) { void navigator.clipboard.writeText(credential.password).then(() => { setCopiedCredential(true); window.setTimeout(() => setCopiedCredential(false), 2500); }).catch(() => {}); } }} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-slate-950 shadow-xs transition hover:bg-amber-50">{copiedCredential ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copiedCredential ? "Tersalin" : "Salin"}</button></div><p className="mt-2 leading-relaxed text-amber-950">Hanya ditampilkan sekarang. Sampaikan langsung melalui cara yang aman; pengguna wajib menggantinya saat masuk. Jika hilang, reset kembali.</p><button type="button" onClick={() => { setCredential(null); setCopiedCredential(false); }} className="mt-3 inline-flex items-center rounded-lg border border-amber-400 bg-amber-200/75 px-3 py-1.5 text-xs font-bold text-amber-950 underline transition hover:bg-amber-200">Saya sudah menyimpan dengan aman</button></div>}
     {kind === "kelas" ? <SchoolClasses /> : kind === "mapel" || kind === "akademik" ? <SchoolAcademics mode={kind} /> : <>
     {kind === "siswa" && importOpen && <SchoolModal title="Impor Siswa dari Excel" titleIcon={<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><FileSpreadsheet size={22} aria-hidden="true" /></span>} busy={importBusy} onClose={() => setImportOpen(false)}><StudentImport onBusyChange={setImportBusy} onImported={(result) => { setImportOpen(false); setImportResult(result); setPagination({ kind: "siswa", page: 1, term: "" }); setVersion((value) => value + 1); }} /></SchoolModal>}
     {kind === "siswa" && studentOpen && <SchoolModal title="Tambah Siswa" wide busy={studentBusy} onClose={() => setStudentOpen(false)}><StudentEditor onCancel={() => setStudentOpen(false)} onBusyChange={setStudentBusy} onSaved={() => { setStudentOpen(false); setPagination({ kind: "siswa", page: 1, term: "" }); setVersion((value) => value + 1); setToast("Data siswa tersimpan. Akun siswa belum dibuat."); }} /></SchoolModal>}

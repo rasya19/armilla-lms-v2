@@ -169,22 +169,24 @@ export const LandingPage: React.FC = () => {
                   }`}
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-bold uppercase tracking-[0.15em] text-indigo-800">{plan.planValue}</span>
-                      {plan.badge && (
-                        <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${plan.popular ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-900'}`}>
-                          {plan.badge}
-                        </span>
-                      )}
+                      <span
+                        className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                          plan.popular ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-900'
+                        }`}
+                      >
+                        {plan.badge}
+                      </span>
                     </div>
                     <h3 className="mt-4 text-2xl font-bold text-[#142137]">{plan.name}</h3>
-                    <p className="mt-2 min-h-[44px] text-sm leading-6 text-slate-700">{plan.tagline}</p>
+                    <p className="mt-2 min-h-[48px] text-sm leading-6 text-slate-700">{plan.tagline}</p>
                     <div className="mt-6 border-y border-slate-300/60 py-5">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-3xl font-extrabold tracking-tight text-[#142137]">{plan.price}</span>
-                        <span className="text-sm font-medium text-slate-600">{plan.period}</span>
+                      <div className="flex flex-wrap items-baseline gap-1.5">
+                        <span className="text-3xl font-extrabold tracking-tight text-[#142137] sm:text-[2rem]">{plan.price}</span>
+                        <span className="text-sm font-semibold text-slate-600">{plan.period}</span>
                       </div>
-                      <p className="mt-1 text-xs font-medium text-slate-600">{plan.duration}</p>
+                      <p className="mt-2 text-xs font-semibold text-indigo-900/90">{plan.billingNote}</p>
                     </div>
                     <ul className="mt-6 space-y-3 text-sm text-slate-700">
                       {plan.features.map((feature) => (

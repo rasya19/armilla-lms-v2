@@ -1,3 +1,5 @@
+export type RegistrationPlan = "Basic" | "Reguler" | "Pro" | "Standar" | "Tahunan" | "Enterprise";
+
 export type Registration = {
   namaSekolah: string;
   npsn: string;
@@ -5,21 +7,30 @@ export type Registration = {
   namaKontak: string;
   emailKontak: string;
   teleponKontak: string;
-  paket?: string;
+  paket?: RegistrationPlan;
+  nominalTahunan?: number;
 };
 
-const planMap: Record<string, string> = {
-  standar: "Standar",
-  "paket standar": "Standar",
-  pro: "Pro",
-  "paket pro": "Pro",
-  tahunan: "Tahunan",
-  "paket tahunan": "Tahunan",
-  enterprise: "Tahunan",
-  "paket enterprise": "Tahunan",
+const planMap: Record<string, { plan: RegistrationPlan; nominalTahunan?: number }> = {
+  basic: { plan: "Basic", nominalTahunan: 1500000 },
+  "paket basic": { plan: "Basic", nominalTahunan: 1500000 },
+  reguler: { plan: "Reguler", nominalTahunan: 1750000 },
+  "paket reguler": { plan: "Reguler", nominalTahunan: 1750000 },
+  pro: { plan: "Pro", nominalTahunan: 2000000 },
+  "paket pro": { plan: "Pro", nominalTahunan: 2000000 },
+  standar: { plan: "Standar" },
+  "paket standar": { plan: "Standar" },
+  standard: { plan: "Standar" },
+  "paket standard": { plan: "Standar" },
+  tahunan: { plan: "Tahunan" },
+  "paket tahunan": { plan: "Tahunan" },
+  enterprise: { plan: "Enterprise" },
+  "paket enterprise": { plan: "Enterprise" },
+  "tahunan/enterprise": { plan: "Enterprise" },
+  "paket tahunan/enterprise": { plan: "Enterprise" },
 };
 
-export function parseRegistrationPlan(input: unknown): string | undefined | null {
+export function parseRegistrationPlan(input: unknown): { plan: RegistrationPlan; nominalTahunan?: number } | undefined | null {
   if (input === undefined || input === null) return undefined;
   if (typeof input !== "string") return null;
   const normalized = input.trim().toLowerCase();
@@ -30,9 +41,9 @@ export function parseRegistrationPlan(input: unknown): string | undefined | null
 export function parseRegistration(input: unknown): Registration | null {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
   const record = input as Record<string, unknown>;
-  const { namaSekolah, npsn, wilayah, namaKontak, emailKontak, teleponKontak, paket } = record;
+  const { namaSekolah, npsn, wilayah, namaKontak, emailKontak, teleponKontak, paket, plan: rawPlan } = record;
   if (typeof namaSekolah !== "string" || typeof npsn !== "string" || typeof namaKontak !== "string" || typeof emailKontak !== "string" || typeof teleponKontak !== "string" || (wilayah !== undefined && wilayah !== null && typeof wilayah !== "string")) return null;
-  const plan = parseRegistrationPlan(paket);
+  const plan = parseRegistrationPlan(paket !== undefined ? paket : rawPlan);
   if (plan === null) return null;
   const nama = namaSekolah.trim();
   const kontak = namaKontak.trim();
@@ -48,6 +59,6 @@ export function parseRegistration(input: unknown): Registration | null {
     namaKontak: kontak,
     emailKontak: email,
     teleponKontak: telepon,
-    ...(plan ? { paket: plan } : {}),
+    ...(plan ? { paket: plan.plan, ...(typeof plan.nominalTahunan === "number" ? { nominalTahunan: plan.nominalTahunan } : {}) } : {}),
   };
 }

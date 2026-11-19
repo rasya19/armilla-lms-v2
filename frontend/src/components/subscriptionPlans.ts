@@ -1,27 +1,32 @@
-export type PlanSlug = 'standar' | 'pro' | 'tahunan';
+export type PlanSlug = 'basic' | 'reguler' | 'pro';
 
 export type SubscriptionPlan = {
   slug: PlanSlug;
-  planValue: 'Standar' | 'Pro' | 'Tahunan';
+  planValue: 'Basic' | 'Reguler' | 'Pro';
   name: string;
   tagline: string;
   price: string;
   period: string;
-  duration: string;
-  badge?: string;
+  annualPrice: number;
+  annualPriceLabel: string;
+  billingNote: string;
+  badge: string;
   popular?: boolean;
   features: string[];
 };
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
-    slug: 'standar',
-    planValue: 'Standar',
-    name: 'Paket Standar',
-    tagline: 'Fondasi digital untuk lembaga & PKBM yang mulai beroperasi.',
-    price: 'Rp 299.000',
+    slug: 'basic',
+    planValue: 'Basic',
+    name: 'Paket Basic',
+    tagline: 'Operasional dasar digital untuk PKBM & lembaga pendidikan yang mulai bertumbuh.',
+    price: 'Rp 150.000',
     period: '/ bulan',
-    duration: 'Langganan Bulanan (30 Hari)',
+    annualPrice: 1500000,
+    annualPriceLabel: 'Rp 1.500.000 / tahun',
+    billingNote: 'Ditagih Rp 1.500.000 / tahun (Aktif 12 Bulan)',
+    badge: 'Hemat 2 Bulan',
     features: [
       'Subdomain khusus lembaga (*.pkbm.siput.id)',
       'Manajemen data siswa, guru, & kelas standar',
@@ -30,45 +35,49 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     ],
   },
   {
-    slug: 'pro',
-    planValue: 'Pro',
-    name: 'Paket Pro',
-    tagline: 'Skala penuh untuk lembaga berkembang dengan banyak rombel.',
-    price: 'Rp 549.000',
+    slug: 'reguler',
+    planValue: 'Reguler',
+    name: 'Paket Reguler',
+    tagline: 'Skala penuh untuk lembaga berkembang dengan banyak rombel dan kebutuhan impor data.',
+    price: 'Rp 175.000',
     period: '/ bulan',
-    duration: 'Langganan Bulanan (30 Hari)',
-    badge: 'Pilihan Populer',
+    annualPrice: 1750000,
+    annualPriceLabel: 'Rp 1.750.000 / tahun',
+    billingNote: 'Ditagih Rp 1.750.000 / tahun (Aktif 12 Bulan)',
+    badge: 'Pilihan Populer • Hemat 2 Bulan',
     popular: true,
     features: [
-      'Seluruh fitur Paket Standar',
+      'Seluruh fitur Paket Basic',
       'Impor siswa massal Excel (format Dapodik)',
       'Penempatan & kenaikan kelas massal otomatis',
-      'Kustomisasi tema dashboard & dukungan prioritas',
+      'Evaluasi nilai & pemantauan aktivitas belajar',
     ],
   },
   {
-    slug: 'tahunan',
-    planValue: 'Tahunan',
-    name: 'Paket Tahunan',
-    tagline: 'Solusi institusi mapan dengan efisiensi biaya jangka panjang.',
-    price: 'Rp 4.990.000',
-    period: '/ tahun',
-    duration: 'Langganan Tahunan (12 Bulan)',
-    badge: 'Hemat 2+ Bulan',
+    slug: 'pro',
+    planValue: 'Pro',
+    name: 'Paket Pro',
+    tagline: 'Solusi lengkap dengan kustomisasi tampilan lembaga dan dukungan teknis prioritas.',
+    price: 'Rp 200.000',
+    period: '/ bulan',
+    annualPrice: 2000000,
+    annualPriceLabel: 'Rp 2.000.000 / tahun',
+    billingNote: 'Ditagih Rp 2.000.000 / tahun (Aktif 12 Bulan)',
+    badge: 'Hemat 2 Bulan',
     features: [
-      'Seluruh fitur Paket Pro untuk 12 bulan penuh',
-      'Pengelolaan multi-tahun ajaran & evaluasi nilai',
+      'Seluruh fitur Paket Reguler',
+      'Kustomisasi tema dashboard lembaga terpusat',
       'Pendampingan onboarding & migrasi data lembaga',
-      'Prioritas SLA & konsultasi teknis berkala',
+      'Dukungan teknis prioritas & konsultasi berkala',
     ],
   },
 ];
 
 export function resolvePlanSlug(value: string | null | undefined): PlanSlug {
   const normalized = value?.trim().toLowerCase();
+  if (normalized === 'reguler' || normalized === 'paket reguler') return 'reguler';
   if (normalized === 'pro' || normalized === 'paket pro') return 'pro';
-  if (normalized === 'tahunan' || normalized === 'paket tahunan' || normalized === 'enterprise' || normalized === 'paket enterprise') return 'tahunan';
-  return 'standar';
+  return 'basic';
 }
 
 export function getPlanBySlug(slug: PlanSlug): SubscriptionPlan {

@@ -64,7 +64,15 @@ export async function forwardRegistrationToMaster(
         adminName: data.namaKontak,
         adminEmail: data.emailKontak,
         adminPhone: data.teleponKontak,
-        ...(data.paket ? { plan: data.paket, paket: data.paket } : {}),
+        ...(data.paket
+          ? {
+              plan: data.paket,
+              paket: data.paket,
+              ...(typeof data.nominalTahunan === "number"
+                ? { annualPrice: data.nominalTahunan, nominalTahunan: data.nominalTahunan }
+                : {}),
+            }
+          : {}),
       }),
       signal: controller.signal,
     });

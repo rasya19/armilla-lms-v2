@@ -1,6 +1,6 @@
 import express from "express";
 import { createHash, randomBytes } from "crypto";
-import { loginPool, prisma } from "./db.js";
+import { loginPool, pool, prisma } from "./db.js";
 import { generateTemporaryPassword, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
 import { registrationRateLimit, registrationRoutes } from "./registration-routes.js";
 import { parseStudentImport } from "./student-import.js";
@@ -95,13 +95,70 @@ function cookieOptions() {
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
+let fallbackVisitors = 0;
+
+async function readOrIncrementVisitors(increment: boolean): Promise<number> {
+  try {
+    const result = increment
+      ? await pool.query<{ visitors: number }>(
+          `INSERT INTO "SiteStat" ("id", "visitors", "updatedAt")
+           VALUES ($1, 1, now())
+           ON CONFLICT ("id") DO UPDATE
+           SET "visitors" = "SiteStat"."visitors" + 1, "updatedAt" = now()
+           RETURNING "visitors"`,
+          ["landing"],
+        )
+      : await pool.query<{ visitors: number }>(
+          `SELECT "visitors" FROM "SiteStat" WHERE "id" = $1`,
+          ["landing"],
+        );
+    const dbCount = result.rows[0]?.visitors;
+    if (typeof dbCount === "number" && Number.isFinite(dbCount)) {
+      fallbackVisitors = dbCount;
+      return dbCount;
+    }
+  } catch (error) {
+    console.warn("Statistik pengunjung menggunakan fallback memori:", error instanceof Error ? error.message : "UnknownError");
+  }
+  if (increment) fallbackVisitors += 1;
+  return fallbackVisitors;
+}
+
+async function readTotalSchools(): Promise<number> {
+  try {
+    return await prisma.sekolah.count();
+  } catch (error) {
+    console.warn("Jumlah sekolah menggunakan fallback:", error instanceof Error ? error.message : "UnknownError");
+    return 0;
+  }
+}
+
+app.get("/api/public/stats", async (_req, res) => {
+  const [totalVisitors, totalSchools] = await Promise.all([readOrIncrementVisitors(false), readTotalSchools()]);
+  return res.json({ totalVisitors, totalSchools });
+});
+
+app.post("/api/public/stats", async (_req, res) => {
+  const [totalVisitors, totalSchools] = await Promise.all([readOrIncrementVisitors(true), readTotalSchools()]);
+  return res.json({ totalVisitors, totalSchools });
+});
+
 app.use("/api/pendaftaran-sekolah", registrationRoutes({
   production,
   vercel: !!process.env.VERCEL,
   limit: registrationRateLimit(loginPool, limitSecret, !!process.env.VERCEL && process.env.VERCEL_ENV === "preview"),
   save: async (data, registrationId) => {
     await forwardRegistrationToMaster(registrationId, data);
-    await prisma.pendaftaranSekolah.create({ data: { ...data, id: registrationId } });
+    try {
+      await prisma.pendaftaranSekolah.create({ data: { ...data, id: registrationId } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022" && data.paket) {
+        const { paket: _ignored, ...withoutPaket } = data;
+        await prisma.pendaftaranSekolah.create({ data: { ...withoutPaket, id: registrationId } });
+        return;
+      }
+      throw error;
+    }
   },
 }));
 
@@ -999,12 +1056,27 @@ app.get("/api/master/pendaftaran-sekolah", async (req, res) => {
     }
     const page = pageValue === undefined ? 1 : Number(pageValue);
     const pageSize = 25;
-    const items = await prisma.pendaftaranSekolah.findMany({
-      select: { id: true, namaSekolah: true, npsn: true, wilayah: true, namaKontak: true, emailKontak: true, teleponKontak: true, status: true, catatanTinjauan: true, dibuatPada: true, sekolahId: true },
-      orderBy: [{ dibuatPada: "desc" }, { id: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize + 1,
-    });
+    const selectBase = { id: true, namaSekolah: true, npsn: true, wilayah: true, namaKontak: true, emailKontak: true, teleponKontak: true, status: true, catatanTinjauan: true, dibuatPada: true, sekolahId: true } as const;
+    let items: Array<{ id: string; namaSekolah: string; npsn: string | null; wilayah: string | null; namaKontak: string; emailKontak: string; teleponKontak: string; status: string; paket?: string | null; catatanTinjauan: string | null; dibuatPada: Date; sekolahId: string | null }>;
+    try {
+      items = await prisma.pendaftaranSekolah.findMany({
+        select: { ...selectBase, paket: true },
+        orderBy: [{ dibuatPada: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize + 1,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") {
+        items = await prisma.pendaftaranSekolah.findMany({
+          select: selectBase,
+          orderBy: [{ dibuatPada: "desc" }, { id: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize + 1,
+        });
+      } else {
+        throw error;
+      }
+    }
     return res.json({ pendaftaran: items.slice(0, pageSize), page, hasNext: items.length > pageSize });
   } catch (error) {
     console.error("Gagal memuat pendaftaran sekolah:", error);

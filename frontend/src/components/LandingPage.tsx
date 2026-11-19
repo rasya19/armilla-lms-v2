@@ -1,19 +1,49 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ArrowDown, ArrowRight, BookOpen, GraduationCap, LogIn,
-  Menu, Sparkles, Users, X, LockKeyhole,
+  ArrowDown, ArrowRight, BookOpen, Building2, Check, Eye, GraduationCap,
+  LogIn, Menu, Sparkles, Users, X, LockKeyhole,
 } from 'lucide-react';
+import { SUBSCRIPTION_PLANS } from './subscriptionPlans';
+
 const programs = [
   { name: 'Administrasi', level: 'Data lembaga', number: '01', description: 'Kelola data siswa, guru, dan kelas di sekolah Anda.' },
   { name: 'Pembelajaran', level: 'Kegiatan belajar', number: '02', description: 'Kelola jadwal, materi, dan tugas untuk kegiatan belajar.' },
   { name: 'Evaluasi', level: 'Hasil belajar', number: '03', description: 'Guru dapat memberi nilai dan komentar pada pengumpulan tugas.' },
 ];
 
+type PublicStats = { totalVisitors: number; totalSchools: number };
+
 export const LandingPage: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [stats, setStats] = useState<PublicStats | null>(null);
   const masterClicks = useRef(0);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/public/stats', { method: 'POST', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Gagal memuat statistik');
+        const data: unknown = await response.json();
+        if (
+          typeof data === 'object' &&
+          data !== null &&
+          'totalVisitors' in data &&
+          typeof data.totalVisitors === 'number' &&
+          'totalSchools' in data &&
+          typeof data.totalSchools === 'number'
+        ) {
+          setStats({ totalVisitors: data.totalVisitors, totalSchools: data.totalSchools });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          console.warn('Statistik publik belum tersedia:', error);
+        }
+      });
+    return () => controller.abort();
+  }, []);
 
   const openMasterLogin = () => {
     masterClicks.current += 1;
@@ -27,6 +57,7 @@ export const LandingPage: React.FC = () => {
     <>
       <a href="#profil" onClick={() => setMenuOpen(false)}>Tentang</a>
       <a href="#program" onClick={() => setMenuOpen(false)}>Fitur</a>
+      <a href="#paket" onClick={() => setMenuOpen(false)}>Paket</a>
       <a href="#registrasi" onClick={() => setMenuOpen(false)}>Mitra</a>
     </>
   );
@@ -55,16 +86,38 @@ export const LandingPage: React.FC = () => {
         <section className="landing-hero relative overflow-hidden">
           <div aria-hidden="true" className="absolute -right-36 -top-56 h-[650px] w-[650px] rounded-full border border-white/40" />
           <div aria-hidden="true" className="absolute -right-16 top-4 h-[450px] w-[450px] rounded-full border border-white/40" />
-          <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-16 sm:px-8 md:pb-24 md:pt-24 lg:grid-cols-[1.05fr_.95fr] lg:gap-20">
+          <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-16 pt-16 sm:px-8 md:pb-20 md:pt-24 lg:grid-cols-[1.05fr_.95fr] lg:gap-20">
             <div className="glass-panel rounded-3xl p-6 sm:p-10">
               <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.22em] text-indigo-800"><span className="h-px w-8 bg-indigo-600" /> Pendidikan untuk semua</span>
               <h1 className="mt-7 max-w-2xl text-4xl font-semibold leading-[1.1] tracking-[-0.04em] sm:text-6xl lg:text-[4.3rem]">Ruang digital untuk pendidikan yang terus bertumbuh.</h1>
               <p className="mt-6 max-w-xl text-base leading-8 text-slate-700 sm:text-lg">Platform pendidikan untuk membantu berbagai lembaga mengelola administrasi dan kegiatan belajar dalam satu tempat.</p>
               <div className="mt-9 flex flex-wrap gap-3">
-                <Link to="/daftar" className="landing-primary inline-flex items-center gap-4 rounded-full px-6 py-4 text-sm font-bold transition">Daftar lembaga <ArrowRight size={17} /></Link>
+                <a href="#paket" className="landing-primary inline-flex items-center gap-4 rounded-full px-6 py-4 text-sm font-bold transition">Lihat paket langganan <ArrowRight size={17} /></a>
                 <a href="#program" className="landing-secondary inline-flex items-center gap-3 rounded-full px-6 py-4 text-sm font-semibold transition">Jelajahi fitur <ArrowDown size={16} /></a>
               </div>
-              <div className="mt-12 flex items-center gap-3 text-xs text-slate-700"><Sparkles size={16} className="text-indigo-700" /> Belajar hari ini, bertumbuh untuk esok.</div>
+              <div className="mt-10 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/80 bg-white/60 p-4 backdrop-blur-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-indigo-800">Total Pengunjung</span>
+                    <Eye size={16} className="text-indigo-700" />
+                  </div>
+                  <p className="mt-2 text-2xl font-bold tracking-tight text-[#142137]" data-testid="stat-visitors">
+                    {stats ? stats.totalVisitors.toLocaleString('id-ID') : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">Kunjungan ke beranda platform</p>
+                </div>
+                <div className="rounded-2xl border border-white/80 bg-white/60 p-4 backdrop-blur-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-indigo-800">Lembaga Bergabung</span>
+                    <Building2 size={16} className="text-indigo-700" />
+                  </div>
+                  <p className="mt-2 text-2xl font-bold tracking-tight text-[#142137]" data-testid="stat-schools">
+                    {stats ? stats.totalSchools.toLocaleString('id-ID') : '—'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">Sekolah & PKBM aktif terdaftar</p>
+                </div>
+              </div>
+              <div className="mt-7 flex items-center gap-3 text-xs text-slate-700"><Sparkles size={16} className="text-indigo-700" /> Belajar hari ini, bertumbuh untuk esok.</div>
             </div>
             <div className="relative mx-auto w-full max-w-[500px]">
               <div className="absolute -inset-5 rounded-[2rem] border border-white/10" aria-hidden="true" />
@@ -98,7 +151,67 @@ export const LandingPage: React.FC = () => {
           </div>
         </section>
 
-        <section id="registrasi" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24"><div className="glass-panel mx-auto max-w-7xl rounded-3xl p-7 sm:p-10"><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Untuk pengelola lembaga</p><h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Bertumbuh bersama dalam pendidikan.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-slate-700">Daftarkan lembaga untuk menggunakan layanan LMS Kesetaraan.</p></div></section>
+        <section id="paket" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24">
+          <div className="mx-auto max-w-7xl">
+            <div className="glass-panel flex flex-col justify-between gap-4 rounded-3xl p-6 sm:flex-row sm:items-end sm:p-10">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Pilihan paket langganan</p>
+                <h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Paket sesuai kebutuhan lembaga Anda.</h2>
+              </div>
+              <p className="max-w-sm text-sm leading-6 text-slate-700">Pilih paket langganan untuk memulai pendaftaran lembaga dan aktivasi subdomain sekolah.</p>
+            </div>
+            <div className="mt-10 grid gap-6 md:grid-cols-3">
+              {SUBSCRIPTION_PLANS.map((plan) => (
+                <article
+                  key={plan.slug}
+                  className={`glass-panel relative flex flex-col justify-between rounded-3xl p-7 transition hover:-translate-y-1 hover:shadow-xl ${
+                    plan.popular ? 'ring-2 ring-indigo-600/80' : ''
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold uppercase tracking-[0.15em] text-indigo-800">{plan.planValue}</span>
+                      {plan.badge && (
+                        <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${plan.popular ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-900'}`}>
+                          {plan.badge}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-4 text-2xl font-bold text-[#142137]">{plan.name}</h3>
+                    <p className="mt-2 min-h-[44px] text-sm leading-6 text-slate-700">{plan.tagline}</p>
+                    <div className="mt-6 border-y border-slate-300/60 py-5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl font-extrabold tracking-tight text-[#142137]">{plan.price}</span>
+                        <span className="text-sm font-medium text-slate-600">{plan.period}</span>
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-slate-600">{plan.duration}</p>
+                    </div>
+                    <ul className="mt-6 space-y-3 text-sm text-slate-700">
+                      {plan.features.map((feature) => (
+                        <li key={feature} className="flex items-start gap-2.5">
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                            <Check size={13} />
+                          </span>
+                          <span className="leading-5">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <Link
+                    to={`/daftar?paket=${plan.slug}`}
+                    className={`mt-8 inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3.5 text-sm font-bold transition ${
+                      plan.popular ? 'landing-primary' : 'landing-secondary'
+                    }`}
+                  >
+                    Pilih Paket <ArrowRight size={16} />
+                  </Link>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="registrasi" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24"><div className="glass-panel mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 rounded-3xl p-7 sm:flex-row sm:items-center sm:p-10"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Untuk pengelola lembaga</p><h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Bertumbuh bersama dalam pendidikan.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-slate-700">Daftarkan lembaga untuk menggunakan layanan LMS Kesetaraan.</p></div><Link to="/daftar" className="landing-primary inline-flex shrink-0 items-center gap-3 rounded-full px-6 py-4 text-sm font-bold transition">Daftar lembaga <ArrowRight size={17} /></Link></div></section>
       </main>
       <footer className="landing-footer px-5 py-10 text-slate-700 sm:px-8"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-xs sm:flex-row sm:items-center"><div><p className="text-lg font-bold text-slate-900">Rasyatech Digital Zenith<span className="text-indigo-700">.</span></p><p className="mt-2">Platform digital untuk mendukung lembaga pendidikan.</p></div><button type="button" onClick={openMasterLogin} aria-label="Akses master admin" title="Akses master admin" className="landing-secondary self-start rounded-full p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"><LockKeyhole size={18} /></button></div></footer>
     </div>

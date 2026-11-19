@@ -64,6 +64,7 @@ export async function forwardRegistrationToMaster(
         adminName: data.namaKontak,
         adminEmail: data.emailKontak,
         adminPhone: data.teleponKontak,
+        ...(data.paket ? { plan: data.paket, paket: data.paket } : {}),
       }),
       signal: controller.signal,
     });

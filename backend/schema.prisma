@@ -180,6 +180,7 @@ model PendaftaranSekolah {
   emailKontak     String
   teleponKontak   String
   status          StatusPendaftaranSekolah @default(MENUNGGU)
+  paket           String?
   catatanTinjauan String?
   dibuatPada      DateTime                  @default(now())
   ditinjauPada    DateTime?
@@ -517,4 +518,10 @@ model JawabanUjian {
   raguRagu    Boolean        @default(false)
 
   @@unique([percobaanId, soalId])
+}
+
+model SiteStat {
+  id        String   @id
+  visitors  Int      @default(0)
+  updatedAt DateTime @updatedAt
 }

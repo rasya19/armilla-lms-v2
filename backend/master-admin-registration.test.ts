@@ -42,6 +42,24 @@ test("registration delivery forwards normalized data using a backend bearer toke
     adminEmail: registration.emailKontak,
     adminPhone: registration.teleponKontak,
   });
+
+  await forwardRegistrationToMaster("4a9b327c-6761-49f7-8551-98d9eb093227", { ...registration, paket: "Pro" }, {
+    endpoint: "http://127.0.0.1:3000/api/lms-registrations",
+    token: "shared-test-token",
+    production: false,
+    fetcher,
+  });
+  assert.deepEqual(JSON.parse(String(requestInit?.body)), {
+    registrationId: "4a9b327c-6761-49f7-8551-98d9eb093227",
+    institutionName: registration.namaSekolah,
+    npsn: registration.npsn,
+    region: registration.wilayah,
+    adminName: registration.namaKontak,
+    adminEmail: registration.emailKontak,
+    adminPhone: registration.teleponKontak,
+    plan: "Pro",
+    paket: "Pro",
+  });
 });
 
 test("registration delivery fails closed for invalid config and remote errors", async () => {

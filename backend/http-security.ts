@@ -14,8 +14,25 @@ export function productionOrigin(value: string | undefined): string {
   return url.origin;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function allowedBaseDomains(origin: string | undefined): string[] {
+  const domains = new Set<string>(["pkbm.siput.id", "rsch.my.id"]);
+  if (origin) {
+    try {
+      domains.add(new URL(origin).hostname.toLowerCase().replace(/^www\./, ""));
+    } catch {
+      // Ignore invalid origin here; production check enforces valid origin earlier.
+    }
+  }
+  return [...domains];
+}
+
 export function httpSecurity(options: { production: boolean; origin?: string }): RequestHandler {
   if (options.production && !options.origin) throw new Error("Origin produksi belum dikonfigurasi.");
+  const baseDomains = allowedBaseDomains(options.origin);
   return (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -29,8 +46,11 @@ export function httpSecurity(options: { production: boolean; origin?: string }):
         try {
           const parsed = new URL(origin);
           const schoolOrigin = parsed.protocol === "https:" && !parsed.port && parsed.host === req.get("host") &&
-            (parsed.hostname === "www.rsch.my.id" ||
-              /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.rsch\.my\.id$/.test(parsed.hostname));
+            baseDomains.some((domain) =>
+              parsed.hostname === domain ||
+              parsed.hostname === `www.${domain}` ||
+              new RegExp(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.${escapeRegExp(domain)}$`).test(parsed.hostname),
+            );
           if (parsed.origin !== origin || !["http:", "https:"].includes(parsed.protocol) ||
             (options.production ? (origin !== options.origin && !schoolOrigin) || parsed.host !== req.get("host") : parsed.host !== req.get("host"))) {
             return res.status(403).json({ error: "Permintaan ditolak." });

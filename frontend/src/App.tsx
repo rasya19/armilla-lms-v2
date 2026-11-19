@@ -102,8 +102,12 @@ function AppRoutes() {
 
 export default function App() {
   const hostname = window.location.hostname.toLowerCase();
-  const mainDomain = hostname === "rsch.my.id" || hostname === "www.rsch.my.id";
-  const schoolDomain = !mainDomain && hostname.endsWith(".rsch.my.id");
+  const baseDomains = ["pkbm.siput.id", "rsch.my.id"];
+  const matchedBase = baseDomains.find(
+    (domain) => hostname === domain || hostname === `www.${domain}` || hostname.endsWith(`.${domain}`),
+  );
+  const mainDomain = !!matchedBase && (hostname === matchedBase || hostname === `www.${matchedBase}`);
+  const schoolDomain = !!matchedBase && !mainDomain;
   const [status, setStatus] = useState<"loading" | "ready" | "missing" | "error">(schoolDomain ? "loading" : "ready");
   useEffect(() => {
     if (!schoolDomain) return;
@@ -120,7 +124,7 @@ export default function App() {
     return () => controller.abort();
   }, [schoolDomain]);
   if (status === "loading") return <main className="glass-shell flex min-h-screen items-center justify-center p-6">Memeriksa sekolah...</main>;
-  if (status === "missing") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md rounded-3xl p-6"><h1 className="text-2xl font-bold">Sekolah / Lembaga Tidak Terdaftar (404)</h1><p className="mt-4 text-sm">Sekolah tidak ditemukan atau tidak aktif.</p><a className="master-primary mt-5 inline-block" href="https://rsch.my.id">Kembali ke domain utama</a></div></main>;
+  if (status === "missing") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md rounded-3xl p-6"><h1 className="text-2xl font-bold">Sekolah / Lembaga Tidak Terdaftar (404)</h1><p className="mt-4 text-sm">Sekolah tidak ditemukan atau tidak aktif.</p><a className="master-primary mt-5 inline-block" href={`https://${matchedBase ?? "pkbm.siput.id"}`}>Kembali ke domain utama</a></div></main>;
   if (status === "error") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><p role="alert">Layanan sekolah tidak tersedia. Coba muat ulang halaman.</p></main>;
   if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
   if (schoolDomain) return <Routes><Route path="/" element={<Navigate to="/login" replace />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="*" element={<Unavailable />} /></Routes>;

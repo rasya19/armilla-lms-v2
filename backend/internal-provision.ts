@@ -144,7 +144,15 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     try {
       const temporaryPassword = generateTemporaryPassword();
       const tenantId = await store.provision(data, await hashPassword(temporaryPassword));
-      return res.status(201).json({ success: true, tenantId, loginUrl: `https://${data.subdomain}.rsch.my.id/login`, initialUsername: data.adminEmail, temporaryPassword });
+      let appDomain = "rsch.my.id";
+      if (process.env.APP_ORIGIN) {
+        try {
+          appDomain = new URL(process.env.APP_ORIGIN).hostname.toLowerCase().replace(/^www\./, "");
+        } catch {
+          appDomain = "rsch.my.id";
+        }
+      }
+      return res.status(201).json({ success: true, tenantId, loginUrl: `https://${data.subdomain}.${appDomain}/login`, initialUsername: data.adminEmail, temporaryPassword });
     } catch (error) {
       if (error instanceof ProvisionConflict) return res.status(409).json({ error: error.message });
       console.error("Gagal memproses provisioning internal:", error);

@@ -5,7 +5,10 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "xlsx": ["../frontend/node_modules/xlsx"]
+    }
   },
   "include": ["*.ts"]
 }

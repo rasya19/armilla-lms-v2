@@ -31,14 +31,14 @@ const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 app.disable("x-powered-by");
 const production = process.env.NODE_ENV === "production";
 app.use("/api/internal", internalProvisionRoutes(prisma));
-app.use(httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
+app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", tenantHostMiddleware(production, (slug) => prisma.sekolah.findUnique({
   where: { slug },
   select: { id: true, slug: true, status: true, expiresAt: true },
-})));
+}), process.env.APP_ORIGIN));
 app.get("/api/tenant/context", (req, res) => res.json({ kind: req.tenant?.kind }));
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;

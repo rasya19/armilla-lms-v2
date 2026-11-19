@@ -12,18 +12,37 @@ declare global {
   }
 }
 
-export function tenantHost(host: string | undefined, production: boolean): { kind: "main" } | { kind: "local" } | { kind: "invalid" } | { kind: "school"; slug: string } {
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function tenantBaseDomains(appOrigin?: string): string[] {
+  const domains = new Set<string>(["pkbm.siput.id", "rsch.my.id"]);
+  if (appOrigin) {
+    try {
+      domains.add(new URL(appOrigin).hostname.toLowerCase().replace(/^www\./, ""));
+    } catch {
+      // Ignore malformed APP_ORIGIN here
+    }
+  }
+  return [...domains];
+}
+
+export function tenantHost(host: string | undefined, production: boolean, appOrigin?: string): { kind: "main" } | { kind: "local" } | { kind: "invalid" } | { kind: "school"; slug: string } {
   const hostname = host?.toLowerCase();
-  if (hostname === "rsch.my.id" || hostname === "www.rsch.my.id") return { kind: "main" };
-  const match = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.rsch\.my\.id$/.exec(hostname ?? "");
-  if (match) return { kind: "school", slug: match[1] };
-  if (!production && /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(hostname ?? "")) return { kind: "local" };
+  const baseDomains = tenantBaseDomains(appOrigin);
+  for (const domain of baseDomains) {
+    if (hostname === domain || hostname === `www.${domain}`) return { kind: "main" };
+    const match = new RegExp(`^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\\.${escapeRegExp(domain)}$`).exec(hostname ?? "");
+    if (match) return { kind: "school", slug: match[1] };
+  }
+  if (!production && hostname) return { kind: "local" };
   return { kind: "invalid" };
 }
 
-export function tenantHostMiddleware(production: boolean, findSchool: (slug: string) => Promise<Tenant | null>): RequestHandler {
+export function tenantHostMiddleware(production: boolean, findSchool: (slug: string) => Promise<Tenant | null>, appOrigin?: string): RequestHandler {
   return async (req, res, next) => {
-    const host = tenantHost(req.get("host"), production);
+    const host = tenantHost(req.get("host"), production, appOrigin);
     if (host.kind === "invalid") return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar." });
     if (host.kind === "school") {
       try {

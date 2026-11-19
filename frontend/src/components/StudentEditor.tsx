@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Calendar } from "lucide-react";
 import { classMatchesPackage, ensureStandardClasses } from "./standardClasses";
 
 const empty = {
@@ -12,6 +13,144 @@ const paketOptions = ["Paket A", "Paket B", "Paket C"];
 const fieldClass = "mt-1.5 block w-full min-w-0 rounded-xl border border-slate-300 bg-white/90 px-3 py-2.5 font-normal text-slate-900";
 const labelClass = "block min-w-0 text-sm font-semibold text-slate-800";
 const phonePattern = "[0-9\\x20\\x28\\x29\\x2b\\x2d]{6,30}";
+
+function isoToDmy(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!match) return "";
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+function parseDmyToIso(dmy: string): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dmy.trim());
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return null;
+  }
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function formatDmyInput(raw: string, previous: string): string {
+  const deletingSlash = raw.length < previous.length && previous.endsWith("/") && !raw.endsWith("/");
+  const sourceDigits = raw.replace(/\D/g, "").slice(0, 8);
+  const digits = deletingSlash && sourceDigits.length > 0 ? sourceDigits.slice(0, -1) : sourceDigits;
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function DateDmyInput({
+  label,
+  valueIso,
+  onChangeIso,
+}: {
+  label: string;
+  valueIso: string;
+  onChangeIso: (iso: string) => void;
+}) {
+  const [text, setText] = useState(() => isoToDmy(valueIso));
+  const textRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const formatted = isoToDmy(valueIso);
+    if (formatted && formatted !== text) {
+      setText(formatted);
+    } else if (!valueIso && parseDmyToIso(text)) {
+      setText("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valueIso]);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    if (text.trim() === "" || parseDmyToIso(text) !== null) {
+      el.setCustomValidity("");
+    } else {
+      el.setCustomValidity("Gunakan format tanggal DD/MM/YYYY yang valid (contoh: 17/08/2005).");
+    }
+  }, [text]);
+
+  function handleTextChange(nextRaw: string) {
+    const formatted = formatDmyInput(nextRaw, text);
+    setText(formatted);
+    if (formatted === "") {
+      onChangeIso("");
+      return;
+    }
+    const iso = parseDmyToIso(formatted);
+    if (iso) {
+      onChangeIso(iso);
+    }
+  }
+
+  function openCalendar() {
+    const picker = pickerRef.current;
+    if (!picker) return;
+    if (typeof picker.showPicker === "function") {
+      try {
+        picker.showPicker();
+        return;
+      } catch {
+        // Fallback to focus/click below
+      }
+    }
+    picker.click();
+  }
+
+  const invalid = text.trim() !== "" && text.length === 10 && parseDmyToIso(text) === null;
+
+  return (
+    <label className={labelClass}>
+      <span>{label} <span className="font-normal text-slate-500">(DD/MM/YYYY)</span></span>
+      <div className="relative mt-1.5">
+        <input
+          ref={textRef}
+          type="text"
+          inputMode="numeric"
+          placeholder="DD/MM/YYYY"
+          maxLength={10}
+          value={text}
+          onChange={(event) => handleTextChange(event.target.value)}
+          className={`block w-full min-w-0 rounded-xl border bg-white/90 py-2.5 pl-3 pr-10 font-normal text-slate-900 ${
+            invalid ? "border-rose-400" : "border-slate-300"
+          }`}
+        />
+        <input
+          ref={pickerRef}
+          type="date"
+          tabIndex={-1}
+          aria-hidden="true"
+          value={valueIso}
+          onChange={(event) => {
+            const iso = event.target.value;
+            onChangeIso(iso);
+            setText(isoToDmy(iso));
+          }}
+          className="pointer-events-none absolute right-2 top-1/2 h-1 w-1 -translate-y-1/2 opacity-0"
+        />
+        <button
+          type="button"
+          onClick={openCalendar}
+          aria-label={`Pilih ${label.toLowerCase()} dari kalender`}
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-indigo-700"
+        >
+          <Calendar size={17} aria-hidden="true" />
+        </button>
+      </div>
+      {invalid && (
+        <span className="mt-1 block text-xs font-normal text-rose-700">
+          Tanggal tidak valid. Gunakan DD/MM/YYYY (contoh: 17/08/2005).
+        </span>
+      )}
+    </label>
+  );
+}
 
 export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: string; onCancel: () => void; onSaved: () => void; onBusyChange: (busy: boolean) => void }) {
   const [form, setForm] = useState<StudentForm | null>(id ? null : empty);
@@ -123,13 +262,13 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
             {input("nisn", "NISN (10 angka)", { required: true, pattern: "[0-9]{10}", maxLength: 10 })}
             {input("nik", "NIK (16 angka)", { pattern: "[0-9]{16}", maxLength: 16 })}
             {input("tempatLahir", "Tempat lahir", { maxLength: 200 })}
-            {input("tanggalLahir", "Tanggal lahir", { type: "date" })}
+            <DateDmyInput label="Tanggal lahir" valueIso={form.tanggalLahir} onChangeIso={(iso) => change("tanggalLahir", iso)} />
             <label className={labelClass}>Jenjang / Paket<select className={fieldClass} value={form.jenjang} onChange={(event) => { change("jenjang", event.target.value); if (kelasId !== (originalKelasId ?? "")) setKelasId(""); }}><option value="">Pilih paket</option>{form.jenjang && !paketOptions.includes(form.jenjang) && <option value={form.jenjang}>{form.jenjang} (data sebelumnya)</option>}{paketOptions.map((paket) => <option key={paket} value={paket}>{paket}</option>)}</select></label>
             <label className={labelClass}>{id ? "Kelas siswa" : "Kelas awal (opsional)"}<select className={fieldClass} disabled={!classesLoaded || !studentActive} value={kelasId} onChange={(event) => setKelasId(event.target.value)}><option value="">Belum ditempatkan</option>{kelasId && !kelas.some((item) => item.id === kelasId && classMatchesPackage(item.nama, form.jenjang)) && <option value={kelasId} disabled>{kelas.find((item) => item.id === kelasId)?.nama ?? "Kelas tidak ditemukan"} (kelas sebelumnya)</option>}{kelas.filter((item) => classMatchesPackage(item.nama, form.jenjang)).map((item) => <option key={item.id} value={item.id}>{item.nama} ({item.id.slice(0, 8)})</option>)}</select></label>
             {input("email", "Email (opsional)", { type: "email", maxLength: 254 })}
             {input("telepon", "Nomor telepon / WhatsApp", { type: "tel", pattern: phonePattern, maxLength: 30 })}
             <label className={labelClass}>Jenis kelamin<select className={fieldClass} value={form.jenisKelamin} onChange={(event) => change("jenisKelamin", event.target.value)}><option value="">Tidak dipilih</option><option value="L">Laki-laki</option><option value="P">Perempuan</option></select></label>
-            {input("tanggalMasuk", "Tanggal masuk", { type: "date" })}
+            <DateDmyInput label="Tanggal masuk" valueIso={form.tanggalMasuk} onChangeIso={(iso) => change("tanggalMasuk", iso)} />
             {input("jalurPendaftaran", "Jalur pendaftaran", { maxLength: 200 })}
           </div>
           {classError && <p role="alert" className="mt-4 text-sm text-amber-800">{classError}</p>}

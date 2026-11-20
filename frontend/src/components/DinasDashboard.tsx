@@ -1035,7 +1035,7 @@ export function DinasHome() {
         )}
 
         {/* Baris 3: Tabel Monitoring PKBM */}
-        <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg sm:p-6">
+        <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-indigo-500/60 bg-slate-900/95 p-5 text-slate-100 shadow-2xl sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-extrabold text-white">Monitoring Kesiapan Verval per PKBM</h2>
@@ -1134,7 +1134,7 @@ export function DinasHome() {
                           onClick={() => {
                             setSelectedPkbm(item);
                             setStudentSearch("");
-                            setStudentStatusFilter("");
+                            setStudentStatusFilter(""); setTimeout(() => document.getElementById("panel-nominatif-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
                           }}
                           className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500"
                         >
@@ -1151,7 +1151,7 @@ export function DinasHome() {
 
         {/* Baris 4: Panel Pemeriksaan Nominatif PKBM Terpilih */}
         {selectedPkbm && (
-          <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg sm:p-6">
+          <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-indigo-500/60 bg-slate-900/95 p-5 text-slate-100 shadow-2xl sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">

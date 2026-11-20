@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Eye, GraduationCap, ShieldAlert, Terminal, User
 import { Classroom } from "./Classroom";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { LmsSchedule } from "./LmsSchedule";
+import { StudentVervalForm } from "./StudentVervalForm";
 import type { PlanSlug } from "./subscriptionPlans";
 
 export type SandboxMode = "client" | "dev";
@@ -233,6 +234,11 @@ export function DevSandboxLmsPreview({
               <a href="#sandbox-ruang-kbm" className="rounded-full bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-800">
                 Ruang KBM
               </a>
+              {role === "SISWA" && (
+                <a href="#sandbox-verval-dapodik" className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800">
+                  Lengkapi Berkas Dapodik
+                </a>
+              )}
             </nav>
             <div id="sandbox-jadwal" className="scroll-mt-24">
               <LmsSchedule role={role} sandboxRole={role} />
@@ -240,6 +246,11 @@ export function DevSandboxLmsPreview({
             <div id="sandbox-ruang-kbm" className="scroll-mt-24">
               <Classroom role={role} sandboxRole={role} />
             </div>
+            {role === "SISWA" && (
+              <div id="sandbox-verval-dapodik" className="scroll-mt-24">
+                <StudentVervalForm sandboxRole="SISWA" />
+              </div>
+            )}
           </>
         )}
       </div>

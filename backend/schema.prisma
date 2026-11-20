@@ -16,30 +16,48 @@ model Siswa {
   status           String // "Aktif" | "Alumni" | "Cuti"
   sekolahId        String?
   sekolah          Sekolah?           @relation(fields: [sekolahId], references: [id])
-  nik              String?
-  tempatLahir      String?
-  tanggalLahir     DateTime?          @db.Date
-  jenisKelamin     String?
-  jenjang          String?
-  tanggalMasuk     DateTime?          @db.Date
-  jalurPendaftaran String?
-  namaAyah         String?
-  teleponAyah      String?
-  pekerjaanAyah    String?
-  namaIbu          String?
-  teleponIbu       String?
-  pekerjaanIbu     String?
-  namaWali         String?
-  teleponWali      String?
-  pekerjaanWali    String?
-  alamatLengkap    String?
-  akun             Akun?
-  pendaftaran      PPDB?
-  kehadiran        Presensi[]
-  pengumpulan      PengumpulanTugas[]
-  percobaan        PercobaanUjian[]
+  nik                  String?
+  noKk                 String?
+  tempatLahir          String?
+  tanggalLahir         DateTime?          @db.Date
+  jenisKelamin         String?
+  jenjang              String?
+  tanggalMasuk         DateTime?          @db.Date
+  jalurPendaftaran     String?
+  namaAyah             String?
+  teleponAyah          String?
+  pekerjaanAyah        String?
+  namaIbu              String?
+  namaIbuKandung       String?
+  teleponIbu           String?
+  pekerjaanIbu         String?
+  namaWali             String?
+  teleponWali          String?
+  pekerjaanWali        String?
+  alamatLengkap        String?
+  desaKelurahan        String?
+  kecamatan            String?
+  sekolahAsal          String?
+  npsnAsal             String?
+  nomorIjazahTerakhir String?
+  urlKk                String?
+  urlAktaKtp           String?
+  urlIjazah            String?
+  urlSuratPindah       String?
+  sumberDapodik        Boolean            @default(false)
+  statusVerval         String             @default("BELUM_LENGKAP")
+  catatanVerval        String?
+  statusVervalDinas    String             @default("MENUNGGU_DINAS")
+  catatanDinas         String?
+  akun                 Akun?
+  pendaftaran          PPDB?
+  kehadiran            Presensi[]
+  pengumpulan          PengumpulanTugas[]
+  percobaan            PercobaanUjian[]
 
   @@index([sekolahId])
+  @@index([sekolahId, statusVerval])
+  @@index([sekolahId, statusVervalDinas])
 }
 
 model Guru {
@@ -193,34 +211,39 @@ model PendaftaranSekolah {
 }
 
 model Sekolah {
-  id          String            @id @default(uuid())
-  nama        String
-  slug        String            @unique
-  npsn        String?           @unique
-  status      StatusTenant      @default(ACTIVE)
-  expiresAt   DateTime?
-  plan        String?
-  kelasStandarDibuat Boolean   @default(false)
-  themeKey    String            @default("ocean")
-  adminPhone  String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  akun        Akun[]
-  siswa       Siswa[]
-  guru        Guru[]
-  mapel       Mapel[]
-  kelas       Kelas[]
-  ppdb        PPDB[]
-  nilai       Nilai[]
-  tahunAjaran TahunAjaran[]
-  jadwal      JadwalPelajaran[]
-  agenda      AgendaMengajar[]
-  presensi    Presensi[]
-  materi      MateriAjar[]
-  tugas       Tugas[]
-  berkas      Berkas[]
-  ujian       Ujian[]
+  id                 String                @id @default(uuid())
+  nama               String
+  slug               String                @unique
+  npsn               String?               @unique
+  status             StatusTenant          @default(ACTIVE)
+  expiresAt          DateTime?
+  plan               String?
+  kelasStandarDibuat Boolean               @default(false)
+  themeKey           String                @default("ocean")
+  adminPhone         String?
+  kabupatenKota      String?
+  izinVervalDinas    Boolean               @default(true)
+  totalSiswaDapodik  Int                   @default(0)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  akun               Akun[]
+  siswa              Siswa[]
+  guru               Guru[]
+  mapel              Mapel[]
+  kelas              Kelas[]
+  ppdb               PPDB[]
+  nilai              Nilai[]
+  tahunAjaran        TahunAjaran[]
+  jadwal             JadwalPelajaran[]
+  agenda             AgendaMengajar[]
+  presensi           Presensi[]
+  materi             MateriAjar[]
+  tugas              Tugas[]
+  berkas             Berkas[]
+  ujian              Ujian[]
   pendaftaranLembaga PendaftaranSekolah?
+
+  @@index([kabupatenKota, izinVervalDinas])
 }
 
 enum PeranAkun {
@@ -228,28 +251,30 @@ enum PeranAkun {
   ADMIN
   GURU
   SISWA
+  DINAS
 }
 
 model Akun {
-  id           String     @id @default(uuid())
-  sekolahId    String?
-  sekolah      Sekolah?   @relation(fields: [sekolahId], references: [id])
-  email        String?    @unique
-  nama         String
-  passwordHash String
-  peran        PeranAkun
-  aktif        Boolean    @default(true)
-  wajibGantiPassword Boolean @default(false)
-  siswaId      String?    @unique
-  siswa        Siswa?     @relation(fields: [siswaId], references: [id])
-  guruId       String?    @unique
-  guru         Guru?      @relation(fields: [guruId], references: [id])
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  sesi         SesiAkun[]
-  tinjauan     PPDB[]     @relation("PeninjauPPDB")
-  tinjauanSekolah PendaftaranSekolah[] @relation("PeninjauSekolah")
-  berkas       Berkas[]
+  id                 String               @id @default(uuid())
+  sekolahId          String?
+  sekolah            Sekolah?             @relation(fields: [sekolahId], references: [id])
+  email              String?              @unique
+  nama               String
+  passwordHash       String
+  peran              PeranAkun
+  wilayahKabupaten   String?
+  aktif              Boolean              @default(true)
+  wajibGantiPassword Boolean              @default(false)
+  siswaId            String?              @unique
+  siswa              Siswa?               @relation(fields: [siswaId], references: [id])
+  guruId             String?              @unique
+  guru               Guru?                @relation(fields: [guruId], references: [id])
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  sesi               SesiAkun[]
+  tinjauan           PPDB[]               @relation("PeninjauPPDB")
+  tinjauanSekolah    PendaftaranSekolah[] @relation("PeninjauSekolah")
+  berkas             Berkas[]
 
   @@index([sekolahId, peran])
 }

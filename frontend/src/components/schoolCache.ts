@@ -201,6 +201,9 @@ export function prefetchForView(view: string): void {
     case "presensi":
       void prefetchEndpoint("/api/sekolah/rekap-akademik");
       break;
+    case "verval-dapodik":
+      void prefetchEndpoint("/api/verval/siswa?page=1&limit=25");
+      break;
     case "tema-identitas":
       void prefetchEndpoint("/api/sekolah/identitas");
       break;

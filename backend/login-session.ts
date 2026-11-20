@@ -11,7 +11,7 @@ export async function createLoginSession(account: LoginAccount, expiresAt: Date)
       SELECT "passwordHash", "aktif", "peran", "sekolahId" FROM "Akun" WHERE "id" = ${account.id} FOR UPDATE
     `;
     if (!isLoginAccountUnchanged(account, locked[0])) return false;
-    if (account.peran !== "MASTER_ADMIN") {
+    if (account.peran !== "MASTER_ADMIN" && account.peran !== "DINAS") {
       if (!account.sekolahId) return false;
       const schools = await tx.$queryRaw<{ status: "ACTIVE" | "SUSPENDED"; expiresAt: Date | null }[]>`
         SELECT "status", "expiresAt" FROM "Sekolah" WHERE "id" = ${account.sekolahId} FOR UPDATE

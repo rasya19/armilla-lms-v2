@@ -75,12 +75,13 @@ export const LandingPage: React.FC = () => {
           </a>
           <nav aria-label="Navigasi utama" className="hidden items-center gap-7 text-sm font-medium text-slate-700 lg:flex">{nav}</nav>
           <div className="flex items-center gap-3">
+            <Link to="/dinas" className="landing-secondary hidden items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:flex">Portal Dinas</Link>
             <Link to="/login" className="landing-secondary hidden items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition sm:flex"><LogIn size={15} /> Masuk LMS</Link>
             <Link to="/daftar" className="landing-primary hidden rounded-full px-5 py-2.5 text-sm font-bold transition md:block">Daftar lembaga</Link>
             <button type="button" onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Tutup menu' : 'Buka menu'} aria-expanded={menuOpen} className="rounded-lg p-2 text-slate-800 lg:hidden">{menuOpen ? <X size={23} /> : <Menu size={23} />}</button>
           </div>
         </div>
-        {menuOpen && <nav aria-label="Navigasi seluler" className="flex flex-col gap-5 border-t border-slate-300/50 px-6 py-6 text-sm font-semibold text-slate-800 lg:hidden">{nav}<Link to="/login" onClick={() => setMenuOpen(false)}>Masuk LMS</Link><Link to="/daftar" onClick={() => setMenuOpen(false)} className="text-indigo-800">Daftar lembaga <ArrowRight size={15} className="inline" /></Link></nav>}
+        {menuOpen && <nav aria-label="Navigasi seluler" className="flex flex-col gap-5 border-t border-slate-300/50 px-6 py-6 text-sm font-semibold text-slate-800 lg:hidden">{nav}<Link to="/dinas" onClick={() => setMenuOpen(false)}>Portal Dinas</Link><Link to="/login" onClick={() => setMenuOpen(false)}>Masuk LMS</Link><Link to="/daftar" onClick={() => setMenuOpen(false)} className="text-indigo-800">Daftar lembaga <ArrowRight size={15} className="inline" /></Link></nav>}
       </header>
 
       <main>
@@ -216,7 +217,7 @@ export const LandingPage: React.FC = () => {
 
         <section id="registrasi" className="scroll-mt-24 px-5 py-20 sm:px-8 sm:py-24"><div className="glass-panel mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 rounded-3xl p-7 sm:flex-row sm:items-center sm:p-10"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-800">Untuk pengelola lembaga</p><h2 className="mt-5 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Bertumbuh bersama dalam pendidikan.</h2><p className="mt-5 max-w-xl text-sm leading-7 text-slate-700">Daftarkan lembaga untuk menggunakan layanan LMS Kesetaraan.</p></div><Link to="/daftar" className="landing-primary inline-flex shrink-0 items-center gap-3 rounded-full px-6 py-4 text-sm font-bold transition">Daftar lembaga <ArrowRight size={17} /></Link></div></section>
       </main>
-      <footer className="landing-footer px-5 py-10 text-slate-700 sm:px-8"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-xs sm:flex-row sm:items-center"><div><p className="text-lg font-bold text-slate-900">Rasyatech Digital Zenith<span className="text-indigo-700">.</span></p><p className="mt-2">Platform digital untuk mendukung lembaga pendidikan.</p></div><button type="button" onClick={openMasterLogin} aria-label="Akses master admin" title="Akses master admin" className="landing-secondary self-start rounded-full p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"><LockKeyhole size={18} /></button></div></footer>
+      <footer className="landing-footer px-5 py-10 text-slate-700 sm:px-8"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-xs sm:flex-row sm:items-center"><div><p className="text-lg font-bold text-slate-900">Rasyatech Digital Zenith<span className="text-indigo-700">.</span></p><p className="mt-2">Platform digital untuk mendukung lembaga pendidikan.</p></div><div className="flex items-center gap-3"><Link to="/dinas" className="landing-secondary rounded-full px-4 py-2 font-semibold">Portal Dinas</Link><button type="button" onClick={openMasterLogin} aria-label="Akses master admin" title="Akses master admin" className="landing-secondary self-start rounded-full p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"><LockKeyhole size={18} /></button></div></div></footer>
     </div>
   );
 };

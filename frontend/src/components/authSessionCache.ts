@@ -7,7 +7,17 @@ export type CachedTenantProfile = {
   updatedAt: number;
 };
 
-export type AuthCacheScope = "sekolah" | "lms" | "master";
+export type AuthCacheScope = "sekolah" | "lms" | "master" | "dinas";
+
+export type DinasAuthCache = {
+  token?: string;
+  nama: string;
+  email?: string | null;
+  peran?: string;
+  wilayahKabupaten: string | null;
+  isSuperAdmin?: boolean;
+  updatedAt: number;
+};
 
 export type SchoolAuthCache = {
   token?: string;

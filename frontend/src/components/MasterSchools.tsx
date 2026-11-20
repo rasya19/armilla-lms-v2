@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertCircle, CheckCircle2, Landmark, Loader2, MapPin, Plus, RefreshCw, X } from "lucide-react";
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
@@ -12,6 +13,8 @@ type School = {
   npsn: string | null;
   plan?: PlanSlug;
   status?: string;
+  kabupatenKota?: string | null;
+  izinVervalDinas?: boolean;
 };
 type SchoolPage = { sekolah: School[]; page: number; hasNext: boolean };
 type ToastState = { kind: "success" | "error"; text: string } | null;
@@ -64,6 +67,10 @@ export function MasterSchools() {
     return next;
   });
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [regionModalSchool, setRegionModalSchool] = useState<School | null>(null);
+  const [regionKabupaten, setRegionKabupaten] = useState("");
+  const [regionIzin, setRegionIzin] = useState(true);
+  const [regionBusy, setRegionBusy] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [error, setError] = useState("");
 
@@ -170,6 +177,60 @@ export function MasterSchools() {
     }
   }
 
+  async function saveSchoolRegion(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!regionModalSchool) return;
+    setRegionBusy(true);
+    setToast(null);
+    try {
+      const response = await fetchWithTimeout(`/api/master/sekolah/${encodeURIComponent(regionModalSchool.id)}/wilayah`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kabupatenKota: regionKabupaten.trim() || null,
+          izinVervalDinas: regionIzin,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+        sekolah?: { kabupatenKota: string | null; izinVervalDinas: boolean };
+      } | null;
+      if (!response.ok) {
+        throw new Error(body?.error || "Gagal menyimpan wilayah verval Dinas PKBM.");
+      }
+      invalidateCache("/api/master/sekolah");
+      setResult((previous) =>
+        previous
+          ? {
+              ...previous,
+              sekolah: previous.sekolah.map((item) =>
+                item.id === regionModalSchool.id
+                  ? {
+                      ...item,
+                      kabupatenKota: body?.sekolah?.kabupatenKota ?? (regionKabupaten.trim() || null),
+                      izinVervalDinas: body?.sekolah?.izinVervalDinas ?? regionIzin,
+                    }
+                  : item,
+              ),
+            }
+          : previous,
+      );
+      setToast({
+        kind: "success",
+        text: body?.message || `Wilayah verval Dinas ${regionModalSchool.nama} berhasil diperbarui.`,
+      });
+      setRegionModalSchool(null);
+    } catch (failure: unknown) {
+      setToast({
+        kind: "error",
+        text: describeFetchError(failure, "Gagal memperbarui wilayah sekolah."),
+      });
+    } finally {
+      setRegionBusy(false);
+    }
+  }
+
   return (
     <section className="master-section p-6 text-slate-900">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -225,6 +286,7 @@ export function MasterSchools() {
                     <th className="py-3 pr-4">Nama sekolah</th>
                     <th className="py-3 pr-4">Slug</th>
                     <th className="py-3 pr-4">NPSN</th>
+                    <th className="py-3 pr-4">Wilayah Dinas</th>
                     <th className="py-3 pr-4">Paket Langganan</th>
                     <th className="py-3">Sinkronisasi LMS</th>
                   </tr>
@@ -243,6 +305,27 @@ export function MasterSchools() {
                         </td>
                         <td data-label="NPSN" className="py-3 pr-4">
                           {school.npsn ?? "Belum diisi"}
+                        </td>
+                        <td data-label="Wilayah Dinas" className="py-3 pr-4">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-semibold text-slate-800">
+                              {school.kabupatenKota || "Belum diatur"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRegionModalSchool(school);
+                                setRegionKabupaten(school.kabupatenKota ?? "");
+                                setRegionIzin(school.izinVervalDinas !== false);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-indigo-800 hover:bg-indigo-50"
+                            >
+                              <MapPin size={12} /> Atur
+                            </button>
+                          </div>
+                          <span className={`mt-1 inline-block text-[10px] font-bold ${school.izinVervalDinas === false ? "text-rose-700" : "text-emerald-700"}`}>
+                            {school.izinVervalDinas === false ? "Akses Dinas nonaktif" : "Verval Dinas aktif"}
+                          </span>
                         </td>
                         <td data-label="Paket Langganan" className="py-3 pr-4">
                           <label className="sr-only" htmlFor={`plan-select-${school.id}`}>
@@ -308,6 +391,243 @@ export function MasterSchools() {
           </div>
         </>
       )}
+
+      {regionModalSchool && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={saveSchoolRegion}
+            className="w-full max-w-md space-y-4 rounded-2xl border border-white/60 bg-white p-6 text-slate-900 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">KONFIGURASI VERVAL DINAS</p>
+                <h3 className="mt-1 text-lg font-extrabold">{regionModalSchool.nama}</h3>
+              </div>
+              <button
+                type="button"
+                disabled={regionBusy}
+                onClick={() => setRegionModalSchool(null)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <label className="block text-xs font-bold text-slate-700">
+              Kabupaten / Kota Wilayah Dinas
+              <input
+                type="text"
+                maxLength={150}
+                value={regionKabupaten}
+                onChange={(e) => setRegionKabupaten(e.target.value)}
+                placeholder="Contoh: Kabupaten Bandung"
+                className="master-field mt-1.5 w-full rounded-xl px-3.5 py-2.5 text-sm"
+              />
+            </label>
+
+            <label className="flex items-center gap-2.5 text-xs font-bold text-slate-800">
+              <input
+                type="checkbox"
+                checked={regionIzin}
+                onChange={(e) => setRegionIzin(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Izinkan Portal Dinas Pendidikan memeriksa verval Dapodik PKBM ini
+            </label>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={regionBusy}
+                onClick={() => setRegionModalSchool(null)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700"
+              >
+                Batal
+              </button>
+              <button type="submit" disabled={regionBusy} className="master-primary px-4 py-2 text-xs">
+                {regionBusy ? "Menyimpan..." : "Simpan Wilayah"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
+  );
+}
+
+type DinasAccountRow = {
+  id: string;
+  nama: string;
+  email: string | null;
+  wilayahKabupaten: string | null;
+  aktif: boolean;
+  createdAt: string;
+};
+
+export function MasterDinasPanel() {
+  const [accounts, setAccounts] = useState<DinasAccountRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [nama, setNama] = useState("");
+  const [email, setEmail] = useState("");
+  const [wilayahKabupaten, setWilayahKabupaten] = useState("");
+  const [password, setPassword] = useState("");
+  const [reloadTick, setReloadTick] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchWithTimeout("/api/master/dinas-akun", { signal: controller.signal })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { error?: string; akun?: DinasAccountRow[] } | null;
+        if (!res.ok || !body?.akun) {
+          throw new Error(body?.error || "Daftar akun Dinas Pendidikan belum tersedia.");
+        }
+        setAccounts(body.akun);
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          setError(describeFetchError(failure, "Gagal memuat akun Dinas Pendidikan."));
+        }
+      });
+    return () => controller.abort();
+  }, [reloadTick]);
+
+  async function createDinasAccount(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/master/dinas-akun", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nama, email, wilayahKabupaten, password }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!res.ok) {
+        throw new Error(body?.error || "Gagal membuat akun petugas Dinas.");
+      }
+      setNotice(body?.message || "Akun Dinas Pendidikan berhasil dibuat.");
+      setNama("");
+      setEmail("");
+      setWilayahKabupaten("");
+      setPassword("");
+      setReloadTick((v) => v + 1);
+    } catch (failure: unknown) {
+      setError(describeFetchError(failure, "Gagal membuat akun Dinas Pendidikan."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="master-section p-6 text-slate-900">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="master-eyebrow">PORTAL DINAS PENDIDIKAN WILAYAH</p>
+            <h2 className="mt-1 text-lg font-bold">Akun Verifikator Dinas Kabupaten/Kota</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Buat akun petugas Dinas Pendidikan untuk memantau dan memverifikasi data PKBM di kabupaten/kota tertentu.
+            </p>
+          </div>
+          <Link to="/dinas" className="master-primary inline-flex items-center gap-2 px-4 py-2.5 text-xs">
+            <Landmark size={15} /> Buka Portal Dinas (/dinas)
+          </Link>
+        </div>
+
+        <form onSubmit={createDinasAccount} className="mt-5 grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-xs font-bold text-slate-700">
+            Nama Petugas Dinas
+            <input
+              type="text"
+              required
+              minLength={2}
+              value={nama}
+              onChange={(e) => setNama(e.target.value)}
+              placeholder="Contoh: Verifikator Disdik Bandung"
+              className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-xs font-bold text-slate-700">
+            Email Login Dinas
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="verval.bandung@disdik.go.id"
+              className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-xs font-bold text-slate-700">
+            Wilayah Kabupaten / Kota
+            <input
+              type="text"
+              required
+              minLength={2}
+              value={wilayahKabupaten}
+              onChange={(e) => setWilayahKabupaten(e.target.value)}
+              placeholder="Contoh: Kabupaten Bandung"
+              className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-xs font-bold text-slate-700">
+            Password Awal
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Minimal 6 karakter"
+              className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div>
+              {error && <p role="alert" className="text-xs font-bold text-rose-700">{error}</p>}
+              {notice && <p role="status" className="text-xs font-bold text-emerald-700">{notice}</p>}
+            </div>
+            <button type="submit" disabled={busy} className="master-primary inline-flex items-center gap-1.5 px-4 py-2.5 text-xs">
+              <Plus size={14} /> {busy ? "Membuat..." : "Tambah Akun Dinas"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="master-section p-6 text-slate-900">
+        <h3 className="text-base font-bold">Daftar Akun Dinas Terdaftar</h3>
+        {!accounts ? (
+          <TableSkeleton rows={3} columns={4} />
+        ) : accounts.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-600">Belum ada akun verifikator Dinas yang dibuat.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="master-schools-table w-full text-left text-sm">
+              <thead className="border-b border-[#e6dfd0] text-slate-600">
+                <tr>
+                  <th className="py-2.5 pr-4">Nama Petugas</th>
+                  <th className="py-2.5 pr-4">Email</th>
+                  <th className="py-2.5 pr-4">Wilayah Tugas</th>
+                  <th className="py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((acc) => (
+                  <tr key={acc.id} className="border-b border-[#e6dfd0]">
+                    <td data-label="Nama" className="py-2.5 pr-4 font-semibold">{acc.nama}</td>
+                    <td data-label="Email" className="py-2.5 pr-4 font-mono text-xs">{acc.email ?? "—"}</td>
+                    <td data-label="Wilayah" className="py-2.5 pr-4 font-semibold text-indigo-800">{acc.wilayahKabupaten ?? "—"}</td>
+                    <td data-label="Status" className="py-2.5 text-xs font-bold text-emerald-700">{acc.aktif ? "Aktif" : "Nonaktif"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }

@@ -8,6 +8,7 @@ import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { DashboardHero, PortalSpinner } from "./DashboardUI";
 import { BookOpen, CalendarDays, Home, UserRound } from "lucide-react";
+import { StudentVervalForm } from "./StudentVervalForm";
 import {
   clearAuthCache,
   deriveTenantSlugFromHost,
@@ -23,7 +24,7 @@ import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWi
 type Session = { nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean };
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
 const button = "master-primary w-full py-3 disabled:opacity-50";
-const hashNav: Record<string, string> = { "#beranda-lms": "beranda", "#jadwal-lms": "jadwal", "#pembelajaran-lms": "materi", "#profil-lms": "profil", "#akses-lms": "profil" };
+const hashNav: Record<string, string> = { "#beranda-lms": "beranda", "#jadwal-lms": "jadwal", "#pembelajaran-lms": "materi", "#biodata-dapodik": "biodata", "#profil-lms": "profil", "#akses-lms": "profil" };
 
 async function post<T = unknown>(url: string, body?: object): Promise<T | null> {
   const response = await fetchWithTimeout(url, {
@@ -227,7 +228,7 @@ export function LmsHome() {
     <header id="profil-lms" className="dashboard-header sticky top-0 z-30 border-b px-5 py-3"><div className="mx-auto flex max-w-6xl items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 font-bold text-white">{session.nama.charAt(0).toUpperCase()}</span><div className="min-w-0 flex-1"><h1 className="truncate font-bold">{session.nama}</h1><p className="text-xs font-semibold text-indigo-700">{session.peran === "GURU" ? "Guru" : "Siswa"}</p></div><button disabled={busy} type="button" onClick={logout} className="rounded-xl border border-indigo-200 bg-white/70 px-4 py-2 text-sm font-bold text-indigo-700 disabled:opacity-50">Keluar</button></div></header>
     <div className="animate-page-enter mx-auto max-w-6xl space-y-5 px-4 py-6 pb-28 sm:px-6 md:pb-6">
       <div id="beranda-lms" className="scroll-mt-24"><DashboardHero title={session.wajibGantiPassword ? "Wajib ganti password" : `Selamat datang, ${session.nama}`} description={session.wajibGantiPassword ? "Buat password baru untuk melanjutkan." : "Akses jadwal dan kegiatan pembelajaran Anda."} badge={session.peran === "GURU" ? "Portal Guru" : "Portal Siswa"} /></div>
-      {session.wajibGantiPassword ? <div className="dashboard-glass p-5"><PasswordChangeForm endpoint="/api/auth/lms/ganti-password" requireCurrentPassword={false} title="Buat password baru" description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali." onChanged={() => { clearAuthCache("lms"); navigate("/lms/login", { state: { changed: true }, replace: true }); }} buttonClassName={button} /></div> : <><nav aria-label="Navigasi pembelajaran" className="dashboard-glass flex flex-wrap gap-2 p-3"><a href="#jadwal-lms" className="rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">Jadwal</a><a href="#pembelajaran-lms" className="rounded-full bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-800">Ruang KBM</a>{session.peran === "GURU" && <a href="#akses-lms" className="rounded-full bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">Pengaturan akses</a>}</nav><div id="jadwal-lms" className="scroll-mt-24"><LmsSchedule role={session.peran} /></div><div id="pembelajaran-lms" className="scroll-mt-24"><Classroom role={session.peran} /></div></>}
+      {session.wajibGantiPassword ? <div className="dashboard-glass p-5"><PasswordChangeForm endpoint="/api/auth/lms/ganti-password" requireCurrentPassword={false} title="Buat password baru" description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali." onChanged={() => { clearAuthCache("lms"); navigate("/lms/login", { state: { changed: true }, replace: true }); }} buttonClassName={button} /></div> : <><nav aria-label="Navigasi pembelajaran" className="dashboard-glass flex flex-wrap gap-2 p-3"><a href="#jadwal-lms" className="rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">Jadwal</a><a href="#pembelajaran-lms" className="rounded-full bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-800">Ruang KBM</a>{session.peran === "SISWA" && <a href="#biodata-dapodik" className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800">Lengkapi Berkas Dapodik</a>}{session.peran === "GURU" && <a href="#akses-lms" className="rounded-full bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">Pengaturan akses</a>}</nav><div id="jadwal-lms" className="scroll-mt-24"><LmsSchedule role={session.peran} /></div><div id="pembelajaran-lms" className="scroll-mt-24"><Classroom role={session.peran} /></div>{session.peran === "SISWA" && <div id="biodata-dapodik" className="scroll-mt-24"><StudentVervalForm /></div>}</>}
       {!session.wajibGantiPassword && session.peran === "GURU" && <div id="akses-lms" className="dashboard-glass scroll-mt-24 p-5"><PasswordChangeForm endpoint="/api/auth/lms/ganti-password" onChanged={() => { clearAuthCache("lms"); navigate("/lms/login", { state: { changed: true }, replace: true }); }} /><TeacherPasswordReset /></div>}
       {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
     </div>
@@ -236,7 +237,7 @@ export function LmsHome() {
         { id: "beranda", label: "Beranda", href: "#beranda-lms", icon: Home },
         { id: "jadwal", label: "Jadwal", href: "#jadwal-lms", icon: CalendarDays },
         { id: "materi", label: "Ruang KBM", href: "#pembelajaran-lms", icon: BookOpen },
-        { id: "profil", label: session.peran === "GURU" ? "Akses" : "Profil", href: session.peran === "GURU" ? "#akses-lms" : "#profil-lms", icon: UserRound },
+        { id: session.peran === "GURU" ? "profil" : "biodata", label: session.peran === "GURU" ? "Akses" : "Berkas Dapodik", href: session.peran === "GURU" ? "#akses-lms" : "#biodata-dapodik", icon: UserRound },
       ].map(({ id, label, href, icon: Icon }) => <a key={id} href={href} onClick={() => setActiveNav(id)} aria-current={activeNav === id ? "page" : undefined} className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${activeNav === id ? "font-semibold text-indigo-600" : "font-medium text-slate-600"}`}><span className={`rounded-xl p-1.5 ${activeNav === id ? "bg-indigo-50/80" : ""}`}><Icon size={20} /></span>{label}</a>)}
     </nav>}
   </main></TenantThemeProvider>;

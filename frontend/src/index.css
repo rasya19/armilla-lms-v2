@@ -349,3 +349,11 @@
   .master-dashboard .master-mobile-nav button { color: #475569; border-radius: 12px; }
   .master-dashboard .master-mobile-nav .master-mobile-active { color: #4f46e5; background: rgba(99,102,241,.15); }
 }
+
+.print-only { display: none; }
+@media print {
+  .no-print, aside, header.dashboard-header, nav[aria-label^="Navigasi"] { display: none !important; }
+  .print-only { display: block !important; }
+  .dashboard-canvas, body, main { background: #ffffff !important; color: #0f172a !important; }
+  .dashboard-canvas::before { display: none !important; }
+}

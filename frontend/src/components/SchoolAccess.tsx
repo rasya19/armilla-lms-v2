@@ -79,6 +79,7 @@ import {
   SchoolThemeIdentityView,
   UpgradePlanModal,
 } from "./SchoolTierViews";
+import { VervalDapodikView } from "./VervalDapodikView";
 
 const DEVELOPER_EMAIL = "ismantoj88@gmail.com";
 
@@ -90,6 +91,7 @@ type SchoolView =
   | "ruang-kbm"
   | "impor-dapodik"
   | "penempatan-kelas"
+  | "verval-dapodik"
   | "presensi"
   | "rekap-akademik"
   | "tema-identitas"
@@ -136,6 +138,7 @@ const masterItems: SchoolMenuItem[] = [
   { label: "Kelola Mapel", icon: BookOpen, target: "mapel" },
   { label: "Manajemen Kelas", icon: Building2, target: "kelas" },
   { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
+  { label: "Verval Dapodik", icon: ClipboardCheck, target: "verval-dapodik" },
   { label: "Modul Kesetaraan", icon: Layers, target: "modul-kesetaraan", requiredPlan: "reguler", inDevelopment: true },
   { label: "Akreditasi 8 SNP", icon: ShieldCheck, target: "akreditasi-snp", requiredPlan: "pro", inDevelopment: true },
 ];
@@ -770,6 +773,7 @@ export function SchoolHome() {
             </section>
           )}
           {view === "ruang-kbm" && <Classroom role="ADMIN" />}
+          {view === "verval-dapodik" && <VervalDapodikView />}
           {view === "impor-dapodik" && hasPlanAccess(plan, "reguler") && (
             <SchoolImportPanel onGoToStudents={() => selectView("siswa")} />
           )}

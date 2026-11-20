@@ -21,13 +21,23 @@ import { schoolManagementRoutes } from "./school-management-routes.js";
 import { normalizeTenantPlan } from "./plan-utils.js";
 import { schoolTierRoutes } from "./school-tier-routes.js";
 import { syncTenantPlanToLms, toCleanPlanCode } from "./lms-plan-sync.js";
-import { resolveSchoolWithSandboxSeed, resolveTenantHostSchool, SANDBOX_SLUG } from "./sandbox-seed.js";
+import {
+  ensureSandboxDinasAccount,
+  ensureSandboxTenant,
+  resolveSchoolWithSandboxSeed,
+  resolveTenantHostSchool,
+  SANDBOX_DINAS_EMAIL,
+  SANDBOX_SLUG,
+} from "./sandbox-seed.js";
+import { vervalRoutes } from "./verval-routes.js";
+import { dinasRoutes, type DinasContext } from "./dinas-routes.js";
 
 const app = express();
 export default app;
 const cookieName = "armilla_session";
 const schoolCookieName = "sekolah_session";
 const lmsCookieName = "lms_session";
+const dinasCookieName = "dinas_session";
 const sessionDurationMs = 8 * 60 * 60 * 1000;
 const ppdbAttempts = new Map<string, { count: number; until: number }>();
 const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
@@ -36,6 +46,7 @@ app.disable("x-powered-by");
 const production = process.env.NODE_ENV === "production";
 app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
+app.use("/api/verval", express.json({ limit: "4mb" }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
@@ -47,11 +58,11 @@ app.get("/api/tenant/context", (req, res) => res.json({
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;
   if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
-  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|lms|ppdb)(?:\/|$)/.test(req.path)) {
+  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|lms|ppdb|verval)(?:\/|$)/.test(req.path)) {
     if (/^\/auth\/(?:sekolah|lms)\/login$/.test(req.path)) return res.status(401).json({ error: "Akun tidak terdaftar pada instansi ini. Gunakan subdomain sekolah Anda." });
     return res.status(404).json({ error: "Fitur ini tersedia melalui subdomain sekolah." });
   }
-  if (tenant.kind === "school" && /^\/(?:auth\/master|master|pendaftaran-sekolah)(?:\/|$)/.test(req.path)) {
+  if (tenant.kind === "school" && /^\/(?:auth\/(?:master|dinas)|master|dinas|pendaftaran-sekolah)(?:\/|$)/.test(req.path)) {
     return res.status(404).json({ error: "Fitur ini tersedia melalui domain utama." });
   }
   return next();
@@ -71,7 +82,7 @@ function sessionToken(cookieHeader: string | undefined, name: string): string | 
 async function savePasswordChange(account: {
   id: string;
   passwordHash: string;
-  peran: "MASTER_ADMIN" | "ADMIN" | "GURU" | "SISWA";
+  peran: "MASTER_ADMIN" | "ADMIN" | "GURU" | "SISWA" | "DINAS";
   sekolahId: string | null;
   wajibGantiPassword: boolean;
 }, passwordHash: string): Promise<boolean> {
@@ -252,6 +263,143 @@ async function getSession(req: express.Request, role: "MASTER_ADMIN" | "ADMIN" =
   return session;
 }
 
+async function getDinasSession(req: express.Request): Promise<DinasContext | null> {
+  const token = sessionToken(req.headers.cookie, dinasCookieName);
+  if (token && /^[a-f0-9]{64}$/.test(token)) {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const session = await prisma.sesiAkun.findUnique({
+      where: { tokenHash },
+      include: { akun: true },
+    });
+    if (session && !session.revokedAt && session.expiresAt > new Date() && session.akun.aktif) {
+      const account = session.akun;
+      const isSuperAdmin = account.peran === "MASTER_ADMIN" || isDeveloperAccount(account.email);
+      if (account.peran === "DINAS" || isSuperAdmin) {
+        return {
+          akunId: account.id,
+          nama: account.nama,
+          email: account.email ?? null,
+          peran: account.peran === "MASTER_ADMIN" ? "MASTER_ADMIN" : "DINAS",
+          wilayahKabupaten: account.wilayahKabupaten ?? null,
+          isSuperAdmin,
+        };
+      }
+    }
+  }
+  const masterSession = await getSession(req, "MASTER_ADMIN");
+  if (masterSession) {
+    return {
+      akunId: masterSession.akun.id,
+      nama: masterSession.akun.nama,
+      email: masterSession.akun.email ?? null,
+      peran: "MASTER_ADMIN",
+      wilayahKabupaten: masterSession.akun.wilayahKabupaten ?? null,
+      isSuperAdmin: true,
+    };
+  }
+  return null;
+}
+
+app.post("/api/auth/dinas/login", async (req, res) => {
+  const { email, password } = req.body || {};
+  if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) {
+    return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
+  }
+  try {
+    const result = await limitLogin<{
+      token: string;
+      nama: string;
+      email: string | null;
+      peran: "DINAS" | "MASTER_ADMIN";
+      wilayahKabupaten: string | null;
+      isSuperAdmin: boolean;
+    }>(loginIp(req), email, async () => {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (normalizedEmail === SANDBOX_DINAS_EMAIL) {
+        await ensureSandboxTenant(prisma);
+        await ensureSandboxDinasAccount(prisma);
+      }
+      const account = await prisma.akun.findUnique({ where: { email: normalizedEmail } });
+      const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
+      const isSuperAdmin = Boolean(account && (account.peran === "MASTER_ADMIN" || isDeveloperAccount(account.email)));
+      if (!account || !valid || !account.aktif || (account.peran !== "DINAS" && !isSuperAdmin)) {
+        return { kind: "failure" };
+      }
+      const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
+      if (!token) return { kind: "failure" };
+      return {
+        kind: "success",
+        value: {
+          token,
+          nama: account.nama,
+          email: account.email ?? null,
+          peran: account.peran === "MASTER_ADMIN" ? "MASTER_ADMIN" : "DINAS",
+          wilayahKabupaten: account.wilayahKabupaten ?? null,
+          isSuperAdmin,
+        },
+      };
+    });
+    if (result.kind === "limited") {
+      res.setHeader("Retry-After", String(result.retryAfter));
+      return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
+    }
+    if (result.kind === "failure") {
+      return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak memiliki akses Dinas Pendidikan." });
+    }
+    res.cookie(dinasCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
+    return res.json({
+      nama: result.value.nama,
+      email: result.value.email,
+      peran: result.value.peran,
+      wilayahKabupaten: result.value.wilayahKabupaten,
+      isSuperAdmin: result.value.isSuperAdmin,
+      token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
+      user: {
+        nama: result.value.nama,
+        email: result.value.email,
+        peran: result.value.peran,
+        wilayahKabupaten: result.value.wilayahKabupaten,
+        isSuperAdmin: result.value.isSuperAdmin,
+      },
+    });
+  } catch (error) {
+    console.error("Gagal memproses login Dinas Pendidikan:", error);
+    return res.status(503).json({ error: "Layanan login Dinas Pendidikan tidak tersedia." });
+  }
+});
+
+app.get("/api/auth/dinas/session", async (req, res) => {
+  try {
+    const ctx = await getDinasSession(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi Dinas Pendidikan tidak valid." });
+    return res.json({
+      nama: ctx.nama,
+      email: ctx.email,
+      peran: ctx.peran,
+      wilayahKabupaten: ctx.wilayahKabupaten,
+      isSuperAdmin: ctx.isSuperAdmin,
+    });
+  } catch (error) {
+    console.error("Gagal memeriksa sesi Dinas Pendidikan:", error);
+    return res.status(503).json({ error: "Layanan sesi Dinas Pendidikan tidak tersedia." });
+  }
+});
+
+app.post("/api/auth/dinas/logout", async (req, res) => {
+  try {
+    const token = sessionToken(req.headers.cookie, dinasCookieName);
+    if (token && /^[a-f0-9]{64}$/.test(token)) {
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      await prisma.sesiAkun.updateMany({ where: { tokenHash, revokedAt: null }, data: { revokedAt: new Date() } });
+    }
+    res.clearCookie(dinasCookieName, cookieOptions());
+    return res.status(204).end();
+  } catch (error) {
+    console.error("Gagal mengakhiri sesi Dinas Pendidikan:", error);
+    return res.status(503).json({ error: "Gagal mengakhiri sesi Dinas." });
+  }
+});
+
 app.post("/api/auth/sekolah/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
@@ -396,6 +544,17 @@ app.get("/api/auth/me", async (req, res) => {
         nama: masterSession.akun.nama,
         email: masterSession.akun.email ?? null,
         isDeveloper: isDeveloperAccount(masterSession.akun.email),
+      });
+    }
+    const dinasSession = await getDinasSession(req);
+    if (dinasSession) {
+      return res.json({
+        authenticated: true,
+        role: dinasSession.peran,
+        nama: dinasSession.nama,
+        email: dinasSession.email,
+        wilayahKabupaten: dinasSession.wilayahKabupaten,
+        isDeveloper: isDeveloperAccount(dinasSession.email),
       });
     }
     return res.status(401).json({ error: "Sesi tidak valid." });
@@ -846,6 +1005,22 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
 
 app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
+app.use("/api/verval", vervalRoutes(async (req) => {
+  const adminSession = await getSession(req, "ADMIN");
+  if (adminSession?.akun.sekolahId) {
+    return { sekolahId: adminSession.akun.sekolahId, role: "ADMIN" };
+  }
+  const lmsSession = await getLmsSession(req);
+  if (lmsSession?.akun.sekolahId && lmsSession.akun.peran === "SISWA" && lmsSession.akun.siswaId && !lmsSession.akun.wajibGantiPassword) {
+    return { sekolahId: lmsSession.akun.sekolahId, role: "SISWA", siswaId: lmsSession.akun.siswaId };
+  }
+  const sandbox = await getDevSandboxLmsContext(req);
+  if (sandbox && sandbox.peran === "SISWA" && sandbox.siswaId) {
+    return { sekolahId: sandbox.sekolahId, role: "SISWA", siswaId: sandbox.siswaId };
+  }
+  return null;
+}));
+app.use("/api/dinas", dinasRoutes(getDinasSession));
 
 app.post("/api/sekolah/siswa/import", async (req, res) => {
   try {
@@ -1309,16 +1484,42 @@ app.get("/api/master/sekolah", async (req, res) => {
     }
     const page = pageValue === undefined ? 1 : Number(pageValue);
     const pageSize = 25;
-    const schools = await prisma.sekolah.findMany({
-      select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, createdAt: true },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize + 1,
-    });
+    let schools: Array<{
+      id: string;
+      nama: string;
+      slug: string;
+      npsn: string | null;
+      plan: string | null;
+      status: string;
+      kabupatenKota?: string | null;
+      izinVervalDinas?: boolean;
+      createdAt: Date;
+    }>;
+    try {
+      schools = await prisma.sekolah.findMany({
+        select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, kabupatenKota: true, izinVervalDinas: true, createdAt: true },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize + 1,
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022") {
+        schools = await prisma.sekolah.findMany({
+          select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, createdAt: true },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize + 1,
+        });
+      } else {
+        throw err;
+      }
+    }
     return res.json({
       sekolah: schools.slice(0, pageSize).map((school) => ({
         ...school,
         plan: normalizeTenantPlan(school.plan),
+        kabupatenKota: school.kabupatenKota ?? null,
+        izinVervalDinas: school.izinVervalDinas ?? true,
       })),
       page,
       hasNext: schools.length > pageSize,
@@ -1326,6 +1527,93 @@ app.get("/api/master/sekolah", async (req, res) => {
   } catch (error) {
     console.error("Gagal memuat daftar sekolah:", error);
     return res.status(503).json({ error: "Daftar sekolah tidak tersedia. Coba lagi nanti." });
+  }
+});
+
+app.patch("/api/master/sekolah/:id/wilayah", async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const rawKab = req.body?.kabupatenKota;
+    const rawIzin = req.body?.izinVervalDinas;
+    if (rawKab !== undefined && rawKab !== null && typeof rawKab !== "string") {
+      return res.status(400).json({ error: "Kabupaten/Kota tidak valid." });
+    }
+    const kabupatenKota = typeof rawKab === "string" ? rawKab.trim() : undefined;
+    if (kabupatenKota && kabupatenKota.length > 150) {
+      return res.status(400).json({ error: "Nama kabupaten/kota maksimal 150 karakter." });
+    }
+    if (rawIzin !== undefined && typeof rawIzin !== "boolean") {
+      return res.status(400).json({ error: "Status izin verval Dinas harus berupa boolean." });
+    }
+    const updated = await prisma.sekolah.update({
+      where: { id: req.params.id },
+      data: {
+        ...(kabupatenKota !== undefined ? { kabupatenKota: kabupatenKota || null } : {}),
+        ...(typeof rawIzin === "boolean" ? { izinVervalDinas: rawIzin } : {}),
+      },
+      select: { id: true, kabupatenKota: true, izinVervalDinas: true },
+    });
+    return res.json({ message: "Wilayah verval Dinas PKBM diperbarui.", sekolah: updated });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return res.status(404).json({ error: "Tenant sekolah tidak ditemukan." });
+    }
+    console.error("Gagal memperbarui wilayah sekolah:", error);
+    return res.status(503).json({ error: "Wilayah sekolah belum dapat diperbarui." });
+  }
+});
+
+app.get("/api/master/dinas-akun", async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const rows = await prisma.akun.findMany({
+      where: { peran: "DINAS" },
+      select: { id: true, nama: true, email: true, wilayahKabupaten: true, aktif: true, createdAt: true },
+      orderBy: [{ createdAt: "desc" }],
+      take: 200,
+    });
+    return res.json({ akun: rows });
+  } catch (error) {
+    console.error("Gagal memuat akun Dinas Pendidikan:", error);
+    return res.status(503).json({ error: "Daftar akun Dinas belum tersedia." });
+  }
+});
+
+app.post("/api/master/dinas-akun", async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const { nama, email, wilayahKabupaten, password } = req.body || {};
+    if (
+      typeof nama !== "string" || nama.trim().length < 2 || nama.trim().length > 200 ||
+      typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.trim().length > 254 ||
+      typeof wilayahKabupaten !== "string" || wilayahKabupaten.trim().length < 2 || wilayahKabupaten.trim().length > 150 ||
+      typeof password !== "string" || !isValidPasswordLength(password)
+    ) {
+      return res.status(400).json({ error: "Periksa nama, email valid, wilayah kabupaten/kota, dan password (6-1024 karakter)." });
+    }
+    const passwordHash = await hashPassword(password);
+    const created = await prisma.akun.create({
+      data: {
+        nama: nama.trim(),
+        email: email.trim().toLowerCase(),
+        wilayahKabupaten: wilayahKabupaten.trim(),
+        passwordHash,
+        peran: "DINAS",
+        aktif: true,
+        wajibGantiPassword: false,
+      },
+      select: { id: true, nama: true, email: true, wilayahKabupaten: true, aktif: true, createdAt: true },
+    });
+    return res.status(201).json({ message: "Akun petugas Dinas Pendidikan berhasil dibuat.", akun: created });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ error: "Email sudah terdaftar pada sistem." });
+    }
+    console.error("Gagal membuat akun Dinas Pendidikan:", error);
+    return res.status(503).json({ error: "Akun Dinas Pendidikan belum dapat dibuat." });
   }
 });
 

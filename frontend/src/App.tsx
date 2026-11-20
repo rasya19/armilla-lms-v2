@@ -7,6 +7,7 @@ import { SchoolRegistration } from "./components/SchoolRegistration";
 import { SchoolHome, SchoolLogin } from "./components/SchoolAccess";
 import { PublicPPDB } from "./components/SchoolForms";
 import { LmsHome, LmsLogin } from "./components/LmsAccess";
+import { DinasHome, DinasLogin } from "./components/DinasDashboard";
 import { PortalSpinner } from "./components/DashboardUI";
 import {
   clearAuthCache,
@@ -141,7 +142,7 @@ function MasterHome() {
 }
 
 function AppRoutes() {
-  return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
 }
 
 export default function App() {
@@ -181,7 +182,7 @@ export default function App() {
   }, [schoolDomain]);
 
   if (status === "missing") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md rounded-3xl p-6"><h1 className="text-2xl font-bold">Sekolah / Lembaga Tidak Terdaftar (404)</h1><p className="mt-4 text-sm">Sekolah tidak ditemukan atau tidak aktif.</p><a className="master-primary mt-5 inline-block" href={`https://${matchedBase ?? "pkbm.siput.id"}`}>Kembali ke domain utama</a></div></main>;
-  if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
   if (schoolDomain) {
     return (
       <>

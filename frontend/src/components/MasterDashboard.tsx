@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart3, Bell, Building2, CalendarDays, ClipboardList, CreditCard, Database,
-  FileText, GraduationCap, LayoutDashboard, LogOut, MoreHorizontal, Search, Settings,
+  FileText, GraduationCap, Landmark, LayoutDashboard, LogOut, MoreHorizontal, Search, Settings,
   ShieldCheck, Target, UsersRound, WalletCards, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { MasterSchools } from "./MasterSchools";
+import { MasterDinasPanel, MasterSchools } from "./MasterSchools";
 import { MasterSchoolRegistrations } from "./MasterSchoolRegistrations";
 import { CardGridSkeleton, TableSkeleton } from "./DashboardUI";
 import { getCached, setCached } from "./schoolCache";
@@ -17,6 +17,7 @@ const menuItems: MenuItem[] = [
   { id: "dashboard", label: "Ringkasan", icon: LayoutDashboard, description: "Ikhtisar aktivitas platform." },
   { id: "verifikasi", label: "Pendaftaran Sekolah", icon: ClipboardList, description: "Tinjau permohonan pendaftaran lembaga." },
   { id: "tenant", label: "Kelola Tenant", icon: Building2, description: "Kelola tenant, paket langganan, dan sinkronisasi ke LMS." },
+  { id: "dinas", label: "Dinas Wilayah", icon: Landmark, description: "Kelola akun verifikator Dinas Pendidikan & akses portal wilayah." },
   { id: "linimasa", label: "Linimasa", icon: CalendarDays, description: "Linimasa pendaftaran lembaga." },
   { id: "tim", label: "Tim Admin", icon: UsersRound, description: "Kelola tim administrasi." },
   { id: "berkas", label: "Berkas", icon: FileText, description: "Kelola berkas platform." },
@@ -155,6 +156,7 @@ export function MasterDashboard({ name, error, onLogout }: MasterDashboardProps)
       <div className="master-content">
         {activeId === "dashboard" || activeId === "linimasa" ? <OverviewPanel search={search} selectMenu={selectMenu} showBoard={activeId === "dashboard"} /> :
           activeId === "tenant" ? <MasterSchools /> :
+          activeId === "dinas" ? <MasterDinasPanel /> :
           activeId === "verifikasi" || activeId === "pendaftar" ? <MasterSchoolRegistrations /> :
           <section className="master-section"><h2 className="text-lg font-bold text-white">Fitur belum tersedia</h2><p className="mt-2 text-sm leading-6 text-slate-400">Menu ini masih dalam pengembangan dan belum terhubung ke data. Tidak ada perubahan data yang dilakukan.</p><button type="button" onClick={() => selectMenu("dashboard")} className="mt-5 text-sm font-semibold text-indigo-300 hover:text-white">Kembali ke ringkasan →</button></section>}
       </div>

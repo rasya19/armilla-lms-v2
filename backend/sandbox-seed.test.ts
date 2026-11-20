@@ -3,7 +3,12 @@ import { test } from "node:test";
 import type { PrismaClient } from "@prisma/client";
 import { verifyPassword } from "./password.js";
 import { RESERVED_SUBDOMAINS, tenantHost } from "./tenant-host.js";
-import { resolveSchoolWithSandboxSeed, SANDBOX_ADMIN_EMAIL, SANDBOX_DEMO_PASSWORD } from "./sandbox-seed.js";
+import {
+  resolveSchoolWithSandboxSeed,
+  SANDBOX_ADMIN_EMAIL,
+  SANDBOX_DEMO_PASSWORD,
+  SANDBOX_DINAS_EMAIL,
+} from "./sandbox-seed.js";
 
 test("sandbox subdomain is allowed in tenantHost and not in RESERVED_SUBDOMAINS", () => {
   assert.equal(RESERVED_SUBDOMAINS.has("sandbox"), false);
@@ -134,6 +139,11 @@ test("resolveSchoolWithSandboxSeed auto-seeds sandbox tenant and demo records on
     const adminAccount = accounts.find((a) => a.email === SANDBOX_ADMIN_EMAIL && a.peran === "ADMIN");
     assert.ok(adminAccount);
     assert.equal(await verifyPassword(SANDBOX_DEMO_PASSWORD, String(adminAccount.passwordHash)), true);
+
+    const dinasAccount = accounts.find((a) => a.email === SANDBOX_DINAS_EMAIL && a.peran === "DINAS");
+    assert.ok(dinasAccount);
+    assert.equal(dinasAccount.wilayahKabupaten, "Kabupaten Bandung");
+    assert.equal(await verifyPassword(SANDBOX_DEMO_PASSWORD, String(dinasAccount.passwordHash)), true);
 
     const secondCall = await resolveSchoolWithSandboxSeed(mockPrisma, "sandbox");
     assert.equal(secondCall?.id, seeded.id);

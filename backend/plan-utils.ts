@@ -7,23 +7,18 @@ const PLAN_RANK: Record<TenantPlan, number> = {
 };
 
 export function normalizeTenantPlan(value: string | null | undefined): TenantPlan {
-  const normalized = value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
-  if (
-    normalized === "reguler" ||
-    normalized === "paket reguler" ||
-    normalized === "regular" ||
-    normalized === "paket regular"
-  ) {
+  const normalized = value?.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ") ?? "";
+  if (!normalized) return "basic";
+  if (/\b(pro|enterprise|premium|gold|ultimate)\b/.test(normalized)) {
+    return "pro";
+  }
+  if (/\b(reguler|regular|silver)\b/.test(normalized)) {
     return "reguler";
   }
-  if (
-    normalized === "pro" ||
-    normalized === "paket pro" ||
-    normalized === "tahunan" ||
-    normalized === "paket tahunan" ||
-    normalized === "enterprise" ||
-    normalized === "paket enterprise"
-  ) {
+  if (/\b(basic|standar|standard|starter|free|gratis)\b/.test(normalized)) {
+    return "basic";
+  }
+  if (/\btahunan\b/.test(normalized)) {
     return "pro";
   }
   return "basic";

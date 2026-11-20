@@ -9,7 +9,7 @@ import type { TenantPlan } from "./plan-utils.js";
 type Status = "ACTIVE" | "SUSPENDED";
 type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date };
-type PlanUpdate = { npsn: string | null; slug: string | null; plan: TenantPlan };
+type PlanUpdate = { sekolahId?: string | null; npsn: string | null; slug: string | null; plan: TenantPlan };
 type UpdatedTenantPlan = { id: string; nama: string; slug: string; npsn: string | null; plan: string | null };
 type InternalStore = {
   provision: (data: Provision, passwordHash: string) => Promise<string>;
@@ -98,10 +98,13 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
       const result = await prisma.sekolah.updateMany({ where, data: { themeKey } });
       return result.count;
     },
-    async updatePlan({ npsn, slug, plan }) {
+    async updatePlan({ sekolahId, npsn, slug, plan }) {
       const school =
+        (sekolahId ? await prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { id: true } }) : null) ??
         (npsn ? await prisma.sekolah.findUnique({ where: { npsn }, select: { id: true } }) : null) ??
-        (slug ? await prisma.sekolah.findUnique({ where: { slug }, select: { id: true } }) : null);
+        (npsn ? await prisma.sekolah.findFirst({ where: { npsn: { equals: npsn, mode: "insensitive" } }, select: { id: true } }) : null) ??
+        (slug ? await prisma.sekolah.findUnique({ where: { slug }, select: { id: true } }) : null) ??
+        (slug ? await prisma.sekolah.findFirst({ where: { slug: { equals: slug, mode: "insensitive" } }, select: { id: true } }) : null);
       if (!school) return null;
       return prisma.sekolah.update({
         where: { id: school.id },
@@ -159,15 +162,40 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
       return res.status(503).json({ error: "Tema tenant belum dapat diperbarui." });
     }
   });
+  function extractSubdomainSlug(raw: string): string | null {
+    let candidate = raw.trim().toLowerCase();
+    if (!candidate) return null;
+    if (/^https?:\/\//.test(candidate)) {
+      try {
+        candidate = new URL(candidate).hostname.toLowerCase();
+      } catch {
+        return null;
+      }
+    }
+    if (candidate.includes(".")) {
+      candidate = candidate.split(".")[0] ?? "";
+    }
+    return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(candidate) && candidate !== "www" ? candidate : null;
+  }
+
   function parsePlanUpdate(body: unknown, paramNpsn?: string): PlanUpdate | { error: string } {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return { error: "Data perubahan paket tidak valid." };
     }
     const input = body as Record<string, unknown>;
-    const cleanPlan = toCleanPlanCode(input.plan ?? input.paket);
+    const cleanPlan = toCleanPlanCode(input.plan ?? input.paket ?? input.tier ?? input.planCode);
     if (!cleanPlan) {
       return { error: "Kode paket tidak valid. Gunakan basic, reguler, atau pro." };
     }
+    const rawId = typeof input.sekolahId === "string"
+      ? input.sekolahId
+      : typeof input.tenantId === "string"
+        ? input.tenantId
+        : typeof input.id === "string"
+          ? input.id
+          : "";
+    const trimmedId = rawId.trim();
+    const sekolahId = trimmedId && trimmedId.length <= 100 ? trimmedId : null;
     const rawNpsn = typeof paramNpsn === "string" ? paramNpsn : typeof input.npsn === "string" ? input.npsn : "";
     const trimmedNpsn = rawNpsn.trim().toUpperCase();
     const npsn = trimmedNpsn ? (/^(?:\d{8}|[PK]\d{7})$/.test(trimmedNpsn) ? trimmedNpsn : null) : null;
@@ -176,22 +204,31 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     }
     const rawSlug = typeof input.slug === "string" ? input.slug : typeof input.subdomain === "string" ? input.subdomain : "";
     const trimmedSlug = rawSlug.trim().toLowerCase();
-    const slug = trimmedSlug ? (/^[a-z0-9]{1,63}$/.test(trimmedSlug) && trimmedSlug !== "www" ? trimmedSlug : null) : null;
+    const slug = trimmedSlug ? extractSubdomainSlug(trimmedSlug) : null;
     if (trimmedSlug && !slug) {
       return { error: "Format slug/subdomain tidak valid." };
     }
-    if (!npsn && !slug) {
-      return { error: "NPSN atau slug sekolah wajib disertakan untuk pembaruan paket." };
+    if (!sekolahId && !npsn && !slug) {
+      return { error: "NPSN, slug, atau ID sekolah wajib disertakan untuk pembaruan paket." };
     }
-    return { npsn, slug, plan: cleanPlan };
+    return { ...(sekolahId ? { sekolahId } : {}), npsn, slug, plan: cleanPlan };
   }
 
   function isPlanUpdateRequest(body: unknown): boolean {
     if (!body || typeof body !== "object" || Array.isArray(body)) return false;
     const input = body as Record<string, unknown>;
-    if (input.action === "update-plan" || input.type === "update-plan") return true;
-    const hasPlan = "plan" in input || "paket" in input;
-    const hasTarget = "npsn" in input || "slug" in input || "subdomain" in input;
+    const action = typeof input.action === "string" ? input.action.trim().toLowerCase() : "";
+    const type = typeof input.type === "string" ? input.type.trim().toLowerCase() : "";
+    const mode = typeof input.mode === "string" ? input.mode.trim().toLowerCase() : "";
+    if (
+      ["update-plan", "update_plan", "update", "sync-plan", "sync_plan", "upgrade"].includes(action) ||
+      ["update-plan", "update_plan", "plan-update", "sync-plan"].includes(type) ||
+      ["update", "update-plan"].includes(mode)
+    ) {
+      return true;
+    }
+    const hasPlan = "plan" in input || "paket" in input || "tier" in input || "planCode" in input;
+    const hasTarget = "npsn" in input || "slug" in input || "subdomain" in input || "sekolahId" in input || "tenantId" in input;
     const hasCreationFields = "institutionName" in input || "adminEmail" in input || "expiresAt" in input;
     return hasPlan && hasTarget && !hasCreationFields;
   }
@@ -222,7 +259,10 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
   }
 
   router.patch("/provision", (req, res) => handlePlanUpdate(req, res));
+  router.put("/provision", (req, res) => handlePlanUpdate(req, res));
   router.patch("/tenants/:npsn/plan", (req, res) => handlePlanUpdate(req, res, req.params.npsn));
+  router.post("/tenants/:npsn/plan", (req, res) => handlePlanUpdate(req, res, req.params.npsn));
+  router.put("/tenants/:npsn/plan", (req, res) => handlePlanUpdate(req, res, req.params.npsn));
 
   router.post("/provision", async (req, res) => {
     if (isPlanUpdateRequest(req.body)) {
@@ -253,9 +293,17 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     const { status, expiresAt: inputDate } = req.body ?? {};
     const expiresAt = dateValue(inputDate);
     if (!/^(?:\d{8}|[PK]\d{7})$/.test(npsn) || (status !== "ACTIVE" && status !== "SUSPENDED") || !expiresAt || (status === "ACTIVE" && expiresAt <= new Date())) return res.status(400).json({ error: "NPSN, status, atau expiresAt UTC tidak valid." });
+    const rawPlanInput = req.body?.plan ?? req.body?.paket ?? req.body?.tier ?? req.body?.planCode;
+    const cleanPlan = rawPlanInput !== undefined ? toCleanPlanCode(rawPlanInput) : undefined;
+    if (rawPlanInput !== undefined && !cleanPlan) {
+      return res.status(400).json({ error: "Kode paket tidak valid. Gunakan basic, reguler, atau pro." });
+    }
     try {
       if (!await store.updateStatus(npsn, status, expiresAt)) return res.status(404).json({ error: "Tenant tidak ditemukan." });
-      return res.json({ success: true });
+      if (cleanPlan && store.updatePlan) {
+        await store.updatePlan({ npsn, slug: null, plan: cleanPlan });
+      }
+      return res.json({ success: true, ...(cleanPlan ? { plan: cleanPlan } : {}) });
     } catch (error) {
       console.error("Gagal memperbarui status tenant:", error);
       return res.status(503).json({ error: "Status tenant belum dapat diperbarui." });

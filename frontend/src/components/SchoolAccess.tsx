@@ -32,6 +32,7 @@ import {
   Package,
   Palette,
   QrCode,
+  RefreshCw,
   Server,
   Settings,
   Settings2,
@@ -370,76 +371,118 @@ export function SchoolHome() {
   const [academicOpen, setAcademicOpen] = useState(false);
   const [cbtOpen, setCbtOpen] = useState(false);
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
+  const [refreshingPlan, setRefreshingPlan] = useState(false);
   const navigate = useNavigate();
+
+  async function refreshSessionProfile(options?: { signal?: AbortSignal; manual?: boolean }) {
+    if (options?.manual) setRefreshingPlan(true);
+    try {
+      const response = await fetchWithTimeout("/api/auth/sekolah/session", {
+        cache: "no-store",
+        signal: options?.signal,
+      });
+      if (response.status === 401) {
+        clearAuthCache("sekolah");
+        invalidateCache();
+        setStatus("unauthorized");
+        return;
+      }
+      if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
+      const data: unknown = await response.json();
+      if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") {
+        throw new Error("Respons sesi tidak valid.");
+      }
+      const rawOrNormalized =
+        ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
+        ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
+      const resolvedPlan = resolvePlanSlug(rawOrNormalized);
+      const devFlag =
+        ("isDeveloper" in data && data.isDeveloper === true) ||
+        ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
+      const themeKeyValue = "themeKey" in data && typeof data.themeKey === "string" ? data.themeKey : undefined;
+
+      setSchool(data.sekolah);
+      setSlug(data.slug);
+      setCacheScope(data.slug);
+      setPlan((prevPlan) => {
+        if (prevPlan !== resolvedPlan) {
+          invalidateCache([
+            "/api/sekolah/ringkasan",
+            "/api/sekolah/rekap-akademik",
+            "/api/sekolah/identitas",
+            "/api/sekolah/pengaturan",
+          ]);
+        }
+        return resolvedPlan;
+      });
+      if (themeKeyValue && isThemeKey(themeKeyValue)) {
+        setCachedTheme(themeKeyValue);
+      }
+      setIsDeveloper(devFlag);
+      if (!devFlag) {
+        setSandboxMode("client");
+        setSandboxRole("ADMIN");
+      }
+      saveAuthCache<SchoolAuthCache>("sekolah", {
+        token: initialAuth?.token,
+        nama: "nama" in data && typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
+        email: "email" in data && typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
+        isDeveloper: devFlag,
+        sekolah: data.sekolah,
+        slug: data.slug,
+        plan: resolvedPlan,
+        rawPlan: "rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null,
+        themeKey: themeKeyValue,
+        updatedAt: Date.now(),
+      });
+      saveCachedTenantProfile(data.slug, {
+        nama: data.sekolah,
+        slug: data.slug,
+        themeKey: themeKeyValue,
+        plan: resolvedPlan,
+      });
+      if (upgradePrompt && hasPlanAccess(resolvedPlan, upgradePrompt.requiredPlan)) {
+        setUpgradePrompt(null);
+      }
+      setError("");
+      setStatus("ready");
+    } catch (failure: unknown) {
+      if (!isCallerAborted(failure, options?.signal)) {
+        const message = describeFetchError(failure, "Sesi sekolah belum dapat diverifikasi.");
+        if (!initialAuth && status !== "ready") {
+          setError(message);
+          setStatus("error");
+        } else if (options?.manual) {
+          setError(message);
+        }
+      }
+    } finally {
+      if (options?.manual && !options?.signal?.aborted) {
+        setRefreshingPlan(false);
+      }
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchWithTimeout("/api/auth/sekolah/session", { signal: controller.signal })
-      .then(async (response) => {
-        if (response.status === 401) {
-          clearAuthCache("sekolah");
-          invalidateCache();
-          setStatus("unauthorized");
-          return;
-        }
-        if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
-        const data: unknown = await response.json();
-        if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") {
-          throw new Error("Respons sesi tidak valid.");
-        }
-        const rawOrNormalized =
-          ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
-          ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
-        const resolvedPlan = resolvePlanSlug(rawOrNormalized);
-        const devFlag =
-          ("isDeveloper" in data && data.isDeveloper === true) ||
-          ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
-        const themeKeyValue = "themeKey" in data && typeof data.themeKey === "string" ? data.themeKey : undefined;
+    let lastCheckedAt = Date.now();
+    void refreshSessionProfile({ signal: controller.signal });
 
-        setSchool(data.sekolah);
-        setSlug(data.slug);
-        setCacheScope(data.slug);
-        setPlan(resolvedPlan);
-        if (themeKeyValue && isThemeKey(themeKeyValue)) {
-          setCachedTheme(themeKeyValue);
-        }
-        setIsDeveloper(devFlag);
-        if (!devFlag) {
-          setSandboxMode("client");
-          setSandboxRole("ADMIN");
-        }
-        saveAuthCache<SchoolAuthCache>("sekolah", {
-          token: initialAuth?.token,
-          nama: "nama" in data && typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
-          email: "email" in data && typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
-          isDeveloper: devFlag,
-          sekolah: data.sekolah,
-          slug: data.slug,
-          plan: resolvedPlan,
-          rawPlan: "rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null,
-          themeKey: themeKeyValue,
-          updatedAt: Date.now(),
-        });
-        saveCachedTenantProfile(data.slug, {
-          nama: data.sekolah,
-          slug: data.slug,
-          themeKey: themeKeyValue,
-          plan: resolvedPlan,
-        });
-        setStatus("ready");
-      })
-      .catch((failure: unknown) => {
-        if (!isCallerAborted(failure, controller.signal)) {
-          const message = describeFetchError(failure, "Sesi sekolah belum dapat diverifikasi.");
-          if (!initialAuth) {
-            setError(message);
-            setStatus("error");
-          } else {
-            setError(message);
-          }
-        }
-      });
-    return () => controller.abort();
+    const maybeRevalidate = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastCheckedAt < 10_000) return;
+      lastCheckedAt = now;
+      void refreshSessionProfile({ signal: controller.signal });
+    };
+
+    window.addEventListener("focus", maybeRevalidate);
+    document.addEventListener("visibilitychange", maybeRevalidate);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", maybeRevalidate);
+      document.removeEventListener("visibilitychange", maybeRevalidate);
+    };
   }, []);
 
   useEffect(() => {
@@ -714,9 +757,21 @@ export function SchoolHome() {
         <div className="mt-3 shrink-0 space-y-2.5 border-t border-slate-800/80 pt-3">
           <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/60 bg-slate-800/50 px-3 py-2">
             <span className="text-[11px] font-bold text-slate-300">Tier Akses</span>
-            <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${planStyle.sidebarClass}`}>
-              {planStyle.label}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${planStyle.sidebarClass}`}>
+                {planStyle.label}
+              </span>
+              <button
+                type="button"
+                disabled={refreshingPlan}
+                onClick={() => void refreshSessionProfile({ manual: true })}
+                title="Segarkan status paket"
+                aria-label="Segarkan status paket"
+                className="rounded p-1 text-slate-300 transition hover:bg-slate-700/70 hover:text-white disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={refreshingPlan ? "animate-spin" : ""} aria-hidden="true" />
+              </button>
+            </div>
           </div>
           <button
             type="button"
@@ -830,6 +885,8 @@ export function SchoolHome() {
         featureName={upgradePrompt.featureName}
         requiredPlan={upgradePrompt.requiredPlan}
         currentPlan={plan}
+        refreshing={refreshingPlan}
+        onRefreshPlan={() => void refreshSessionProfile({ manual: true })}
         onClose={() => setUpgradePrompt(null)}
       />
     )}

@@ -31,11 +31,15 @@ export function UpgradePlanModal({
   featureName,
   requiredPlan,
   currentPlan,
+  refreshing,
+  onRefreshPlan,
   onClose,
 }: {
   featureName: string;
   requiredPlan: Exclude<PlanSlug, "basic">;
   currentPlan: PlanSlug;
+  refreshing?: boolean;
+  onRefreshPlan?: () => void;
   onClose: () => void;
 }) {
   const target = getPlanBySlug(requiredPlan);
@@ -91,7 +95,18 @@ export function UpgradePlanModal({
           </p>
         </div>
 
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          {onRefreshPlan && (
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={onRefreshPlan}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} aria-hidden="true" />
+              {refreshing ? "Memeriksa..." : "Cek Status Paket"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

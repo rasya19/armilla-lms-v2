@@ -16,7 +16,7 @@ function isResult(value: unknown): value is Result {
     && value.rows.every((row: unknown) => isObject(row) && typeof row.id === "string" && typeof row.hari === "number" && typeof row.jamMulai === "string" && typeof row.jamSelesai === "string" && (row.ruangan === null || typeof row.ruangan === "string") && isNamed(row.kelas) && isNamed(row.guru) && isNamed(row.mapel) && isObject(row.tahunAjaran) && typeof row.tahunAjaran.nama === "string" && typeof row.tahunAjaran.semester === "string");
 }
 
-export function LmsSchedule({ role }: { role: "GURU" | "SISWA" }) {
+export function LmsSchedule({ role, sandboxRole }: { role: "GURU" | "SISWA"; sandboxRole?: "GURU" | "SISWA" }) {
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
   const [data, setData] = useState<Result | null>(null);
@@ -24,7 +24,10 @@ export function LmsSchedule({ role }: { role: "GURU" | "SISWA" }) {
   useEffect(() => {
     const controller = new AbortController();
     setData(null); setError("");
-    fetch(`/api/lms/jadwal?page=${page}`, { signal: controller.signal }).then(async (response) => {
+    fetch(`/api/lms/jadwal?page=${page}`, {
+      signal: controller.signal,
+      ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
+    }).then(async (response) => {
       if (response.status === 401) throw new Error("Sesi berakhir. Silakan masuk kembali.");
       if (response.status === 403) throw new Error("Akses ditolak. Silakan masuk kembali dan ganti password jika diminta.");
       if (!response.ok) throw new Error("Jadwal belum dapat dimuat.");
@@ -35,7 +38,7 @@ export function LmsSchedule({ role }: { role: "GURU" | "SISWA" }) {
       if (!controller.signal.aborted) { console.error("Gagal memuat jadwal LMS:", failure); setError(failure instanceof TypeError ? "Server tidak dapat dihubungi." : failure instanceof Error ? failure.message : "Jadwal belum dapat dimuat."); }
     });
     return () => controller.abort();
-  }, [page, version]);
+  }, [page, version, sandboxRole]);
   return <section className="mt-6 rounded-xl border border-[#e6dfd0] bg-[#f8f6ef] p-5">
     <h2 className="font-bold">{role === "GURU" ? "Jadwal mengajar" : "Jadwal belajar"}</h2>
     <p className="mt-2 text-sm text-slate-600">Jadwal mingguan untuk tahun ajaran aktif berdasarkan tanggal Jakarta. Hubungi admin sekolah jika data belum sesuai.</p>

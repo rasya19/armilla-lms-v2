@@ -30,8 +30,23 @@ function studentSubmission(v: unknown): v is StudentSubmission { return obj(v) &
 function isPage<T>(v: unknown, guard: (x: unknown) => x is T): v is Page<T> {
   return obj(v) && Array.isArray(v.rows) && v.rows.every(guard) && typeof v.page === "number" && typeof v.hasNext === "boolean";
 }
-async function request(path: string, method = "GET", body?: object, signal?: AbortSignal, admin = false): Promise<unknown> {
-  const response = await fetch(`/api/${admin ? "sekolah" : "lms"}/pembelajaran${path}`, { method, signal, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+async function request(
+  path: string,
+  method = "GET",
+  body?: object,
+  signal?: AbortSignal,
+  admin = false,
+  sandboxRole?: "GURU" | "SISWA"
+): Promise<unknown> {
+  const headers: Record<string, string> = {};
+  if (body) headers["Content-Type"] = "application/json";
+  if (!admin && sandboxRole) headers["X-Dev-Sandbox-Role"] = sandboxRole;
+  const response = await fetch(`/api/${admin ? "sekolah" : "lms"}/pembelajaran${path}`, {
+    method,
+    signal,
+    ...(Object.keys(headers).length ? { headers } : {}),
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
   const result: unknown = await response.json();
   if (!response.ok) throw new Error(obj(result) && typeof result.error === "string" ? result.error : `Permintaan gagal (${response.status}).`);
   return result;
@@ -49,7 +64,19 @@ function Link({ value }: { value: string | null | undefined }) {
   } catch { return <p className="text-rose-700">Tautan tidak valid dan tidak ditampilkan.</p>; }
 }
 
-export function LmsLearning({ role, kelasId, mapelId, initialKind = "materi" }: { role: "ADMIN" | "GURU" | "SISWA"; kelasId?: string; mapelId?: string; initialKind?: Kind }) {
+export function LmsLearning({
+  role,
+  kelasId,
+  mapelId,
+  initialKind = "materi",
+  sandboxRole,
+}: {
+  role: "ADMIN" | "GURU" | "SISWA";
+  kelasId?: string;
+  mapelId?: string;
+  initialKind?: Kind;
+  sandboxRole?: "GURU" | "SISWA";
+}) {
   const confirm = useGlassConfirm();
   const [kind, setKind] = useState<Kind>(initialKind);
   const [page, setPage] = useState(1);
@@ -77,36 +104,36 @@ export function LmsLearning({ role, kelasId, mapelId, initialKind = "materi" }: 
     const query = new URLSearchParams({ page: String(page) });
     if (kelasId) query.set("kelasId", kelasId);
     if (mapelId) query.set("mapelId", mapelId);
-    request(`/${kind}?${query}`, "GET", undefined, controller.signal, role === "ADMIN").then((value) => {
+    request(`/${kind}?${query}`, "GET", undefined, controller.signal, role === "ADMIN", sandboxRole).then((value) => {
       if (!isPage(value, content) || value.page !== page) throw new Error("Respons materi atau tugas tidak valid.");
       setData(value);
     }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat pembelajaran:", failure); setError(failureMessage(failure)); } });
     return () => controller.abort();
-  }, [kind, page, version, kelasId, mapelId, role]);
+  }, [kind, page, version, kelasId, mapelId, role, sandboxRole]);
   useEffect(() => {
     if (role !== "GURU") return;
     const controller = new AbortController();
     setAssignmentError("");
-    request("/penugasan", "GET", undefined, controller.signal).then((value) => {
+    request("/penugasan", "GET", undefined, controller.signal, false, sandboxRole).then((value) => {
       if (!obj(value) || !Array.isArray(value.rows) || !value.rows.every(assignment)) throw new Error("Respons jadwal tidak valid.");
       setAssignments(value.rows);
     }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat jadwal guru:", failure); setAssignmentError(failureMessage(failure)); } });
     return () => controller.abort();
-  }, [role, version]);
+  }, [role, version, sandboxRole]);
   useEffect(() => {
     if (!selected || role !== "GURU") return;
     const controller = new AbortController();
     setAnswers(null); setAnswerError("");
-    request(`/tugas/${encodeURIComponent(selected.id)}/pengumpulan?page=${answerPage}`, "GET", undefined, controller.signal).then((value) => {
+    request(`/tugas/${encodeURIComponent(selected.id)}/pengumpulan?page=${answerPage}`, "GET", undefined, controller.signal, false, sandboxRole).then((value) => {
       if (!isPage(value, studentSubmission) || value.page !== answerPage) throw new Error("Respons pengumpulan tidak valid.");
       setAnswers(value);
     }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat pengumpulan:", failure); setAnswerError(failureMessage(failure)); } });
     return () => controller.abort();
-  }, [role, selected, answerPage, version]);
+  }, [role, selected, answerPage, version, sandboxRole]);
 
   async function mutate(path: string, method: string, body: object, success: string) {
     setBusy(true); setError(""); setMessage("");
-    try { await request(path, method, body, undefined, role === "ADMIN"); setMessage(success); setVersion((v) => v + 1); return true; }
+    try { await request(path, method, body, undefined, role === "ADMIN", sandboxRole); setMessage(success); setVersion((v) => v + 1); return true; }
     catch (failure) { console.error("Gagal memproses pembelajaran:", failure); setError(failureMessage(failure)); return false; }
     finally { setBusy(false); }
   }

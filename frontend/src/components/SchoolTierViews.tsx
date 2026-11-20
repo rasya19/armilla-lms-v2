@@ -107,7 +107,7 @@ export function SchoolImportPanel({ onGoToStudents }: { onGoToStudents: () => vo
   const [result, setResult] = useState<StudentImportResult | null>(null);
 
   return (
-    <section className="dashboard-glass p-4 sm:p-6">
+    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         title="Impor Massal Dapodik"
         description="Unggah file Excel (.xlsx) hasil unduhan Dapodik untuk menambahkan atau memperbarui hingga 500 data siswa sekaligus."
@@ -228,7 +228,7 @@ export function SchoolBulkPlacementView() {
   }
 
   return (
-    <section className="dashboard-glass p-4 sm:p-6">
+    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         title="Penempatan & Kenaikan Kelas"
         description="Pindahkan siswa antar-kelas secara massal untuk kenaikan jenjang atau penempatan siswa baru sekaligus."
@@ -316,7 +316,13 @@ type RecapData = {
   }>;
 };
 
-export function SchoolAcademicRecap({ onOpenClassroom }: { onOpenClassroom: () => void }) {
+export function SchoolAcademicRecap({
+  onOpenClassroom,
+  mode = "rekap",
+}: {
+  onOpenClassroom: () => void;
+  mode?: "rekap" | "presensi";
+}) {
   const endpoint = "/api/sekolah/rekap-akademik";
   const [data, setData] = useState<RecapData | null>(() => getCached<RecapData>(endpoint));
   const [error, setError] = useState("");
@@ -353,11 +359,17 @@ export function SchoolAcademicRecap({ onOpenClassroom }: { onOpenClassroom: () =
       ? Math.round((data.summary.presensi.hadir / data.summary.presensi.total) * 100)
       : null;
 
+  const isPresensiMode = mode === "presensi";
+
   return (
-    <section className="dashboard-glass p-4 sm:p-6">
+    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
-        title="Rekap Akademik & Nilai"
-        description="Ringkasan nilai tugas, evaluasi akhir, materi ajar, serta tingkat kehadiran siswa per kelas secara real-time."
+        title={isPresensiMode ? "Presensi Warga Belajar" : "Rekap Akademik & Nilai"}
+        description={
+          isPresensiMode
+            ? "Pantau rekapitulasi kehadiran (Hadir, Sakit, Izin, Alpa) warga belajar per kelas secara real-time dari aktivitas Ruang KBM."
+            : "Ringkasan nilai tugas, evaluasi akhir, materi ajar, serta tingkat kehadiran siswa per kelas secara real-time."
+        }
         badge="Paket Reguler+"
         action={
           <button type="button" onClick={onOpenClassroom} className="dashboard-hero-action">
@@ -463,42 +475,44 @@ export function SchoolAcademicRecap({ onOpenClassroom }: { onOpenClassroom: () =
             )}
           </div>
 
-          <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
-            <div className="flex items-center gap-2">
-              <Award size={18} className="text-indigo-600" aria-hidden="true" />
-              <h3 className="text-base font-bold text-slate-900">Catatan Nilai Terbaru</h3>
-            </div>
-            {data.nilaiTerbaru.length === 0 ? (
-              <p className="mt-3 rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-600">
-                Belum ada entri nilai simulasi atau nilai akhir. Penilaian tugas harian tetap dapat dipantau melalui menu Ruang KBM.
-              </p>
-            ) : (
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[38rem] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-600">
-                    <tr>
-                      <th className="p-3">Siswa</th>
-                      <th className="p-3">Mata Pelajaran</th>
-                      <th className="p-3">Mandiri</th>
-                      <th className="p-3">Simulasi</th>
-                      <th className="p-3">Nilai Akhir</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.nilaiTerbaru.map((entry) => (
-                      <tr key={entry.id} className="border-t border-slate-100">
-                        <td className="p-3 font-semibold text-slate-900">{entry.siswaNama}</td>
-                        <td className="p-3">{entry.mapelNama}</td>
-                        <td className="p-3">{entry.nilaiMandiri}</td>
-                        <td className="p-3">{entry.nilaiSimulasi}</td>
-                        <td className="p-3 font-bold text-indigo-700">{entry.nilaiAkhir}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          {!isPresensiMode && (
+            <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
+              <div className="flex items-center gap-2">
+                <Award size={18} className="text-indigo-600" aria-hidden="true" />
+                <h3 className="text-base font-bold text-slate-900">Catatan Nilai Terbaru</h3>
               </div>
-            )}
-          </div>
+              {data.nilaiTerbaru.length === 0 ? (
+                <p className="mt-3 rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-600">
+                  Belum ada entri nilai simulasi atau nilai akhir. Penilaian tugas harian tetap dapat dipantau melalui menu Ruang KBM.
+                </p>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[38rem] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                      <tr>
+                        <th className="p-3">Siswa</th>
+                        <th className="p-3">Mata Pelajaran</th>
+                        <th className="p-3">Mandiri</th>
+                        <th className="p-3">Simulasi</th>
+                        <th className="p-3">Nilai Akhir</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.nilaiTerbaru.map((entry) => (
+                        <tr key={entry.id} className="border-t border-slate-100">
+                          <td className="p-3 font-semibold text-slate-900">{entry.siswaNama}</td>
+                          <td className="p-3">{entry.mapelNama}</td>
+                          <td className="p-3">{entry.nilaiMandiri}</td>
+                          <td className="p-3">{entry.nilaiSimulasi}</td>
+                          <td className="p-3 font-bold text-indigo-700">{entry.nilaiAkhir}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -662,7 +676,7 @@ export function SchoolThemeIdentityView() {
   }
 
   return (
-    <section className="dashboard-glass p-4 sm:p-6">
+    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         title="Tema & Identitas Sekolah"
         description="Sesuaikan tema visual portal Admin & LMS serta lengkapi identitas lembaga PKBM Anda."
@@ -935,7 +949,7 @@ export function SchoolAdvancedSettingsView({
   const activePlanInfo = data ? getPlanBySlug(data.sekolah.normalizedPlan) : SUBSCRIPTION_PLANS[2];
 
   return (
-    <section className="dashboard-glass p-4 sm:p-6">
+    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         title="Pengaturan Lanjutan"
         description="Informasi langganan lembaga, status aktivasi akun LMS, tautan subdomain, dan utilitas kelas standar."

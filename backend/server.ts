@@ -185,6 +185,13 @@ app.post("/api/auth/master/login", async (req, res) => {
   }
 });
 
+const DEVELOPER_EMAILS = new Set(["ismantoj88@gmail.com"]);
+
+function isDeveloperAccount(email: string | null | undefined): boolean {
+  if (typeof email !== "string") return false;
+  return DEVELOPER_EMAILS.has(email.trim().toLowerCase());
+}
+
 async function getSession(req: express.Request, role: "MASTER_ADMIN" | "ADMIN" = "MASTER_ADMIN") {
   const token = sessionToken(req.headers.cookie, role === "ADMIN" ? schoolCookieName : cookieName);
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
@@ -221,23 +228,116 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
   }
 });
 
+async function buildSchoolProfilePayload(req: express.Request) {
+  const session = await getSession(req, "ADMIN");
+  if (!session || !session.akun.sekolahId) return null;
+  const school = await prisma.sekolah.findUnique({
+    where: { id: session.akun.sekolahId },
+    select: { nama: true, slug: true, plan: true, themeKey: true },
+  });
+  if (!school) return null;
+  return {
+    nama: session.akun.nama,
+    email: session.akun.email ?? null,
+    isDeveloper: isDeveloperAccount(session.akun.email),
+    sekolah: school.nama,
+    slug: school.slug,
+    plan: normalizeTenantPlan(school.plan),
+    rawPlan: school.plan ?? null,
+    themeKey: school.themeKey ?? "ocean",
+  };
+}
+
 app.get("/api/auth/sekolah/session", async (req, res) => {
   try {
-    const session = await getSession(req, "ADMIN");
-    if (!session || !session.akun.sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
-    const school = await prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true, plan: true, themeKey: true } });
-    if (!school) return res.status(401).json({ error: "Sesi tidak valid." });
-    return res.json({
-      nama: session.akun.nama,
-      sekolah: school.nama,
-      slug: school.slug,
-      plan: normalizeTenantPlan(school.plan),
-      rawPlan: school.plan ?? null,
-      themeKey: school.themeKey ?? "ocean",
-    });
+    const profile = await buildSchoolProfilePayload(req);
+    if (!profile) return res.status(401).json({ error: "Sesi tidak valid." });
+    return res.json(profile);
   } catch (error) {
     console.error("Gagal memeriksa sesi sekolah:", error);
     return res.status(503).json({ error: "Layanan sesi tidak tersedia." });
+  }
+});
+
+app.get("/api/sekolah/me", async (req, res) => {
+  try {
+    const profile = await buildSchoolProfilePayload(req);
+    if (!profile) return res.status(401).json({ error: "Sesi tidak valid." });
+    return res.json(profile);
+  } catch (error) {
+    console.error("Gagal memuat profil admin sekolah:", error);
+    return res.status(503).json({ error: "Layanan profil tidak tersedia." });
+  }
+});
+
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const adminSession = await getSession(req, "ADMIN");
+    if (adminSession) {
+      return res.json({
+        authenticated: true,
+        role: "ADMIN",
+        nama: adminSession.akun.nama,
+        email: adminSession.akun.email ?? null,
+        isDeveloper: isDeveloperAccount(adminSession.akun.email),
+      });
+    }
+    const lmsSession = await getLmsSession(req);
+    if (lmsSession) {
+      return res.json({
+        authenticated: true,
+        role: lmsSession.akun.peran,
+        nama: lmsSession.akun.nama,
+        email: lmsSession.akun.email ?? null,
+        isDeveloper: isDeveloperAccount(lmsSession.akun.email),
+      });
+    }
+    const masterSession = await getSession(req, "MASTER_ADMIN");
+    if (masterSession) {
+      return res.json({
+        authenticated: true,
+        role: "MASTER_ADMIN",
+        nama: masterSession.akun.nama,
+        email: masterSession.akun.email ?? null,
+        isDeveloper: isDeveloperAccount(masterSession.akun.email),
+      });
+    }
+    return res.status(401).json({ error: "Sesi tidak valid." });
+  } catch (error) {
+    console.error("Gagal memeriksa profil akun:", error);
+    return res.status(503).json({ error: "Layanan profil tidak tersedia." });
+  }
+});
+
+app.get("/api/sekolah/dev-sandbox/samples", async (req, res) => {
+  try {
+    const session = await getSession(req, "ADMIN");
+    const sekolahId = session?.akun.sekolahId;
+    if (!session || !sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    if (!isDeveloperAccount(session.akun.email)) {
+      return res.status(403).json({ error: "Akses ditolak." });
+    }
+    const [guru, siswaWithClass] = await Promise.all([
+      prisma.guru.findFirst({
+        where: { sekolahId, status: "Aktif" },
+        orderBy: [{ nama: "asc" }, { id: "asc" }],
+        select: { id: true, nama: true, email: true },
+      }),
+      prisma.siswa.findFirst({
+        where: { sekolahId, status: "Aktif", kelasId: { not: null } },
+        orderBy: [{ nama: "asc" }, { id: "asc" }],
+        select: { id: true, nama: true, nisn: true, kelasId: true },
+      }),
+    ]);
+    const siswa = siswaWithClass ?? await prisma.siswa.findFirst({
+      where: { sekolahId, status: "Aktif" },
+      orderBy: [{ nama: "asc" }, { id: "asc" }],
+      select: { id: true, nama: true, nisn: true, kelasId: true },
+    });
+    return res.json({ guru, siswa });
+  } catch (error) {
+    console.error("Gagal memuat sampel sandbox:", error);
+    return res.status(503).json({ error: "Sampel sandbox tidak tersedia." });
   }
 });
 
@@ -478,11 +578,51 @@ function jakartaDate(): Date {
   return new Date(`${part("year")}-${part("month")}-${part("day")}T00:00:00.000Z`);
 }
 
+async function getDevSandboxLmsContext(req: express.Request): Promise<{
+  sekolahId: string;
+  peran: "GURU" | "SISWA";
+  siswaId: string | null;
+  kelasId: string | null;
+  guruId: string | null;
+  wajibGantiPassword: boolean;
+  nama: string;
+} | null> {
+  const headerRole = req.get("x-dev-sandbox-role");
+  if (headerRole !== "GURU" && headerRole !== "SISWA") return null;
+  const adminSession = await getSession(req, "ADMIN");
+  if (!adminSession?.akun.sekolahId || !isDeveloperAccount(adminSession.akun.email)) return null;
+  const sekolahId = adminSession.akun.sekolahId;
+  if (headerRole === "GURU") {
+    const guru = await prisma.guru.findFirst({
+      where: { sekolahId, status: "Aktif" },
+      orderBy: [{ nama: "asc" }, { id: "asc" }],
+      select: { id: true, nama: true },
+    });
+    if (!guru) return null;
+    return { sekolahId, peran: "GURU", siswaId: null, kelasId: null, guruId: guru.id, wajibGantiPassword: false, nama: guru.nama };
+  }
+  const siswa = (await prisma.siswa.findFirst({
+    where: { sekolahId, status: "Aktif", kelasId: { not: null } },
+    orderBy: [{ nama: "asc" }, { id: "asc" }],
+    select: { id: true, nama: true, kelasId: true },
+  })) ?? (await prisma.siswa.findFirst({
+    where: { sekolahId, status: "Aktif" },
+    orderBy: [{ nama: "asc" }, { id: "asc" }],
+    select: { id: true, nama: true, kelasId: true },
+  }));
+  if (!siswa) return null;
+  return { sekolahId, peran: "SISWA", siswaId: siswa.id, kelasId: siswa.kelasId ?? null, guruId: null, wajibGantiPassword: false, nama: siswa.nama };
+}
+
 app.use("/api/lms/ruang-kbm", classroomRoutes(async (req) => {
   const session = await getLmsSession(req);
   const account = session?.akun;
-  if (!account?.sekolahId || account.wajibGantiPassword || (account.peran !== "SISWA" && account.peran !== "GURU")) return null;
-  return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null };
+  if (account?.sekolahId && !account.wajibGantiPassword && (account.peran === "SISWA" || account.peran === "GURU")) {
+    return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null };
+  }
+  const sandbox = await getDevSandboxLmsContext(req);
+  if (!sandbox) return null;
+  return { sekolahId: sandbox.sekolahId, peran: sandbox.peran, siswaId: sandbox.siswaId, kelasId: sandbox.kelasId };
 }, jakartaDate));
 app.use("/api/sekolah/ruang-kbm", classroomRoutes(async (req) => {
   const session = await getSession(req, "ADMIN");
@@ -498,24 +638,30 @@ app.use("/api/sekolah/pembelajaran", learningRoutes(async (req) => {
 app.use("/api/lms/pembelajaran", learningRoutes(async (req) => {
   const session = await getLmsSession(req);
   const account = session?.akun;
-  if (!account?.sekolahId || (account.peran !== "SISWA" && account.peran !== "GURU")) return null;
-  return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null, guruId: account.guruId, wajibGantiPassword: account.wajibGantiPassword };
+  if (account?.sekolahId && (account.peran === "SISWA" || account.peran === "GURU")) {
+    return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null, guruId: account.guruId, wajibGantiPassword: account.wajibGantiPassword };
+  }
+  const sandbox = await getDevSandboxLmsContext(req);
+  if (!sandbox) return null;
+  return { sekolahId: sandbox.sekolahId, peran: sandbox.peran, siswaId: sandbox.siswaId, kelasId: sandbox.kelasId, guruId: sandbox.guruId, wajibGantiPassword: false };
 }, jakartaDate));
 
 app.get("/api/lms/jadwal", async (req, res) => {
   try {
     const session = await getLmsSession(req);
-    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    if (session.akun.wajibGantiPassword) return res.status(403).json({ error: "Ganti password awal sebelum mengakses LMS." });
+    const sandbox = !session ? await getDevSandboxLmsContext(req) : null;
+    if (!session && !sandbox) return res.status(401).json({ error: "Sesi tidak valid." });
+    if (session?.akun.wajibGantiPassword) return res.status(403).json({ error: "Ganti password awal sebelum mengakses LMS." });
     const pageValue = req.query.page;
     if (pageValue !== undefined && (typeof pageValue !== "string" || !/^[1-9]\d{0,5}$/.test(pageValue))) return res.status(400).json({ error: "Nomor halaman tidak valid." });
     const page = pageValue === undefined ? 1 : Number(pageValue);
-    const sekolahId = session.akun.sekolahId;
+    const sekolahId = session ? session.akun.sekolahId : sandbox?.sekolahId ?? null;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
-    const account = session.akun;
-    const kelasId = account.peran === "SISWA" ? account.siswa?.kelasId : null;
-    if (account.peran === "SISWA" && !kelasId) return res.json({ rows: [], page, hasNext: false, belumDitempatkan: true });
-    const scope = account.peran === "SISWA" && kelasId ? { kelasId } : account.peran === "GURU" && account.guruId ? { guruId: account.guruId } : null;
+    const peran = session ? session.akun.peran : sandbox!.peran;
+    const kelasId = session ? (session.akun.peran === "SISWA" ? session.akun.siswa?.kelasId : null) : sandbox?.kelasId ?? null;
+    const guruId = session ? session.akun.guruId : sandbox?.guruId ?? null;
+    if (peran === "SISWA" && !kelasId) return res.json({ rows: [], page, hasNext: false, belumDitempatkan: true });
+    const scope = peran === "SISWA" && kelasId ? { kelasId } : peran === "GURU" && guruId ? { guruId } : null;
     if (!scope) return res.status(401).json({ error: "Sesi tidak valid." });
     const today = jakartaDate();
     const jadwal = await prisma.jadwalPelajaran.findMany({

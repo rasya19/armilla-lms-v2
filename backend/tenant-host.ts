@@ -28,13 +28,15 @@ function tenantBaseDomains(appOrigin?: string): string[] {
   return [...domains];
 }
 
+export const RESERVED_SUBDOMAINS = new Set<string>(["www"]);
+
 export function tenantHost(host: string | undefined, production: boolean, appOrigin?: string): { kind: "main" } | { kind: "local" } | { kind: "invalid" } | { kind: "school"; slug: string } {
   const hostname = host?.toLowerCase();
   const baseDomains = tenantBaseDomains(appOrigin);
   for (const domain of baseDomains) {
     if (hostname === domain || hostname === `www.${domain}`) return { kind: "main" };
     const match = new RegExp(`^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\\.${escapeRegExp(domain)}$`).exec(hostname ?? "");
-    if (match) return { kind: "school", slug: match[1] };
+    if (match && !RESERVED_SUBDOMAINS.has(match[1])) return { kind: "school", slug: match[1] };
   }
   if (!production && hostname) return { kind: "local" };
   return { kind: "invalid" };

@@ -21,6 +21,7 @@ import { schoolManagementRoutes } from "./school-management-routes.js";
 import { normalizeTenantPlan } from "./plan-utils.js";
 import { schoolTierRoutes } from "./school-tier-routes.js";
 import { syncTenantPlanToLms, toCleanPlanCode } from "./lms-plan-sync.js";
+import { resolveSchoolWithSandboxSeed, SANDBOX_SLUG } from "./sandbox-seed.js";
 
 const app = express();
 export default app;
@@ -38,11 +39,11 @@ app.use("/api", httpSecurity({ production, origin: production ? productionOrigin
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
-app.use("/api", tenantHostMiddleware(production, (slug) => prisma.sekolah.findUnique({
-  where: { slug },
-  select: { id: true, slug: true, status: true, expiresAt: true },
-}), process.env.APP_ORIGIN));
-app.get("/api/tenant/context", (req, res) => res.json({ kind: req.tenant?.kind }));
+app.use("/api", tenantHostMiddleware(production, (slug) => resolveSchoolWithSandboxSeed(prisma, slug), process.env.APP_ORIGIN));
+app.get("/api/tenant/context", (req, res) => res.json({
+  kind: req.tenant?.kind,
+  ...(req.tenant?.kind === "school" ? { slug: req.tenant.slug } : {}),
+}));
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;
   if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
@@ -145,6 +146,38 @@ app.post("/api/public/stats", async (_req, res) => {
   const [totalVisitors, totalSchools] = await Promise.all([readOrIncrementVisitors(true), readTotalSchools()]);
   return res.json({ totalVisitors, totalSchools });
 });
+
+async function handlePublicSchoolLookup(req: express.Request, res: express.Response, explicitSlug?: string) {
+  const querySlug = typeof req.query.slug === "string" ? req.query.slug.trim().toLowerCase() : "";
+  const slug = (explicitSlug ?? (querySlug || (req.tenant?.kind === "school" ? req.tenant.slug : ""))).trim().toLowerCase();
+  if (!slug || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) {
+    return res.status(400).json({ error: "Subdomain sekolah tidak valid." });
+  }
+  if (req.tenant?.kind === "school" && slug !== req.tenant.slug) {
+    return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+  }
+  try {
+    const school = await resolveSchoolWithSandboxSeed(prisma, slug);
+    if (!school || !tenantAccessible(school)) {
+      return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar atau tidak aktif." });
+    }
+    return res.json({
+      id: school.id,
+      nama: school.nama,
+      slug: school.slug,
+      npsn: school.npsn ?? null,
+      plan: normalizeTenantPlan(school.plan),
+      status: school.status,
+      themeKey: school.themeKey ?? "ocean",
+    });
+  } catch (error) {
+    console.error("Gagal memuat profil publik sekolah:", error);
+    return res.status(503).json({ error: "Profil sekolah belum dapat dimuat." });
+  }
+}
+
+app.get("/api/public/sekolah", (req, res) => handlePublicSchoolLookup(req, res));
+app.get("/api/public/sekolah/:slug", (req, res) => handlePublicSchoolLookup(req, res, req.params.slug));
 
 app.use("/api/pendaftaran-sekolah", registrationRoutes({
   production,
@@ -804,9 +837,11 @@ app.post("/api/sekolah/guru", async (req, res) => {
 app.get("/api/ppdb/:slug", async (req, res) => {
   if (req.tenant?.kind === "school" && req.params.slug !== req.tenant.slug) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
   try {
-    const sekolah = await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { nama: true } });
+    const sekolah = req.params.slug === SANDBOX_SLUG
+      ? await resolveSchoolWithSandboxSeed(prisma, req.params.slug)
+      : await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { nama: true } });
     if (!sekolah) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
-    return res.json(sekolah);
+    return res.json({ nama: sekolah.nama });
   } catch (error) {
     console.error("Gagal memuat sekolah PPDB:", error);
     return res.status(503).json({ error: "PPDB belum dapat dimuat." });
@@ -840,7 +875,9 @@ app.post("/api/ppdb/:slug", async (req, res) => {
   const data = parseApplicant(req.body);
   if (!data) return res.status(400).json({ error: "Periksa nama, email, telepon, alamat, dan jenjang." });
   try {
-    const school = await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { id: true } });
+    const school = req.params.slug === SANDBOX_SLUG
+      ? await resolveSchoolWithSandboxSeed(prisma, req.params.slug)
+      : await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { id: true } });
     if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
     await prisma.pPDB.create({ data: { ...data, sekolahId: school.id, noDaftar: randomBytes(16).toString("hex"), status: "Pending" } });
     return res.status(201).json({ message: "Pendaftaran diterima dan menunggu pemeriksaan admin sekolah." });

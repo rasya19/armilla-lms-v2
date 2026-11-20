@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "./fetchWithTimeout";
+
 const STORAGE_PREFIX = "armilla_school_cache_v1:";
 const DEFAULT_PREFETCH_TTL_MS = 15_000;
 
@@ -138,7 +140,7 @@ export function prefetchEndpoint(endpoint: string, ttlMs = DEFAULT_PREFETCH_TTL_
   const existing = inFlightPrefetches.get(key);
   if (existing) return existing;
 
-  const task = fetch(endpoint, { credentials: "same-origin" })
+  const task = fetchWithTimeout(endpoint, { credentials: "same-origin" })
     .then(async (response) => {
       if (!response.ok) return;
       const body: unknown = await response.json();

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { useGlassConfirm } from "./GlassConfirm";
+import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 
 type Student = { id: string; nama: string; nisn: string };
 
@@ -27,14 +28,13 @@ export function TeacherPasswordReset() {
     if (temporaryPassword) return;
     setBusy(true); setError(""); setMessage(""); setStudent(null);
     try {
-      const response = await fetch(`/api/lms/guru/siswa-reset?nisn=${encodeURIComponent(nisn)}`);
+      const response = await fetchWithTimeout(`/api/lms/guru/siswa-reset?nisn=${encodeURIComponent(nisn)}`);
       if (!response.ok) throw new Error(await responseError(response));
       const body: unknown = await response.json();
       if (typeof body !== "object" || body === null || !("id" in body) || typeof body.id !== "string" || !("nama" in body) || typeof body.nama !== "string" || !("nisn" in body) || typeof body.nisn !== "string") throw new Error("Respons pencarian tidak valid.");
       setStudent({ id: body.id, nama: body.nama, nisn: body.nisn });
-    } catch (error) {
-      console.error("Gagal mencari siswa:", error);
-      setError(error instanceof TypeError ? "Server tidak dapat dihubungi." : error instanceof Error ? error.message : "Pencarian gagal.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Pencarian gagal."));
     } finally { setBusy(false); }
   }
 
@@ -42,7 +42,7 @@ export function TeacherPasswordReset() {
     if (!student || temporaryPassword || !await confirm(`Reset password ${student.nama} (NISN ${student.nisn}) ke password default 123456? Semua sesi siswa akan berakhir.`)) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      const response = await fetch(`/api/lms/guru/siswa/${encodeURIComponent(student.id)}/reset-password`, { method: "POST" });
+      const response = await fetchWithTimeout(`/api/lms/guru/siswa/${encodeURIComponent(student.id)}/reset-password`, { method: "POST" });
       if (!response.ok) throw new Error(await responseError(response));
       const body: unknown = await response.json();
       if (typeof body !== "object" || body === null || !("temporaryPassword" in body) || typeof body.temporaryPassword !== "string" || !/^(?:123456|[A-Za-z0-9_-]{24})$/.test(body.temporaryPassword)) throw new Error("Respons tidak valid. Reset kembali untuk memperoleh password baru.");
@@ -50,9 +50,8 @@ export function TeacherPasswordReset() {
       setTemporaryPassword(body.temporaryPassword);
       setMessage(`Password sementara untuk ${student.nama}:`);
       setStudent(null);
-    } catch (error) {
-      console.error("Gagal mereset password:", error);
-      setError(error instanceof TypeError ? "Koneksi terputus. Hasil reset belum diketahui; reset kembali untuk memperoleh password baru." : error instanceof Error ? error.message : "Reset gagal.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Reset gagal."));
     } finally { setBusy(false); }
   }
 

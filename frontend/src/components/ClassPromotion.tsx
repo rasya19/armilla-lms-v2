@@ -3,6 +3,7 @@ import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { EmptyState, TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type ClassItem = { id: string; nama: string };
 type Student = { id: string; nama: string; nisn: string; statusAkun: string };
@@ -44,14 +45,14 @@ export function ClassPromotion({ classes, onMoved }: { classes: ClassItem[]; onM
       setLoading(true);
     }
     setLoadError("");
-    fetch(endpoint, { signal: controller.signal }).then(async (response) => {
+    fetchWithTimeout(endpoint, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Data kenaikan kelas belum dapat dimuat.");
       const body: unknown = await response.json();
       if (!isPromotionData(body)) throw new Error("Respons kenaikan kelas tidak valid.");
       setCached(endpoint, body);
       setData(body); setSelected(new Set(clearAfterMove.current ? [] : body.siswa.map((item) => item.id))); clearAfterMove.current = false;
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat kenaikan kelas:", failure); setLoadError(failure instanceof TypeError ? "Server tidak dapat dihubungi." : failure instanceof Error ? failure.message : "Data belum dapat dimuat."); }
+      if (!isCallerAborted(failure, controller.signal) && !cached) { setLoadError(describeFetchError(failure, "Data belum dapat dimuat.")); }
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [endpoint, version]);
@@ -77,7 +78,7 @@ export function ClassPromotion({ classes, onMoved }: { classes: ClassItem[]; onM
     let failure = "";
     for (const student of students) {
       try {
-        const response = await fetch(`/api/sekolah/siswa/${encodeURIComponent(student.id)}/kelas`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kelasId: destination, expectedKelasId: source }) });
+        const response = await fetchWithTimeout(`/api/sekolah/siswa/${encodeURIComponent(student.id)}/kelas`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kelasId: destination, expectedKelasId: source }) });
         if (!response.ok) {
           let reason = `Status ${response.status}`;
           if (response.headers.get("content-type")?.includes("application/json")) {
@@ -89,9 +90,8 @@ export function ClassPromotion({ classes, onMoved }: { classes: ClassItem[]; onM
         }
         completed++;
         setProgress({ done: completed, total: students.length });
-      } catch (error) {
-        console.error("Gagal memindahkan siswa:", error);
-        failure = `Koneksi atau respons terputus saat memproses ${student.nama}; hasil siswa ini belum diketahui.`;
+      } catch (err) {
+        failure = `${student.nama}: ${describeFetchError(err, "Koneksi terputus atau timeout.")}`;
         break;
       }
     }

@@ -10,6 +10,7 @@ import { MasterSchools } from "./MasterSchools";
 import { MasterSchoolRegistrations } from "./MasterSchoolRegistrations";
 import { CardGridSkeleton, TableSkeleton } from "./DashboardUI";
 import { getCached, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type MenuItem = { id: string; label: string; icon: LucideIcon; description: string };
 const menuItems: MenuItem[] = [
@@ -70,9 +71,9 @@ function OverviewPanel({ search, selectMenu, showBoard }: { search: string; sele
     const cached = getCached<Overview>(cacheKey);
     if (cached) setData(cached);
     Promise.all([
-      fetch("/api/master/pendaftaran-sekolah?page=1", { signal: controller.signal }),
-      fetch("/api/master/sekolah?page=1", { signal: controller.signal }),
-      fetch("/api/master/summary", { signal: controller.signal }),
+      fetchWithTimeout("/api/master/pendaftaran-sekolah?page=1", { signal: controller.signal }),
+      fetchWithTimeout("/api/master/sekolah?page=1", { signal: controller.signal }),
+      fetchWithTimeout("/api/master/summary", { signal: controller.signal }),
     ]).then(async ([registrations, schools, summary]) => {
       if (!registrations.ok || !schools.ok || !summary.ok) throw new Error(registrations.status === 401 || schools.status === 401 || summary.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Data ringkasan tidak tersedia. Coba muat ulang halaman.");
       const [registrationData, schoolData, summaryData]: unknown[] = await Promise.all([registrations.json(), schools.json(), summary.json()]);
@@ -80,9 +81,8 @@ function OverviewPanel({ search, selectMenu, showBoard }: { search: string; sele
       setCached(cacheKey, parsed);
       setData(parsed);
     }).catch((reason: unknown) => {
-      if (!controller.signal.aborted && !cached) {
-        console.error("Gagal memuat ringkasan:", reason);
-        setError(reason instanceof Error ? reason.message : "Data ringkasan tidak tersedia.");
+      if (!isCallerAborted(reason, controller.signal) && !cached) {
+        setError(describeFetchError(reason, "Data ringkasan tidak tersedia."));
       }
     });
     return () => controller.abort();

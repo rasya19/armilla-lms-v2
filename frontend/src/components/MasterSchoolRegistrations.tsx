@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Registration = {
   id: string;
@@ -49,16 +50,15 @@ export function MasterSchoolRegistrations() {
       setResult(null);
     }
     setError("");
-    fetch(endpoint, { signal: controller.signal }).then(async (response) => {
+    fetchWithTimeout(endpoint, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Daftar pendaftaran tidak tersedia. Coba lagi nanti.");
       const data: unknown = await response.json();
       if (!isRegistrationPage(data) || data.page !== page) throw new Error("Respons daftar pendaftaran tidak valid.");
       setCached(endpoint, data);
       setResult(data);
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted && !cached) {
-        console.error("Gagal memuat pendaftaran sekolah:", error);
-        setError(error instanceof Error ? error.message : "Daftar pendaftaran tidak tersedia.");
+    }).catch((failure: unknown) => {
+      if (!isCallerAborted(failure, controller.signal) && !cached) {
+        setError(describeFetchError(failure, "Daftar pendaftaran tidak tersedia."));
       }
     });
     return () => controller.abort();
@@ -72,16 +72,15 @@ export function MasterSchoolRegistrations() {
     setDeletingId(item.id);
     setDeleteError("");
     try {
-      const response = await fetch(`/api/master/pendaftaran-sekolah/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      const response = await fetchWithTimeout(`/api/master/pendaftaran-sekolah/${encodeURIComponent(item.id)}`, { method: "DELETE" });
       if (!response.ok) {
         throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : response.status === 404 ? "Pendaftaran tidak ditemukan. Muat ulang daftar." : response.status === 409 ? "Sekolah memiliki data terkait dan tidak dapat dihapus melalui menu ini." : "Pendaftaran belum dapat dihapus. Coba lagi nanti.");
       }
       invalidateCache(["/api/master/pendaftaran-sekolah", "/api/master/sekolah", "/api/master/overview"]);
       if (result?.pendaftaran.length === 1 && page > 1) setPage((value) => value - 1);
       else setRefreshKey((value) => value + 1);
-    } catch (error) {
-      console.error("Gagal menghapus pendaftaran sekolah:", error);
-      setDeleteError(error instanceof Error ? error.message : "Pendaftaran belum dapat dihapus.");
+    } catch (failure) {
+      setDeleteError(describeFetchError(failure, "Pendaftaran belum dapat dihapus."));
     } finally {
       setDeletingId(null);
     }

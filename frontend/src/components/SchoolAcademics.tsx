@@ -4,6 +4,7 @@ import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { CardGridSkeleton, EmptyState, TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Named = { id: string; nama: string };
 type Year = Named & { semester: string; mulai: string; selesai: string };
@@ -26,8 +27,8 @@ function isData(value: unknown): value is Data {
     && Array.isArray(value.kelas) && value.kelas.every(isNamed) && Array.isArray(value.guru) && value.guru.every(isNamed)
     && Array.isArray(value.jadwal) && value.jadwal.every((x: unknown) => isObject(x) && typeof x.id === "string" && typeof x.tahunAjaranId === "string" && typeof x.kelasId === "string" && typeof x.mapelId === "string" && typeof x.guruId === "string" && typeof x.hari === "number" && typeof x.jamMulai === "string" && typeof x.jamSelesai === "string");
 }
-async function request(path: string, method = "GET", body?: object): Promise<unknown> {
-  const response = await fetch(`/api/sekolah/akademik${path}`, { method, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+async function request(path: string, method = "GET", body?: object, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetchWithTimeout(`/api/sekolah/akademik${path}`, { method, signal, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
   const result: unknown = await response.json();
   if (!response.ok) throw new Error(isObject(result) && typeof result.error === "string" ? result.error : `Permintaan gagal (status ${response.status}).`);
   return result;
@@ -51,20 +52,19 @@ export function SchoolAcademics({ mode }: { mode: "mapel" | "akademik" }) {
   const [schedule, setSchedule] = useState({ tahunAjaranId: "", kelasId: "", mapelId: "", guruId: "", hari: "1", jamMulai: "", jamSelesai: "" });
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const cached = getCached<Data>("/api/sekolah/akademik");
     if (cached) setData(cached);
-    request("").then((result) => {
+    request("", "GET", undefined, controller.signal).then((result) => {
       if (!isData(result)) throw new Error("Respons akademik tidak valid.");
       setCached("/api/sekolah/akademik", result);
-      if (active) { setData(result); setError(""); }
+      if (!controller.signal.aborted) { setData(result); setError(""); }
     }).catch((failure: unknown) => {
-      if (active) {
-        console.error("Gagal memuat akademik:", failure);
-        if (!cached) { setData(null); setError(failure instanceof Error ? failure.message : "Data belum dapat dimuat."); }
+      if (!isCallerAborted(failure, controller.signal)) {
+        if (!cached) { setData(null); setError(describeFetchError(failure, "Data belum dapat dimuat.")); }
       }
     });
-    return () => { active = false; };
+    return () => controller.abort();
   }, [version]);
 
   async function mutate(path: string, method: string, body: object | undefined, success: string): Promise<boolean> {
@@ -75,8 +75,7 @@ export function SchoolAcademics({ mode }: { mode: "mapel" | "akademik" }) {
       setMessage(success); setVersion((v) => v + 1);
       return true;
     } catch (failure) {
-      console.error("Gagal menyimpan data akademik:", failure);
-      setError(failure instanceof TypeError ? "Koneksi terputus. Muat ulang data untuk memeriksa hasilnya sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Data belum dapat disimpan.");
+      setError(describeFetchError(failure, "Data belum dapat disimpan."));
       return false;
     } finally { setBusy(false); }
   }

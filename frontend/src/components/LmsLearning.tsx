@@ -3,6 +3,7 @@ import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { EmptyState, TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Named = { nama: string };
 type Assignment = { id: string; hari: number; jamMulai: string; jamSelesai: string; kelas: Named & { id: string }; mapel: Named & { id: string }; tahunAjaran: Named & { semester: string } };
@@ -42,7 +43,7 @@ async function request(
   const headers: Record<string, string> = {};
   if (body) headers["Content-Type"] = "application/json";
   if (!admin && sandboxRole) headers["X-Dev-Sandbox-Role"] = sandboxRole;
-  const response = await fetch(`/api/${admin ? "sekolah" : "lms"}/pembelajaran${path}`, {
+  const response = await fetchWithTimeout(`/api/${admin ? "sekolah" : "lms"}/pembelajaran${path}`, {
     method,
     signal,
     ...(Object.keys(headers).length ? { headers } : {}),
@@ -53,7 +54,7 @@ async function request(
   return result;
 }
 function failureMessage(failure: unknown): string {
-  return failure instanceof TypeError ? "Koneksi terputus. Muat ulang data untuk memeriksa hasil sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Permintaan gagal.";
+  return describeFetchError(failure, "Permintaan gagal.");
 }
 function time(value: string) { return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(new Date(value)) + " WIB"; }
 function Link({ value }: { value: string | null | undefined }) {
@@ -116,7 +117,7 @@ export function LmsLearning({
       setCached(listCacheKey, value);
       setData(value);
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat pembelajaran:", failure); setError(failureMessage(failure)); }
+      if (!isCallerAborted(failure, controller.signal) && !cached) { setError(failureMessage(failure)); }
     });
     return () => controller.abort();
   }, [kind, page, queryStr, listCacheKey, version, kelasId, mapelId, role, sandboxRole]);
@@ -127,7 +128,7 @@ export function LmsLearning({
     request("/penugasan", "GET", undefined, controller.signal, false, sandboxRole).then((value) => {
       if (!obj(value) || !Array.isArray(value.rows) || !value.rows.every(assignment)) throw new Error("Respons jadwal tidak valid.");
       setAssignments(value.rows);
-    }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat jadwal guru:", failure); setAssignmentError(failureMessage(failure)); } });
+    }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setAssignmentError(failureMessage(failure)); } });
     return () => controller.abort();
   }, [role, version, sandboxRole]);
   useEffect(() => {
@@ -137,14 +138,14 @@ export function LmsLearning({
     request(`/tugas/${encodeURIComponent(selected.id)}/pengumpulan?page=${answerPage}`, "GET", undefined, controller.signal, false, sandboxRole).then((value) => {
       if (!isPage(value, studentSubmission) || value.page !== answerPage) throw new Error("Respons pengumpulan tidak valid.");
       setAnswers(value);
-    }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat pengumpulan:", failure); setAnswerError(failureMessage(failure)); } });
+    }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setAnswerError(failureMessage(failure)); } });
     return () => controller.abort();
   }, [role, selected, answerPage, version, sandboxRole]);
 
   async function mutate(path: string, method: string, body: object, success: string) {
     setBusy(true); setError(""); setMessage("");
     try { await request(path, method, body, undefined, role === "ADMIN", sandboxRole); invalidateCache(["/api/sekolah/pembelajaran", "/api/lms/pembelajaran", "/api/sekolah/rekap-akademik"]); setMessage(success); setVersion((v) => v + 1); return true; }
-    catch (failure) { console.error("Gagal memproses pembelajaran:", failure); setError(failureMessage(failure)); return false; }
+    catch (failure) { setError(failureMessage(failure)); return false; }
     finally { setBusy(false); }
   }
   async function create(event: React.FormEvent<HTMLFormElement>) {

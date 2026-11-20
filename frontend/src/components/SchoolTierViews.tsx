@@ -24,6 +24,8 @@ import { dispatchTenantThemeChange, isThemeKey, type ThemeKey } from "./TenantTh
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { ensureStandardClasses } from "./standardClasses";
 import { getPlanBySlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
+import { deriveTenantSlugFromHost, saveCachedTenantProfile } from "./authSessionCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 export function UpgradePlanModal({
   featureName,
@@ -191,11 +193,11 @@ export function SchoolBulkPlacementView() {
   const [tab, setTab] = useState<"promotion" | "placement">("promotion");
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const cached = getCached<ClassData>("/api/sekolah/kelas");
     if (cached) setData(cached);
-    ensureStandardClasses()
-      .then(() => fetch("/api/sekolah/kelas"))
+    ensureStandardClasses(controller.signal)
+      .then(() => fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal }))
       .then(async (res) => {
         const body: unknown = await res.json();
         if (!res.ok) {
@@ -207,19 +209,17 @@ export function SchoolBulkPlacementView() {
         }
         if (!isClassData(body)) throw new Error("Respons kelas tidak valid.");
         setCached("/api/sekolah/kelas", body);
-        if (active) {
+        if (!controller.signal.aborted) {
           setData(body);
           setError("");
         }
       })
       .catch((failure: unknown) => {
-        if (active && !cached) {
-          setError(failure instanceof Error ? failure.message : "Data kelas belum dapat dimuat.");
+        if (!isCallerAborted(failure, controller.signal) && !cached) {
+          setError(describeFetchError(failure, "Data kelas belum dapat dimuat."));
         }
       });
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, [version]);
 
   function handleMoved() {
@@ -333,7 +333,7 @@ export function SchoolAcademicRecap({
     const cached = getCached<RecapData>(endpoint);
     if (cached) setData(cached);
     setError("");
-    fetch(endpoint, { signal: controller.signal })
+    fetchWithTimeout(endpoint, { signal: controller.signal })
       .then(async (res) => {
         const body: unknown = await res.json();
         if (!res.ok) {
@@ -347,8 +347,8 @@ export function SchoolAcademicRecap({
         setData(body as RecapData);
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted && !cached) {
-          setError(failure instanceof Error ? failure.message : "Rekap akademik belum dapat dimuat.");
+        if (!isCallerAborted(failure, controller.signal) && !cached) {
+          setError(describeFetchError(failure, "Rekap akademik belum dapat dimuat."));
         }
       });
     return () => controller.abort();
@@ -603,7 +603,7 @@ export function SchoolThemeIdentityView() {
       setLoading(true);
     }
     setError("");
-    fetch("/api/sekolah/identitas", { signal: controller.signal })
+    fetchWithTimeout("/api/sekolah/identitas", { signal: controller.signal })
       .then(async (res) => {
         const body: unknown = await res.json();
         if (!res.ok) {
@@ -618,6 +618,12 @@ export function SchoolThemeIdentityView() {
         if (isThemeKey(data.sekolah.themeKey)) {
           setSelectedTheme(data.sekolah.themeKey);
         }
+        saveCachedTenantProfile(data.sekolah.slug || deriveTenantSlugFromHost(), {
+          nama: data.sekolah.nama,
+          slug: data.sekolah.slug,
+          logoUrl: data.settings.logo_url ?? null,
+          themeKey: data.sekolah.themeKey,
+        });
         setForm({
           primary_color: data.settings.primary_color || "#4f46e5",
           logo_url: data.settings.logo_url ?? "",
@@ -629,8 +635,8 @@ export function SchoolThemeIdentityView() {
         });
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted && !cached) {
-          setError(failure instanceof Error ? failure.message : "Pengaturan belum dapat dimuat.");
+        if (!isCallerAborted(failure, controller.signal) && !cached) {
+          setError(describeFetchError(failure, "Pengaturan belum dapat dimuat."));
         }
       })
       .finally(() => {
@@ -644,7 +650,7 @@ export function SchoolThemeIdentityView() {
     setError("");
     setMessage("");
     try {
-      const res = await fetch("/api/sekolah/tema", {
+      const res = await fetchWithTimeout("/api/sekolah/tema", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ themeKey }),
@@ -660,9 +666,14 @@ export function SchoolThemeIdentityView() {
       setSelectedTheme(themeKey);
       invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
       dispatchTenantThemeChange(themeKey);
+      const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
+      const slugKey = cached?.sekolah.slug || deriveTenantSlugFromHost();
+      if (slugKey && cached) {
+        saveCachedTenantProfile(slugKey, { nama: cached.sekolah.nama, slug: slugKey, themeKey });
+      }
       setMessage("Tema dashboard sekolah dan LMS siswa/guru berhasil diperbarui.");
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "Tema gagal diperbarui.");
+      setError(describeFetchError(failure, "Tema gagal diperbarui."));
     } finally {
       setThemeBusy(false);
     }
@@ -674,7 +685,7 @@ export function SchoolThemeIdentityView() {
     setError("");
     setMessage("");
     try {
-      const res = await fetch("/api/sekolah/identitas", {
+      const res = await fetchWithTimeout("/api/sekolah/identitas", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -688,9 +699,18 @@ export function SchoolThemeIdentityView() {
         );
       }
       invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
+      const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
+      const slugKey = cached?.sekolah.slug || deriveTenantSlugFromHost();
+      if (slugKey && cached) {
+        saveCachedTenantProfile(slugKey, {
+          nama: cached.sekolah.nama,
+          slug: slugKey,
+          logoUrl: form.logo_url.trim() || null,
+        });
+      }
       setMessage("Identitas dan kustomisasi halaman lembaga berhasil disimpan.");
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "Identitas sekolah gagal disimpan.");
+      setError(describeFetchError(failure, "Identitas sekolah gagal disimpan."));
     } finally {
       setFormBusy(false);
     }
@@ -921,7 +941,7 @@ export function SchoolAdvancedSettingsView({
     const cached = getCached<AdvancedSettingsData>("/api/sekolah/pengaturan");
     if (cached) setData(cached);
     setError("");
-    fetch("/api/sekolah/pengaturan", { signal: controller.signal })
+    fetchWithTimeout("/api/sekolah/pengaturan", { signal: controller.signal })
       .then(async (res) => {
         const body: unknown = await res.json();
         if (!res.ok) {
@@ -935,8 +955,8 @@ export function SchoolAdvancedSettingsView({
         setData(body as AdvancedSettingsData);
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted && !cached) {
-          setError(failure instanceof Error ? failure.message : "Pengaturan lanjutan belum dapat dimuat.");
+        if (!isCallerAborted(failure, controller.signal) && !cached) {
+          setError(describeFetchError(failure, "Pengaturan lanjutan belum dapat dimuat."));
         }
       });
     return () => controller.abort();
@@ -947,7 +967,7 @@ export function SchoolAdvancedSettingsView({
     setError("");
     setNotice("");
     try {
-      const res = await fetch("/api/sekolah/kelas-standar", { method: "POST" });
+      const res = await fetchWithTimeout("/api/sekolah/kelas-standar", { method: "POST" });
       const body: unknown = await res.json();
       if (!res.ok) {
         throw new Error(
@@ -960,7 +980,7 @@ export function SchoolAdvancedSettingsView({
       setNotice("Verifikasi kelas standar PKBM (Paket A Kelas 1–6, B Kelas 7–9, C Kelas 10–12) berhasil.");
       setVersion((v) => v + 1);
     } catch (failure: unknown) {
-      setError(failure instanceof Error ? failure.message : "Kelas standar belum dapat diproses.");
+      setError(describeFetchError(failure, "Kelas standar belum dapat diproses."));
     } finally {
       setClassBusy(false);
     }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 
 interface PasswordChangeFormProps {
   endpoint: string;
@@ -37,7 +38,7 @@ export function PasswordChangeForm({
 
     setBusy(true);
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -60,8 +61,7 @@ export function PasswordChangeForm({
       setConfirmation("");
       onChanged();
     } catch (reason) {
-      console.error("Gagal mengganti password:", reason);
-      setError(reason instanceof TypeError ? "Server tidak dapat dihubungi. Coba lagi." : reason instanceof Error ? reason.message : "Password belum dapat diganti.");
+      setError(describeFetchError(reason, "Password belum dapat diganti."));
     } finally {
       setBusy(false);
     }

@@ -48,9 +48,20 @@ import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { CardGridSkeleton, DashboardHero, PortalSpinner } from "./DashboardUI";
 import { Classroom } from "./Classroom";
-import { TenantThemeProvider } from "./TenantThemeProvider";
+import { isThemeKey, TenantThemeProvider, type ThemeKey } from "./TenantThemeProvider";
 import { getCached, invalidateCache, prefetchCoreSchoolData, prefetchForView, setCached, setCacheScope } from "./schoolCache";
 import { resetStandardClassesCache } from "./standardClasses";
+import {
+  clearAuthCache,
+  deriveTenantSlugFromHost,
+  formatSlugDisplayName,
+  getAuthCache,
+  getCachedTenantProfile,
+  saveAuthCache,
+  saveCachedTenantProfile,
+  type SchoolAuthCache,
+} from "./authSessionCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { getPlanBySlug, hasPlanAccess, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { ModulePlaceholderView, type DevelopmentModuleId } from "./ModulePlaceholderView";
 import {
@@ -180,6 +191,10 @@ const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string;
 };
 
 export function SchoolLogin() {
+  const hostSlug = deriveTenantSlugFromHost();
+  const initialProfile = hostSlug ? getCachedTenantProfile(hostSlug) : null;
+  const [schoolName, setSchoolName] = useState<string>(() => initialProfile?.nama ?? formatSlugDisplayName(hostSlug));
+  const [logoUrl, setLogoUrl] = useState<string | null>(() => initialProfile?.logoUrl ?? null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -188,12 +203,50 @@ export function SchoolLogin() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const endpoint = hostSlug ? `/api/public/sekolah/${encodeURIComponent(hostSlug)}` : "/api/public/sekolah";
+    fetchWithTimeout(endpoint, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          nama?: string;
+          slug?: string;
+          logoUrl?: string | null;
+          themeKey?: string;
+          plan?: string;
+        };
+        if (typeof data.nama === "string" && data.nama.trim()) {
+          setSchoolName(data.nama);
+          setLogoUrl(typeof data.logoUrl === "string" && data.logoUrl ? data.logoUrl : null);
+          saveCachedTenantProfile(data.slug || hostSlug, {
+            nama: data.nama,
+            slug: data.slug || hostSlug,
+            logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : null,
+            themeKey: data.themeKey,
+            plan: data.plan,
+          });
+        }
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          // Keep optimistic slug/localStorage branding silently
+        }
+      });
+    return () => controller.abort();
+  }, [hostSlug]);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/sekolah/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+      const response = await fetchWithTimeout("/api/auth/sekolah/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
       if (!response.ok) {
         let message = "Layanan login sekolah tidak tersedia.";
         if (response.headers.get("content-type")?.includes("application/json")) {
@@ -202,16 +255,75 @@ export function SchoolLogin() {
         }
         throw new Error(message);
       }
+      try {
+        const data: unknown = await response.json();
+        if (typeof data === "object" && data !== null) {
+          const payload = data as {
+            token?: string;
+            nama?: string;
+            email?: string | null;
+            isDeveloper?: boolean;
+            sekolah?: string;
+            slug?: string;
+            plan?: string;
+            rawPlan?: string | null;
+            themeKey?: string;
+            user?: SchoolAuthCache["user"];
+          };
+          const resolvedSlug = typeof payload.slug === "string" ? payload.slug : hostSlug;
+          const resolvedSchool = typeof payload.sekolah === "string" && payload.sekolah ? payload.sekolah : schoolName;
+          if (resolvedSlug) setCacheScope(resolvedSlug);
+          saveAuthCache<SchoolAuthCache>("sekolah", {
+            token: payload.token,
+            nama: typeof payload.nama === "string" ? payload.nama : email,
+            email: payload.email ?? email,
+            isDeveloper: payload.isDeveloper === true,
+            sekolah: resolvedSchool,
+            slug: resolvedSlug,
+            plan: resolvePlanSlug(payload.plan ?? payload.rawPlan ?? null),
+            rawPlan: payload.rawPlan ?? null,
+            themeKey: payload.themeKey,
+            user: payload.user,
+            updatedAt: Date.now(),
+          });
+          if (resolvedSlug) {
+            saveCachedTenantProfile(resolvedSlug, {
+              nama: resolvedSchool,
+              slug: resolvedSlug,
+              logoUrl,
+              themeKey: payload.themeKey,
+              plan: payload.plan,
+            });
+          }
+        }
+      } catch {
+        // Session cookie is already active even if optional JSON hydration fails
+      }
       setPassword("");
       navigate("/sekolah");
-    } catch (error) {
-      console.error("Login sekolah gagal:", error);
-      setError(error instanceof TypeError ? "Server tidak dapat dihubungi." : error instanceof Error ? error.message : "Login gagal.");
-    } finally { setBusy(false); }
+    } catch (failure) {
+      setError(describeFetchError(failure, "Login gagal."));
+    } finally {
+      setBusy(false);
+    }
   }
+
   return <main className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
-    <p className="master-eyebrow">KESETARAAN LMS / SEKOLAH</p><h1 className="mt-3 text-2xl font-bold">Login Admin Sekolah</h1>
-    <p className="mt-3 text-sm text-slate-700">Masuk menggunakan akun admin sekolah Anda.</p>
+    <div className="flex items-center gap-3">
+      {logoUrl ? (
+        <img src={logoUrl} alt={`Logo ${schoolName}`} className="h-11 w-11 rounded-xl border border-white/20 object-cover shadow-sm" />
+      ) : (
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-base font-black text-white shadow-sm">
+          {schoolName.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <div className="min-w-0">
+        <p className="master-eyebrow">KESETARAAN LMS / SEKOLAH</p>
+        <p className="truncate text-xs font-bold text-slate-600">{schoolName}</p>
+      </div>
+    </div>
+    <h1 className="mt-3 text-2xl font-bold">Login Admin Sekolah</h1>
+    <p className="mt-2 text-sm text-slate-700">Masuk menggunakan akun admin sekolah Anda.</p>
     {location.state?.passwordChanged === true && <p role="status" className="mt-4 text-sm text-green-700">Password berhasil diganti. Silakan masuk kembali.</p>}
     <LoginNavigation />
     <form onSubmit={submit} className="mt-4 space-y-4">
@@ -224,11 +336,24 @@ export function SchoolLogin() {
 }
 
 export function SchoolHome() {
-  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">("loading");
-  const [school, setSchool] = useState("");
-  const [slug, setSlug] = useState("");
-  const [plan, setPlan] = useState<PlanSlug>("basic");
-  const [isDeveloper, setIsDeveloper] = useState(false);
+  const initialAuth = getAuthCache<SchoolAuthCache>("sekolah");
+  const fallbackSlug = initialAuth?.slug || deriveTenantSlugFromHost();
+  if (fallbackSlug) {
+    setCacheScope(fallbackSlug);
+  }
+  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() => (initialAuth ? "ready" : "loading"));
+  const [school, setSchool] = useState(() => initialAuth?.sekolah || formatSlugDisplayName(fallbackSlug));
+  const [slug, setSlug] = useState(() => fallbackSlug);
+  const [plan, setPlan] = useState<PlanSlug>(() => (initialAuth ? resolvePlanSlug(initialAuth.plan ?? initialAuth.rawPlan ?? null) : "basic"));
+  const [cachedTheme, setCachedTheme] = useState<ThemeKey | undefined>(() =>
+    initialAuth?.themeKey && isThemeKey(initialAuth.themeKey) ? initialAuth.themeKey : undefined,
+  );
+  const [isDeveloper, setIsDeveloper] = useState(() =>
+    Boolean(
+      initialAuth?.isDeveloper === true ||
+        (typeof initialAuth?.email === "string" && initialAuth.email.trim().toLowerCase() === DEVELOPER_EMAIL),
+    ),
+  );
   const [sandboxMode, setSandboxMode] = useState<SandboxMode>("dev");
   const [sandboxRole, setSandboxRole] = useState<SandboxRole>("ADMIN");
   const [samples, setSamples] = useState<SandboxSamples | null>(null);
@@ -246,28 +371,71 @@ export function SchoolHome() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/auth/sekolah/session", { signal: controller.signal }).then(async (response) => {
-      if (response.status === 401) { setStatus("unauthorized"); return; }
-      if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
-      const data: unknown = await response.json();
-      if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") throw new Error("Respons sesi tidak valid.");
-      setSchool(data.sekolah);
-      setSlug(data.slug);
-      setCacheScope(data.slug);
-      const rawOrNormalized =
-        ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
-        ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
-      setPlan(resolvePlanSlug(rawOrNormalized));
-      const devFlag =
-        ("isDeveloper" in data && data.isDeveloper === true) ||
-        ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
-      setIsDeveloper(devFlag);
-      if (!devFlag) {
-        setSandboxMode("client");
-        setSandboxRole("ADMIN");
-      }
-      setStatus("ready");
-    }).catch((error: unknown) => { if (!controller.signal.aborted) { console.error(error); setStatus("error"); } });
+    fetchWithTimeout("/api/auth/sekolah/session", { signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 401) {
+          clearAuthCache("sekolah");
+          invalidateCache();
+          setStatus("unauthorized");
+          return;
+        }
+        if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
+        const data: unknown = await response.json();
+        if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") {
+          throw new Error("Respons sesi tidak valid.");
+        }
+        const rawOrNormalized =
+          ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
+          ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
+        const resolvedPlan = resolvePlanSlug(rawOrNormalized);
+        const devFlag =
+          ("isDeveloper" in data && data.isDeveloper === true) ||
+          ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
+        const themeKeyValue = "themeKey" in data && typeof data.themeKey === "string" ? data.themeKey : undefined;
+
+        setSchool(data.sekolah);
+        setSlug(data.slug);
+        setCacheScope(data.slug);
+        setPlan(resolvedPlan);
+        if (themeKeyValue && isThemeKey(themeKeyValue)) {
+          setCachedTheme(themeKeyValue);
+        }
+        setIsDeveloper(devFlag);
+        if (!devFlag) {
+          setSandboxMode("client");
+          setSandboxRole("ADMIN");
+        }
+        saveAuthCache<SchoolAuthCache>("sekolah", {
+          token: initialAuth?.token,
+          nama: "nama" in data && typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
+          email: "email" in data && typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
+          isDeveloper: devFlag,
+          sekolah: data.sekolah,
+          slug: data.slug,
+          plan: resolvedPlan,
+          rawPlan: "rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null,
+          themeKey: themeKeyValue,
+          updatedAt: Date.now(),
+        });
+        saveCachedTenantProfile(data.slug, {
+          nama: data.sekolah,
+          slug: data.slug,
+          themeKey: themeKeyValue,
+          plan: resolvedPlan,
+        });
+        setStatus("ready");
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          const message = describeFetchError(failure, "Sesi sekolah belum dapat diverifikasi.");
+          if (!initialAuth) {
+            setError(message);
+            setStatus("error");
+          } else {
+            setError(message);
+          }
+        }
+      });
     return () => controller.abort();
   }, []);
 
@@ -275,16 +443,16 @@ export function SchoolHome() {
     if (!isDeveloper || sandboxRole === "ADMIN" || samples !== null) return;
     const controller = new AbortController();
     setSamplesLoading(true);
-    fetch("/api/sekolah/dev-sandbox/samples", { signal: controller.signal })
+    fetchWithTimeout("/api/sekolah/dev-sandbox/samples", { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error("Gagal memuat sampel akun.");
         const body = (await res.json()) as SandboxSamples;
         setSamples(body);
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted) {
-          console.error("Gagal memuat sampel sandbox:", failure);
+        if (!isCallerAborted(failure, controller.signal)) {
           setSamples({ guru: null, siswa: null });
+          setError(describeFetchError(failure, "Sampel sandbox gagal dimuat."));
         }
       })
       .finally(() => {
@@ -308,12 +476,15 @@ export function SchoolHome() {
 
   async function logout() {
     try {
-      const response = await fetch("/api/auth/sekolah/logout", { method: "POST" });
+      const response = await fetchWithTimeout("/api/auth/sekolah/logout", { method: "POST" });
       if (!response.ok) throw new Error("Gagal keluar. Coba lagi.");
+      clearAuthCache("sekolah");
       invalidateCache();
       resetStandardClassesCache();
       navigate("/login");
-    } catch (error) { console.error(error); setError("Gagal keluar. Coba lagi."); }
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal keluar. Coba lagi."));
+    }
   }
 
   function openUpgradePrompt(featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) {
@@ -410,9 +581,9 @@ export function SchoolHome() {
 
   if (status === "unauthorized") return <Navigate to="/login" replace />;
   if (status === "loading") return <PortalSpinner label="Memuat portal sekolah" />;
-  if (status !== "ready") return <main className="school-dashboard min-h-screen bg-slate-950 p-8 text-white">Sesi tidak tersedia. Muat ulang halaman.</main>;
+  if (status !== "ready") return <main className="school-dashboard min-h-screen bg-slate-950 p-8 text-white">{error || "Sesi tidak tersedia. Muat ulang halaman."}</main>;
 
-  return <TenantThemeProvider scope="sekolah"><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
+  return <TenantThemeProvider scope="sekolah" initialTheme={cachedTheme}><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
     {isDeveloper && effectiveRole !== "ADMIN" ? (
       <DevSandboxLmsPreview
         role={effectiveRole}
@@ -713,20 +884,21 @@ function SchoolOverview({
     const cached = getCached<Summary>("/api/sekolah/ringkasan");
     if (cached) setSummary(cached);
     setError("");
-    fetch("/api/sekolah/ringkasan", { signal: controller.signal }).then(async (response) => {
-      if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Ringkasan sekolah belum dapat dimuat.");
-      const data: unknown = await response.json();
-      if (typeof data !== "object" || data === null || !("siswa" in data) || typeof data.siswa !== "number" || !("guru" in data) || typeof data.guru !== "number" || !("kelas" in data) || typeof data.kelas !== "number" || !("ppdb" in data) || typeof data.ppdb !== "number" || !("ppdbDiterima" in data) || typeof data.ppdbDiterima !== "number" || !("ppdbDitolak" in data) || typeof data.ppdbDitolak !== "number") throw new Error("Respons ringkasan tidak valid.");
-      const next: Summary = { siswa: data.siswa, guru: data.guru, kelas: data.kelas, ppdb: data.ppdb, ppdbDiterima: data.ppdbDiterima, ppdbDitolak: data.ppdbDitolak };
-      setCached("/api/sekolah/ringkasan", next);
-      setSummary(next);
-      prefetchCoreSchoolData();
-    }).catch((failure: unknown) => {
-      if (!controller.signal.aborted) {
-        console.error("Gagal memuat ringkasan:", failure);
-        if (!cached) setError(failure instanceof Error ? failure.message : "Ringkasan sekolah belum dapat dimuat.");
-      }
-    });
+    fetchWithTimeout("/api/sekolah/ringkasan", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Ringkasan sekolah belum dapat dimuat.");
+        const data: unknown = await response.json();
+        if (typeof data !== "object" || data === null || !("siswa" in data) || typeof data.siswa !== "number" || !("guru" in data) || typeof data.guru !== "number" || !("kelas" in data) || typeof data.kelas !== "number" || !("ppdb" in data) || typeof data.ppdb !== "number" || !("ppdbDiterima" in data) || typeof data.ppdbDiterima !== "number" || !("ppdbDitolak" in data) || typeof data.ppdbDitolak !== "number") throw new Error("Respons ringkasan tidak valid.");
+        const next: Summary = { siswa: data.siswa, guru: data.guru, kelas: data.kelas, ppdb: data.ppdb, ppdbDiterima: data.ppdbDiterima, ppdbDitolak: data.ppdbDitolak };
+        setCached("/api/sekolah/ringkasan", next);
+        setSummary(next);
+        prefetchCoreSchoolData();
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          if (!cached) setError(describeFetchError(failure, "Ringkasan sekolah belum dapat dimuat."));
+        }
+      });
     return () => controller.abort();
   }, [version]);
 
@@ -741,7 +913,7 @@ function SchoolOverview({
     const controller = new AbortController();
     const cached = getCached<OverviewRecap>("/api/sekolah/rekap-akademik");
     if (cached) setRecap(cached);
-    fetch("/api/sekolah/rekap-akademik", { signal: controller.signal })
+    fetchWithTimeout("/api/sekolah/rekap-akademik", { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) return;
         const body = (await res.json()) as OverviewRecap;

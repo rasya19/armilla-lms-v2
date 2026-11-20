@@ -8,6 +8,7 @@ import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
 import { Lock } from "lucide-react";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type ClassItem = { id: string; nama: string; waliGuruId: string | null; jumlahSiswa: number };
 type Teacher = { id: string; nama: string };
@@ -23,8 +24,8 @@ function isClassData(value: unknown): value is ClassData {
     && value.guru.every((item: unknown) => isObject(item) && typeof item.id === "string" && typeof item.nama === "string");
 }
 
-async function request(url: string, method = "GET", body?: object): Promise<unknown> {
-  const response = await fetch(url, { method, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+async function request(url: string, method = "GET", body?: object, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetchWithTimeout(url, { method, signal, ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
   const data: unknown = await response.json();
   if (!response.ok) throw new Error(isObject(data) && typeof data.error === "string" ? data.error : `Permintaan gagal (status ${response.status}).`);
   return data;
@@ -55,20 +56,19 @@ export function SchoolClasses({
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     const cached = getCached<ClassData>("/api/sekolah/kelas");
     if (cached) setData(cached);
-    ensureStandardClasses().then(() => request("/api/sekolah/kelas")).then((value) => {
+    ensureStandardClasses(controller.signal).then(() => request("/api/sekolah/kelas", "GET", undefined, controller.signal)).then((value) => {
       if (!isClassData(value)) throw new Error("Respons kelas tidak valid.");
       setCached("/api/sekolah/kelas", value);
-      if (active) { setData(value); setError(""); }
+      if (!controller.signal.aborted) { setData(value); setError(""); }
     }).catch((failure: unknown) => {
-      if (active) {
-        console.error("Gagal memuat kelas:", failure);
-        if (!cached) { setData(null); setError(failure instanceof Error ? failure.message : "Kelas belum dapat dimuat."); }
+      if (!isCallerAborted(failure, controller.signal)) {
+        if (!cached) { setData(null); setError(describeFetchError(failure, "Kelas belum dapat dimuat.")); }
       }
     });
-    return () => { active = false; };
+    return () => controller.abort();
   }, [version]);
 
   async function saveClass(event: React.FormEvent<HTMLFormElement>) {
@@ -77,9 +77,8 @@ export function SchoolClasses({
       await request(editing ? `/api/sekolah/kelas/${encodeURIComponent(editing)}` : "/api/sekolah/kelas", editing ? "PATCH" : "POST", { nama, waliGuruId: wali || null });
       invalidateCache(["/api/sekolah/kelas", "/api/sekolah/siswa", "/api/sekolah/akademik", "/api/sekolah/ringkasan"]);
       setNama(""); setWali(""); setEditing(null); setClassOpen(false); setMessage("Kelas disimpan."); setVersion((value) => value + 1);
-    } catch (error) {
-      console.error("Gagal menyimpan kelas:", error);
-      setError(error instanceof TypeError ? "Koneksi terputus. Muat ulang halaman untuk memeriksa hasilnya sebelum mencoba lagi." : error instanceof Error ? error.message : "Kelas belum dapat disimpan.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Kelas belum dapat disimpan."));
     } finally { setBusy(false); }
   }
 
@@ -91,8 +90,7 @@ export function SchoolClasses({
       invalidateCache(["/api/sekolah/kelas", "/api/sekolah/siswa", "/api/sekolah/akademik", "/api/sekolah/ringkasan"]);
       setMessage("Kelas dihapus."); setVersion((value) => value + 1);
     } catch (failure) {
-      console.error("Gagal menghapus kelas:", failure);
-      setError(failure instanceof TypeError ? "Koneksi terputus. Muat ulang data sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Kelas belum dapat dihapus.");
+      setError(describeFetchError(failure, "Kelas belum dapat dihapus."));
     } finally { setBusy(false); }
   }
 

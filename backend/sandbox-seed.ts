@@ -46,6 +46,33 @@ const SANDBOX_MOCK_SCHOOL: ResolvedTenantSchool = {
 };
 
 let inFlightSandboxSeed: Promise<ResolvedTenantSchool | null> | null = null;
+let sandboxSeeded = false;
+let cachedSandboxSchool: ResolvedTenantSchool | null = null;
+let cachedSandboxPrisma: PrismaClient | null = null;
+
+function rememberSandboxSchool(prisma: PrismaClient, school: ResolvedTenantSchool): ResolvedTenantSchool {
+  sandboxSeeded = true;
+  cachedSandboxSchool = school;
+  cachedSandboxPrisma = prisma;
+  return school;
+}
+
+function getRememberedSandboxSchool(prisma: PrismaClient): ResolvedTenantSchool | null {
+  if (sandboxSeeded && cachedSandboxSchool && cachedSandboxPrisma === prisma) {
+    return cachedSandboxSchool;
+  }
+  return null;
+}
+
+export function isSandboxSeeded(): boolean {
+  return sandboxSeeded;
+}
+
+export function resetSandboxSeedCache(): void {
+  sandboxSeeded = false;
+  cachedSandboxSchool = null;
+  cachedSandboxPrisma = null;
+}
 
 async function findSandboxSchoolSafe(prisma: PrismaClient): Promise<ResolvedTenantSchool | null> {
   try {
@@ -430,9 +457,11 @@ async function seedSandboxDemoRecords(prisma: PrismaClient, school: ResolvedTena
 }
 
 async function seedSandboxTenantInternal(prisma: PrismaClient): Promise<ResolvedTenantSchool | null> {
+  const remembered = getRememberedSandboxSchool(prisma);
+  if (remembered) return remembered;
   try {
     const existing = await findSandboxSchoolSafe(prisma);
-    if (existing) return existing;
+    if (existing) return rememberSandboxSchool(prisma, existing);
 
     const school = await createSandboxSchoolRecord(prisma);
     if (!school?.id) return null;
@@ -441,12 +470,12 @@ async function seedSandboxTenantInternal(prisma: PrismaClient): Promise<Resolved
       await seedSandboxDemoRecords(prisma, school);
     }
 
-    return school;
+    return rememberSandboxSchool(prisma, school);
   } catch (error) {
     console.error("Gagal auto-seed tenant sandbox:", error instanceof Error ? error.message : "UnknownError");
     try {
       const recovered = await findSandboxSchoolSafe(prisma);
-      if (recovered) return recovered;
+      if (recovered) return rememberSandboxSchool(prisma, recovered);
     } catch {
       // Ignore recovery lookup error
     }
@@ -455,6 +484,8 @@ async function seedSandboxTenantInternal(prisma: PrismaClient): Promise<Resolved
 }
 
 export async function ensureSandboxTenant(prisma: PrismaClient): Promise<ResolvedTenantSchool | null> {
+  const remembered = getRememberedSandboxSchool(prisma);
+  if (remembered) return remembered;
   if (!inFlightSandboxSeed) {
     inFlightSandboxSeed = seedSandboxTenantInternal(prisma).finally(() => {
       inFlightSandboxSeed = null;
@@ -486,9 +517,11 @@ export async function resolveSchoolWithSandboxSeed(
       throw error;
     }
   }
+  const remembered = getRememberedSandboxSchool(prisma);
+  if (remembered) return remembered;
   try {
     const existing = await findSandboxSchoolSafe(prisma);
-    if (existing) return existing;
+    if (existing) return rememberSandboxSchool(prisma, existing);
     return await ensureSandboxTenant(prisma);
   } catch (error) {
     console.error("Resolusi tenant sandbox fallback:", error instanceof Error ? error.message : "UnknownError");
@@ -507,12 +540,11 @@ export async function resolveTenantHostSchool(
       select: MINIMAL_SCHOOL_SELECT,
     });
   }
+  const remembered = getRememberedSandboxSchool(prisma);
+  if (remembered) return remembered;
   try {
-    const existing = await prisma.sekolah.findUnique({
-      where: { slug: SANDBOX_SLUG },
-      select: MINIMAL_SCHOOL_SELECT,
-    });
-    if (existing?.id) return existing;
+    const existing = await findSandboxSchoolSafe(prisma);
+    if (existing?.id) return rememberSandboxSchool(prisma, existing);
     return await ensureSandboxTenant(prisma);
   } catch (error) {
     console.error("Resolusi host sandbox fallback:", error instanceof Error ? error.message : "UnknownError");

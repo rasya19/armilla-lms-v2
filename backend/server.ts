@@ -161,6 +161,16 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
     if (!school || !tenantAccessible(school)) {
       return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar atau tidak aktif." });
     }
+    let logoUrl: string | null = null;
+    try {
+      const settings = await prisma.websiteSettings.findUnique({
+        where: { school_id: school.id },
+        select: { logo_url: true },
+      });
+      logoUrl = settings?.logo_url ?? null;
+    } catch {
+      logoUrl = null;
+    }
     return res.json({
       id: school.id,
       nama: school.nama,
@@ -169,6 +179,7 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
       plan: normalizeTenantPlan(school.plan),
       status: school.status,
       themeKey: school.themeKey ?? "ocean",
+      logoUrl,
     });
   } catch (error) {
     console.error("Gagal memuat profil publik sekolah:", error);
@@ -211,7 +222,12 @@ app.post("/api/auth/master/login", async (req, res) => {
       return res.status(401).json({ error: "Email atau kata sandi salah." });
     }
     res.cookie(cookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
-    return res.json({ nama: result.value.nama, peran: result.value.peran });
+    return res.json({
+      nama: result.value.nama,
+      peran: result.value.peran,
+      token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
+      user: { nama: result.value.nama, peran: result.value.peran },
+    });
   } catch (error) {
     console.error("Gagal memproses login master:", error);
     return res.status(503).json({ error: "Layanan login tidak tersedia." });
@@ -240,13 +256,44 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
   try {
-    const result = await limitLogin<{ token: string; nama: string }>(loginIp(req), email, async () => {
+    const result = await limitLogin<{
+      token: string;
+      nama: string;
+      email: string | null;
+      isDeveloper: boolean;
+      sekolah: string;
+      slug: string;
+      plan: string;
+      rawPlan: string | null;
+      themeKey: string;
+    }>(loginIp(req), email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       if (!account || !valid || !account.aktif || account.peran !== "ADMIN" || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id)) return { kind: "failure" };
-      const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
+      const [token, schoolInfo] = await Promise.all([
+        createLoginSession(account, new Date(Date.now() + sessionDurationMs)),
+        prisma.sekolah
+          .findUnique({
+            where: { id: account.sekolahId },
+            select: { nama: true, slug: true, plan: true, themeKey: true },
+          })
+          .catch(() => null),
+      ]);
       if (!token) return { kind: "failure" };
-      return { kind: "success", value: { token, nama: account.nama } };
+      return {
+        kind: "success",
+        value: {
+          token,
+          nama: account.nama,
+          email: account.email ?? null,
+          isDeveloper: isDeveloperAccount(account.email),
+          sekolah: schoolInfo?.nama ?? (req.tenant?.kind === "school" ? req.tenant.slug : "Sekolah"),
+          slug: schoolInfo?.slug ?? (req.tenant?.kind === "school" ? req.tenant.slug : ""),
+          plan: normalizeTenantPlan(schoolInfo?.plan),
+          rawPlan: schoolInfo?.plan ?? null,
+          themeKey: schoolInfo?.themeKey ?? "ocean",
+        },
+      };
     });
     if (result.kind === "limited") {
       res.setHeader("Retry-After", String(result.retryAfter));
@@ -254,7 +301,23 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
     }
     if (result.kind === "failure") return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
     res.cookie(schoolCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
-    return res.json({ nama: result.value.nama });
+    return res.json({
+      nama: result.value.nama,
+      email: result.value.email,
+      isDeveloper: result.value.isDeveloper,
+      sekolah: result.value.sekolah,
+      slug: result.value.slug,
+      plan: result.value.plan,
+      rawPlan: result.value.rawPlan,
+      themeKey: result.value.themeKey,
+      token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
+      user: {
+        nama: result.value.nama,
+        email: result.value.email,
+        peran: "ADMIN",
+        isDeveloper: result.value.isDeveloper,
+      },
+    });
   } catch (error) {
     console.error("Gagal memproses login sekolah:", error);
     return res.status(503).json({ error: "Layanan login sekolah tidak tersedia." });
@@ -513,7 +576,7 @@ app.post("/api/auth/lms/login", async (req, res) => {
   const { identitas, password, peran } = req.body || {};
   if (typeof identitas !== "string" || identitas.length > 254 || typeof password !== "string" || password.length > 1024 || (peran !== "SISWA" && peran !== "GURU")) return res.status(400).json({ error: "Periksa identitas, peran, dan kata sandi." });
   try {
-    const result = await limitLogin<{ token: string; wajibGantiPassword: boolean }>(loginIp(req), identitas, async () => {
+    const result = await limitLogin<{ token: string; nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean }>(loginIp(req), identitas, async () => {
       const identity = identitas.trim().toLowerCase();
       const account = peran === "SISWA"
         ? await prisma.akun.findFirst({ where: { peran: "SISWA", siswa: { nisn: identity } }, include: { siswa: { select: { sekolahId: true, status: true } }, guru: { select: { sekolahId: true, status: true } } } })
@@ -523,7 +586,7 @@ app.post("/api/auth/lms/login", async (req, res) => {
       if (!account || !valid || account.peran !== peran || !account.aktif || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id) || !related || related.sekolahId !== account.sekolahId || related.status !== "Aktif" || (peran === "SISWA" ? !!account.guruId : !!account.siswaId)) return { kind: "failure" };
       const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
       if (!token) return { kind: "failure" };
-      return { kind: "success", value: { token, wajibGantiPassword: account.wajibGantiPassword } };
+      return { kind: "success", value: { token, nama: account.nama, peran: account.peran as "SISWA" | "GURU", wajibGantiPassword: account.wajibGantiPassword } };
     });
     if (result.kind === "limited") {
       res.setHeader("Retry-After", String(result.retryAfter));
@@ -531,7 +594,17 @@ app.post("/api/auth/lms/login", async (req, res) => {
     }
     if (result.kind === "failure") return res.status(401).json({ error: "Identitas atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
     res.cookie(lmsCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
-    return res.json({ wajibGantiPassword: result.value.wajibGantiPassword });
+    return res.json({
+      nama: result.value.nama,
+      peran: result.value.peran,
+      wajibGantiPassword: result.value.wajibGantiPassword,
+      token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
+      user: {
+        nama: result.value.nama,
+        peran: result.value.peran,
+        wajibGantiPassword: result.value.wajibGantiPassword,
+      },
+    });
   } catch (error) {
     console.error("Gagal login LMS:", error);
     return res.status(503).json({ error: "Layanan login LMS tidak tersedia." });

@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGlassConfirm } from "./GlassConfirm";
 import { TableSkeleton } from "./DashboardUI";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 const fieldClass = "mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal";
 const buttonClass = "rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
 async function postJson(url: string, value: unknown): Promise<void> {
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
+  const response = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
   if (!response.ok) {
     let message = `Permintaan gagal (status ${response.status}).`;
     if (response.headers.get("content-type")?.includes("application/json")) {
@@ -27,9 +28,8 @@ export function TeacherForm({ onSaved, onBusyChange }: { onSaved: () => void; on
       await postJson("/api/sekolah/guru", form);
       setForm({ nama: "", nuptk: "", mapelUtama: "", email: "", telepon: "" });
       onSaved();
-    } catch (error) {
-      console.error("Gagal menyimpan guru:", error);
-      setError(error instanceof TypeError ? "Koneksi terputus. Periksa daftar guru sebelum mencoba lagi." : error instanceof Error ? error.message : "Gagal menyimpan guru.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal menyimpan guru."));
     } finally { setBusy(false); onBusyChange(false); }
   }
   return <form onSubmit={submit} className="mt-5 space-y-3">
@@ -49,13 +49,13 @@ export function SchoolPersonEditor({ id, onSaved, onBusyChange }: { id: string; 
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/sekolah/guru/${encodeURIComponent(id)}`, { signal: controller.signal }).then(async (response) => {
+    fetchWithTimeout(`/api/sekolah/guru/${encodeURIComponent(id)}`, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("Detail data belum dapat dimuat.");
       const data: unknown = await response.json();
       if (typeof data !== "object" || data === null || !("nama" in data) || typeof data.nama !== "string" || !("email" in data) || (typeof data.email !== "string" && data.email !== null) || !("telepon" in data) || (typeof data.telepon !== "string" && data.telepon !== null)) throw new Error("Respons detail tidak valid.");
       if (!("nuptk" in data) || (typeof data.nuptk !== "string" && data.nuptk !== null) || !("mapelUtama" in data) || typeof data.mapelUtama !== "string") throw new Error("Respons guru tidak valid.");
       setForm({ nama: data.nama, email: typeof data.email === "string" ? data.email : "", telepon: typeof data.telepon === "string" ? data.telepon : "", identitas: typeof data.nuptk === "string" ? data.nuptk : "", mapelUtama: data.mapelUtama });
-    }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat detail:", failure); setError(failure instanceof Error ? failure.message : "Detail belum dapat dimuat."); } });
+    }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setError(describeFetchError(failure, "Detail belum dapat dimuat.")); } });
     return () => controller.abort();
   }, [id]);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -64,15 +64,14 @@ export function SchoolPersonEditor({ id, onSaved, onBusyChange }: { id: string; 
     setBusy(true); onBusyChange(true); setError("");
     try {
       const body = { nama: form.nama, nuptk: form.identitas, email: form.email, telepon: form.telepon, mapelUtama: form.mapelUtama };
-      const response = await fetch(`/api/sekolah/guru/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetchWithTimeout(`/api/sekolah/guru/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!response.ok) {
         const result: unknown = await response.json();
         throw new Error(typeof result === "object" && result !== null && "error" in result && typeof result.error === "string" ? result.error : "Data belum dapat diperbarui.");
       }
       onSaved();
     } catch (failure) {
-      console.error("Gagal memperbarui data:", failure);
-      setError(failure instanceof TypeError ? "Koneksi terputus. Muat ulang data sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Data belum dapat diperbarui.");
+      setError(describeFetchError(failure, "Data belum dapat diperbarui."));
     } finally { setBusy(false); onBusyChange(false); }
   }
   return <form onSubmit={submit} className="mt-4 space-y-3">
@@ -98,12 +97,12 @@ export function PublicPPDB() {
   useEffect(() => {
     const controller = new AbortController();
     setSchool(""); setError("");
-    fetch(`/api/ppdb/${encodeURIComponent(slug)}`, { signal: controller.signal }).then(async (response) => {
+    fetchWithTimeout(`/api/ppdb/${encodeURIComponent(slug)}`, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 404 ? "Sekolah tidak ditemukan." : "PPDB belum dapat dimuat.");
       const data: unknown = await response.json();
       if (typeof data !== "object" || data === null || !("nama" in data) || typeof data.nama !== "string") throw new Error("Respons sekolah tidak valid.");
       setSchool(data.nama);
-    }).catch((error: unknown) => { if (!controller.signal.aborted) { console.error(error); setError(error instanceof Error ? error.message : "PPDB belum dapat dimuat."); } });
+    }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setError(describeFetchError(failure, "PPDB belum dapat dimuat.")); } });
     return () => controller.abort();
   }, [slug]);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -112,9 +111,8 @@ export function PublicPPDB() {
       await postJson(`/api/ppdb/${encodeURIComponent(slug)}`, form);
       setForm({ nama: "", email: "", telepon: "", alamat: "", jenjang: "" });
       setMessage("Pendaftaran disimpan dan menunggu pemeriksaan admin sekolah. Akun siswa belum tersedia.");
-    } catch (error) {
-      console.error("Gagal mengirim PPDB:", error);
-      setError(error instanceof TypeError ? "Koneksi terputus. Hubungi admin sekolah sebelum mengirim ulang." : error instanceof Error ? error.message : "Pendaftaran gagal.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Pendaftaran gagal."));
     } finally { setBusy(false); }
   }
   return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-xl rounded-3xl p-6 sm:p-8"><h1 className="text-2xl font-bold">PPDB {school}</h1><p className="mt-3 text-sm text-slate-600">Penerimaan dicatat oleh sekolah; akun siswa dan pemberitahuan belum dibuat secara otomatis.</p>
@@ -142,9 +140,8 @@ export function ReviewPPDB({ id, nama, onSaved }: { id: string; nama: string; on
     try {
       await postJson(`/api/sekolah/ppdb/${encodeURIComponent(id)}/tinjau`, { keputusan, catatan });
       setMessage("Keputusan disimpan. Data siswa dan akun belum dibuat."); onSaved();
-    } catch (error) {
-      console.error("Gagal meninjau PPDB:", error);
-      setError(error instanceof TypeError ? "Koneksi terputus. Muat ulang daftar sebelum mencoba lagi." : error instanceof Error ? error.message : "Gagal menyimpan keputusan.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal menyimpan keputusan."));
     } finally { setBusy(false); }
   }
   return <div className="mt-3"><label className="block text-sm font-semibold">Catatan internal untuk {nama} (wajib saat menolak)<textarea className={fieldClass} maxLength={500} value={catatan} onChange={(e) => setCatatan(e.target.value)} /></label><div className="mt-2 flex gap-2"><button type="button" disabled={busy} onClick={() => review("Diterima")} className={buttonClass}>Terima</button><button type="button" disabled={busy} onClick={() => review("Ditolak")} className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50">Tolak</button></div>{error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-2 text-sm text-green-700">{message}</p>}</div>;

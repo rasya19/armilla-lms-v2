@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, Loader2, RefreshCw, X } from "lucide-react";
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type School = {
   id: string;
@@ -81,7 +82,7 @@ export function MasterSchools() {
       setResult(null);
     }
     setError("");
-    fetch(endpoint, { signal: controller.signal })
+    fetchWithTimeout(endpoint, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(
@@ -105,9 +106,8 @@ export function MasterSchools() {
         });
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted && !cached) {
-          console.error("Gagal memuat daftar sekolah:", failure);
-          setError(failure instanceof Error ? failure.message : "Daftar sekolah tidak tersedia.");
+        if (!isCallerAborted(failure, controller.signal) && !cached) {
+          setError(describeFetchError(failure, "Daftar sekolah tidak tersedia."));
         }
       });
     return () => controller.abort();
@@ -119,7 +119,7 @@ export function MasterSchools() {
     setSyncingId(school.id);
     setToast(null);
     try {
-      const response = await fetch(`/api/master/sekolah/${encodeURIComponent(school.id)}/paket`, {
+      const response = await fetchWithTimeout(`/api/master/sekolah/${encodeURIComponent(school.id)}/paket`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -161,13 +161,9 @@ export function MasterSchools() {
       );
       setToast({ kind: "success", text: successMessage });
     } catch (failure: unknown) {
-      console.error("Gagal sinkronisasi paket ke LMS:", failure);
       setToast({
         kind: "error",
-        text:
-          failure instanceof Error
-            ? failure.message
-            : "Gagal menyinkronkan paket ke server LMS.",
+        text: describeFetchError(failure, "Gagal menyinkronkan paket ke server LMS."),
       });
     } finally {
       setSyncingId(null);

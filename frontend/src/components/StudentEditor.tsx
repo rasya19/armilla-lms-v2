@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
 import { classMatchesPackage, ensureStandardClasses } from "./standardClasses";
 import { TableSkeleton } from "./DashboardUI";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 const empty = {
   nama: "", nisn: "", nik: "", tempatLahir: "", tanggalLahir: "", jenisKelamin: "", jenjang: "", tanggalMasuk: "", jalurPendaftaran: "",
@@ -169,18 +170,17 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
 
   useEffect(() => {
     const controller = new AbortController();
-    ensureStandardClasses(controller.signal).then(() => fetch("/api/sekolah/kelas", { signal: controller.signal })).then(async (response) => {
+    ensureStandardClasses(controller.signal).then(() => fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal })).then(async (response) => {
       if (!response.ok) throw new Error("Daftar kelas belum dapat dimuat. Data siswa tetap dapat disimpan tanpa mengubah kelas.");
       const value: unknown = await response.json();
       if (!value || typeof value !== "object" || !("kelas" in value) || !Array.isArray(value.kelas) || !value.kelas.every((item: unknown) => item !== null && typeof item === "object" && "id" in item && typeof item.id === "string" && "nama" in item && typeof item.nama === "string")) throw new Error("Respons daftar kelas tidak valid.");
       setKelas(value.kelas);
       setClassesLoaded(true);
     }).catch((failure: unknown) => {
-      if (controller.signal.aborted) return;
-      console.error("Gagal memuat kelas:", failure);
-      setClassError(failure instanceof Error ? failure.message : "Daftar kelas belum dapat dimuat.");
+      if (isCallerAborted(failure, controller.signal)) return;
+      setClassError(describeFetchError(failure, "Daftar kelas belum dapat dimuat."));
     });
-    if (id) fetch(`/api/sekolah/siswa/${encodeURIComponent(id)}`, { signal: controller.signal }).then(async (response) => {
+    if (id) fetchWithTimeout(`/api/sekolah/siswa/${encodeURIComponent(id)}`, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("Detail siswa belum dapat dimuat.");
       const value: unknown = await response.json();
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Respons server tidak valid.");
@@ -199,9 +199,8 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
       setStudentActive(data.status === "Aktif");
       setForm(next);
     }).catch((failure: unknown) => {
-      if (controller.signal.aborted) return;
-      console.error("Gagal memuat detail siswa:", failure);
-      setError(failure instanceof Error ? failure.message : "Detail siswa belum dapat dimuat.");
+      if (isCallerAborted(failure, controller.signal)) return;
+      setError(describeFetchError(failure, "Detail siswa belum dapat dimuat."));
     });
     return () => controller.abort();
   }, [id]);
@@ -232,7 +231,7 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
     }
     setBusy(true); onBusyChange(true); setError("");
     try {
-      const response = await fetch(id ? `/api/sekolah/siswa/${encodeURIComponent(id)}` : "/api/sekolah/siswa", {
+      const response = await fetchWithTimeout(id ? `/api/sekolah/siswa/${encodeURIComponent(id)}` : "/api/sekolah/siswa", {
         method: id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(id ? { ...form, ...(kelasId !== (originalKelasId ?? "") ? { kelasId: kelasId || null, expectedKelasId: originalKelasId } : {}) } : { ...form, kelasId: kelasId || null }),
       });
@@ -246,8 +245,7 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
       }
       onSaved();
     } catch (failure) {
-      console.error("Gagal menyimpan siswa:", failure);
-      setError(failure instanceof TypeError ? "Koneksi terputus. Periksa daftar siswa sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Data belum dapat disimpan.");
+      setError(describeFetchError(failure, "Data belum dapat disimpan."));
     } finally { setBusy(false); onBusyChange(false); }
   }
 

@@ -55,26 +55,52 @@ function createMockPrisma(): PrismaClient {
   return mockPrisma;
 }
 
+type GlobalDbState = {
+  __armillaPool?: Pool;
+  __armillaLoginPool?: Pool;
+  __armillaPrisma?: PrismaClient;
+};
+
+const globalForDb = globalThis as typeof globalThis & GlobalDbState;
+
 let pool: Pool;
 let loginPool: Pool;
 let prisma: PrismaClient;
 
 if (process.env.DATABASE_URL) {
   try {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      connectionTimeoutMillis: 10000,
-      ...(process.env.VERCEL ? { max: 2, idleTimeoutMillis: 5000 } : {}),
-    });
-    pool.on("error", (error) => console.error("Kesalahan koneksi database:", error.message));
-    prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-    loginPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      connectionTimeoutMillis: 10000,
-      max: 2,
-      idleTimeoutMillis: 5000,
-    });
-    loginPool.on("error", (error) => console.error("Kesalahan koneksi pembatas login:", error.message));
+    pool =
+      globalForDb.__armillaPool ??
+      new Pool({
+        connectionString: process.env.DATABASE_URL,
+        connectionTimeoutMillis: 8000,
+        idleTimeoutMillis: 15000,
+        max: process.env.VERCEL ? 3 : 10,
+      });
+    if (!globalForDb.__armillaPool) {
+      pool.on("error", (error) => console.error("Kesalahan koneksi database:", error.message));
+      globalForDb.__armillaPool = pool;
+    }
+
+    prisma =
+      globalForDb.__armillaPrisma ??
+      new PrismaClient({ adapter: new PrismaPg(pool) });
+    if (!globalForDb.__armillaPrisma) {
+      globalForDb.__armillaPrisma = prisma;
+    }
+
+    loginPool =
+      globalForDb.__armillaLoginPool ??
+      new Pool({
+        connectionString: process.env.DATABASE_URL,
+        connectionTimeoutMillis: 8000,
+        max: 2,
+        idleTimeoutMillis: 10000,
+      });
+    if (!globalForDb.__armillaLoginPool) {
+      loginPool.on("error", (error) => console.error("Kesalahan koneksi pembatas login:", error.message));
+      globalForDb.__armillaLoginPool = loginPool;
+    }
   } catch {
     console.warn("[AI Studio] Database not connected — using mock");
     pool = createMockPool();

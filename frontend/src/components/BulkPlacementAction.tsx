@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { classMatchesPackage } from "./standardClasses";
+import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 
 export type PlacementStudent = { id: string; nama: string; nisn: string; kelasId: string | null };
 export type PlacementClass = { id: string; nama: string };
@@ -21,7 +22,7 @@ export function BulkPlacementAction({ students, classes, floating = false, onFin
     setBusy(true);
     let notice: PlacementNotice;
     try {
-      const response = await fetch("/api/sekolah/penempatan-massal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kelasId: destination, siswa: students.map((student) => ({ id: student.id, expectedKelasId: student.kelasId })) }) });
+      const response = await fetchWithTimeout("/api/sekolah/penempatan-massal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kelasId: destination, siswa: students.map((student) => ({ id: student.id, expectedKelasId: student.kelasId })) }) });
       if (!response.ok) {
         let message = `Penempatan gagal (status ${response.status}).`;
         if (response.headers.get("content-type")?.includes("application/json")) {
@@ -34,8 +35,7 @@ export function BulkPlacementAction({ students, classes, floating = false, onFin
       if (!value || typeof value !== "object" || !("updated" in value) || value.updated !== students.length) throw new Error("Respons tidak valid. Periksa kelas siswa sebelum mencoba lagi.");
       notice = { error: false, text: `${students.length} siswa berhasil dimasukkan ke ${target.nama}.` };
     } catch (failure) {
-      console.error("Gagal menyimpan penempatan massal:", failure);
-      notice = { error: true, text: failure instanceof TypeError ? "Koneksi terputus; hasil belum diketahui. Periksa daftar sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Penempatan belum dapat disimpan." };
+      notice = { error: true, text: describeFetchError(failure, "Penempatan belum dapat disimpan.") };
     } finally { setBusy(false); }
     onFinished(notice);
   }

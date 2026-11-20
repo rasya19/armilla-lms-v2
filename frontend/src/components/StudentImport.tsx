@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { CheckCircle2, FileSpreadsheet, Info, UploadCloud } from "lucide-react";
 import { emptyStudentMapping, mappedStudentRows, readStudentSheet, studentFields } from "./studentImportData";
 import type { SheetRow, StudentMapping } from "./studentImportData";
+import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 
 export type StudentImportResult = { created: number; updated: number; skipped: { number: number; nama: string }[] };
 
@@ -49,7 +50,7 @@ export function StudentImport({ onImported, onBusyChange }: { onImported: (resul
   async function submit() {
     setError(""); setBusy(true); onBusyChange?.(true);
     try {
-      const response = await fetch("/api/sekolah/siswa/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows }) });
+      const response = await fetchWithTimeout("/api/sekolah/siswa/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows }) });
       if (!response.headers.get("content-type")?.includes("application/json")) throw new Error(`Respons server tidak valid (status ${response.status}). Periksa daftar siswa sebelum mencoba lagi.`);
       const body: unknown = await response.json();
       if (!response.ok) {
@@ -58,9 +59,8 @@ export function StudentImport({ onImported, onBusyChange }: { onImported: (resul
       }
       if (typeof body !== "object" || body === null || !("created" in body) || typeof body.created !== "number" || !("updated" in body) || typeof body.updated !== "number") throw new Error("Respons impor tidak valid. Muat ulang daftar sebelum mencoba lagi.");
       onImported({ created: body.created, updated: body.updated, skipped });
-    } catch (error) {
-      console.error("Gagal mengimpor siswa:", error);
-      setError(error instanceof TypeError ? "Koneksi terputus. Periksa daftar siswa sebelum mencoba lagi karena hasil penyimpanan belum diketahui." : error instanceof Error ? error.message : "Impor tidak dapat disimpan.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Impor tidak dapat disimpan."));
     } finally { setBusy(false); onBusyChange?.(false); }
   }
 

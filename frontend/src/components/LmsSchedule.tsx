@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { TableSkeleton } from "./DashboardUI";
 import { getCached, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Named = { nama: string };
 type Schedule = { id: string; hari: number; jamMulai: string; jamSelesai: string; ruangan: string | null; kelas: Named; guru: Named; mapel: Named; tahunAjaran: Named & { semester: string } };
@@ -29,7 +30,7 @@ export function LmsSchedule({ role, sandboxRole }: { role: "GURU" | "SISWA"; san
     const cached = getCached<Result>(cacheKey);
     if (cached) setData(cached);
     setError("");
-    fetch(`/api/lms/jadwal?page=${page}`, {
+    fetchWithTimeout(`/api/lms/jadwal?page=${page}`, {
       signal: controller.signal,
       ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
     }).then(async (response) => {
@@ -41,7 +42,7 @@ export function LmsSchedule({ role, sandboxRole }: { role: "GURU" | "SISWA"; san
       setCached(cacheKey, body);
       setData(body);
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat jadwal LMS:", failure); setError(failure instanceof TypeError ? "Server tidak dapat dihubungi." : failure instanceof Error ? failure.message : "Jadwal belum dapat dimuat."); }
+      if (!isCallerAborted(failure, controller.signal) && !cached) { setError(describeFetchError(failure, "Jadwal belum dapat dimuat.")); }
     });
     return () => controller.abort();
   }, [page, cacheKey, version, sandboxRole]);

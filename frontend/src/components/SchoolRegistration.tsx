@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Check, Loader2 } from "lucide-react";
 import { getPlanBySlug, resolvePlanSlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
+import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 
 const inputClass = "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-[#142137]";
 
@@ -28,7 +29,7 @@ export function SchoolRegistration() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/pendaftaran-sekolah", {
+      const response = await fetchWithTimeout("/api/pendaftaran-sekolah", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -51,9 +52,8 @@ export function SchoolRegistration() {
       }
       setMessage(`Pendaftaran untuk ${activePlan.name} (${activePlan.annualPriceLabel}) terkirim ke Rasyatech Admin dan menunggu verifikasi. Akun LMS dibuat setelah disetujui.`);
       setForm({ namaSekolah: "", npsn: "", wilayah: "", namaKontak: "", emailKontak: "", teleponKontak: "" });
-    } catch (error) {
-      console.error("Gagal mengirim pendaftaran sekolah:", error);
-      setError(error instanceof TypeError ? "Server tidak dapat dihubungi. Pastikan backend berjalan." : error instanceof Error ? error.message : "Pendaftaran belum dapat disimpan.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Pendaftaran belum dapat disimpan."));
     } finally {
       setBusy(false);
     }

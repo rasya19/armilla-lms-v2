@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { BulkPlacementAction } from "./BulkPlacementAction";
 import type { PlacementClass, PlacementNotice, PlacementStudent } from "./BulkPlacementAction";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Row = { id: string; nama: string; keterangan: string; kelasId: string | null; status: string };
 type Result = { rows: Row[]; page: number; hasNext: boolean };
@@ -27,12 +28,12 @@ export function BulkClassPlacement({ classes, onMoved }: { classes: PlacementCla
     setData(null); setSelected(new Set()); setError("");
     const query = new URLSearchParams({ page: String(page), kelas: filter, aktif: "1" });
     if (search) query.set("q", search);
-    fetch(`/api/sekolah/siswa?${query}`, { signal: controller.signal }).then(async (response) => {
+    fetchWithTimeout(`/api/sekolah/siswa?${query}`, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Daftar siswa belum dapat dimuat.");
       const body: unknown = await response.json();
       if (!isResult(body) || body.page !== page) throw new Error("Respons daftar siswa tidak valid.");
       setData(body);
-    }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat siswa:", failure); setError(failure instanceof Error ? failure.message : "Daftar siswa belum dapat dimuat."); } });
+    }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setError(describeFetchError(failure, "Daftar siswa belum dapat dimuat.")); } });
     return () => controller.abort();
   }, [filter, page, search, version]);
   const rows = input.trim() === search ? data?.rows ?? [] : [];

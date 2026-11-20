@@ -5,6 +5,7 @@ import {
   LogIn, Menu, Sparkles, Users, X, LockKeyhole,
 } from 'lucide-react';
 import { SUBSCRIPTION_PLANS } from './subscriptionPlans';
+import { fetchWithTimeout, isCallerAborted } from './fetchWithTimeout';
 
 const programs = [
   { name: 'Administrasi', level: 'Data lembaga', number: '01', description: 'Kelola data siswa, guru, dan kelas di sekolah Anda.' },
@@ -22,9 +23,9 @@ export const LandingPage: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/public/stats', { method: 'POST', signal: controller.signal })
+    fetchWithTimeout('/api/public/stats', { method: 'POST', signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error('Gagal memuat statistik');
+        if (!response.ok) return;
         const data: unknown = await response.json();
         if (
           typeof data === 'object' &&
@@ -37,9 +38,9 @@ export const LandingPage: React.FC = () => {
           setStats({ totalVisitors: data.totalVisitors, totalSchools: data.totalSchools });
         }
       })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          console.warn('Statistik publik belum tersedia:', error);
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          // Public stats remain graceful fallback "—"
         }
       });
     return () => controller.abort();

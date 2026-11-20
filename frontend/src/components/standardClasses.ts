@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "./fetchWithTimeout";
+
 const ensuredHosts = new Set<string>();
 const inFlight = new Map<string, Promise<void>>();
 
@@ -18,7 +20,7 @@ export async function ensureStandardClasses(signal?: AbortSignal): Promise<void>
   const existing = inFlight.get(key);
   if (existing) return existing;
 
-  const task = fetch("/api/sekolah/kelas-standar", { method: "POST" })
+  const task = fetchWithTimeout("/api/sekolah/kelas-standar", { method: "POST", signal })
     .then(async (response) => {
       if (!response.ok) {
         let message = `Kelas standar belum dapat disiapkan (status ${response.status}).`;

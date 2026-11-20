@@ -8,6 +8,13 @@ import { SchoolHome, SchoolLogin } from "./components/SchoolAccess";
 import { PublicPPDB } from "./components/SchoolForms";
 import { LmsHome, LmsLogin } from "./components/LmsAccess";
 import { PortalSpinner } from "./components/DashboardUI";
+import {
+  clearAuthCache,
+  getAuthCache,
+  saveAuthCache,
+  type MasterAuthCache,
+} from "./components/authSessionCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./components/fetchWithTimeout";
 
 function Unavailable({ schoolLogin = false }: { schoolLogin?: boolean }) {
   return <main className="min-h-screen bg-slate-950 px-6 py-24 text-white"><div className="mx-auto max-w-lg"><h1 className="text-3xl font-bold">{schoolLogin ? "Masuk melalui subdomain sekolah" : "Fitur belum tersedia"}</h1><p className="mt-4 leading-7 text-slate-300">{schoolLogin ? "Gunakan alamat login sekolah Anda. Hubungi admin sekolah jika belum mengetahui alamatnya." : "Layanan ini sedang disiapkan dan belum menerima data. Silakan kembali ke halaman utama."}</p><Link className="mt-8 inline-block text-amber-300 underline" to="/">Kembali ke beranda</Link></div></main>;
@@ -25,7 +32,7 @@ function MasterLogin() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/master/login", {
+      const response = await fetchWithTimeout("/api/auth/master/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -39,20 +46,32 @@ function MasterLogin() {
         try {
           const data: { error?: string } = await response.json();
           if (typeof data.error === "string" && data.error) message = data.error;
-        } catch (error) {
-          console.error("Respons login tidak valid:", error);
+        } catch (parseError) {
+          console.error("Respons login tidak valid:", parseError);
         }
         throw new Error(message);
       }
+      try {
+        const data: unknown = await response.json();
+        if (typeof data === "object" && data !== null) {
+          const payload = data as { nama?: string; peran?: string; token?: string; user?: { nama?: string; peran?: string } };
+          if (typeof payload.nama === "string") {
+            saveAuthCache<MasterAuthCache>("master", {
+              token: payload.token,
+              nama: payload.nama,
+              peran: payload.peran,
+              user: payload.user,
+              updatedAt: Date.now(),
+            });
+          }
+        }
+      } catch {
+        // Ignore optional body parse errors
+      }
       setPassword("");
       navigate("/master");
-    } catch (error) {
-      if (error instanceof TypeError) {
-        console.error("Gagal menghubungi layanan login:", error);
-        setError("Server login tidak dapat dihubungi. Pastikan backend berjalan, lalu coba lagi.");
-      } else {
-        setError(error instanceof Error ? error.message : "Layanan login tidak tersedia.");
-      }
+    } catch (failure) {
+      setError(describeFetchError(failure, "Layanan login tidak tersedia."));
     } finally {
       setBusy(false);
     }
@@ -62,39 +81,62 @@ function MasterLogin() {
 }
 
 function MasterHome() {
-  const [name, setName] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">("loading");
+  const initialCache = getAuthCache<MasterAuthCache>("master");
+  const [name, setName] = useState<string | null>(() => initialCache?.nama ?? null);
+  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() => (initialCache ? "ready" : "loading"));
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/auth/master/session", { signal: controller.signal }).then(async (response) => {
-      if (response.status === 401) { setStatus("unauthorized"); return; }
-      if (!response.ok) throw new Error("Gagal memeriksa sesi.");
-      const data = await response.json();
-      setName(data.nama);
-      setStatus("ready");
-    }).catch((error) => {
-      if (!controller.signal.aborted) { console.error(error); setStatus("error"); }
-    });
+    fetchWithTimeout("/api/auth/master/session", { signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 401) {
+          clearAuthCache("master");
+          setStatus("unauthorized");
+          return;
+        }
+        if (!response.ok) throw new Error("Gagal memeriksa sesi.");
+        const data = (await response.json()) as { nama?: string; peran?: string };
+        if (typeof data.nama === "string") {
+          setName(data.nama);
+          saveAuthCache<MasterAuthCache>("master", {
+            token: initialCache?.token,
+            nama: data.nama,
+            peran: data.peran,
+            updatedAt: Date.now(),
+          });
+        }
+        setStatus("ready");
+      })
+      .catch((failure) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          if (!initialCache) {
+            setError(describeFetchError(failure, "Layanan sesi tidak tersedia."));
+            setStatus("error");
+          } else {
+            setError(describeFetchError(failure, "Gagal memvalidasi ulang sesi di latar belakang."));
+          }
+        }
+      });
     return () => controller.abort();
   }, []);
 
   async function logout() {
     setError("");
     try {
-      const response = await fetch("/api/auth/master/logout", { method: "POST" });
+      const response = await fetchWithTimeout("/api/auth/master/logout", { method: "POST" });
       if (!response.ok) throw new Error("Gagal keluar. Silakan coba kembali.");
+      clearAuthCache("master");
       navigate("/");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Gagal keluar.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal keluar."));
     }
   }
 
   if (status === "unauthorized") return <Navigate to="/master/login" replace />;
   if (status === "loading") return <PortalSpinner label="Memuat dashboard" />;
-  if (status !== "ready") return <main className="min-h-screen bg-slate-950 p-10 text-white">Layanan sesi tidak tersedia. Muat ulang halaman untuk mencoba kembali.</main>;
+  if (status !== "ready") return <main className="min-h-screen bg-slate-950 p-10 text-white">{error || "Layanan sesi tidak tersedia. Muat ulang halaman untuk mencoba kembali."}</main>;
   return <MasterDashboard name={name || "Master Admin"} error={error} onLogout={logout} />;
 }
 
@@ -110,25 +152,56 @@ export default function App() {
   );
   const mainDomain = !!matchedBase && (hostname === matchedBase || hostname === `www.${matchedBase}`);
   const schoolDomain = !!matchedBase && !mainDomain;
-  const [status, setStatus] = useState<"loading" | "ready" | "missing" | "error">(schoolDomain ? "loading" : "ready");
+  const [status, setStatus] = useState<"ready" | "missing">("ready");
+  const [contextWarning, setContextWarning] = useState("");
+
   useEffect(() => {
     if (!schoolDomain) return;
     const controller = new AbortController();
-    fetch("/api/tenant/context", { signal: controller.signal }).then(async (response) => {
-      if (response.status === 404) { setStatus("missing"); return; }
-      if (!response.ok) throw new Error("Gagal memeriksa sekolah.");
-      const data: unknown = await response.json();
-      if (typeof data !== "object" || data === null || !("kind" in data) || data.kind !== "school") throw new Error("Respons sekolah tidak valid.");
-      setStatus("ready");
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) { console.error("Gagal memeriksa sekolah:", error); setStatus("error"); }
-    });
+    fetchWithTimeout("/api/tenant/context", { signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 404) {
+          setStatus("missing");
+          return;
+        }
+        if (!response.ok) throw new Error("Gagal memeriksa sekolah.");
+        const data: unknown = await response.json();
+        if (typeof data !== "object" || data === null || !("kind" in data) || data.kind !== "school") {
+          throw new Error("Respons sekolah tidak valid.");
+        }
+        setContextWarning("");
+        setStatus("ready");
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          setContextWarning(describeFetchError(failure, "Koneksi ke server sekolah sedang lambat."));
+        }
+      });
     return () => controller.abort();
   }, [schoolDomain]);
-  if (status === "loading") return <PortalSpinner label="Menyiapkan portal" />;
+
   if (status === "missing") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md rounded-3xl p-6"><h1 className="text-2xl font-bold">Sekolah / Lembaga Tidak Terdaftar (404)</h1><p className="mt-4 text-sm">Sekolah tidak ditemukan atau tidak aktif.</p><a className="master-primary mt-5 inline-block" href={`https://${matchedBase ?? "pkbm.siput.id"}`}>Kembali ke domain utama</a></div></main>;
-  if (status === "error") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><p role="alert">Layanan sekolah tidak tersedia. Coba muat ulang halaman.</p></main>;
   if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
-  if (schoolDomain) return <Routes><Route path="/" element={<Navigate to="/login" replace />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  if (schoolDomain) {
+    return (
+      <>
+        {contextWarning && (
+          <div role="status" className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-3 bg-amber-950/90 px-4 py-2 text-xs font-medium text-amber-100 backdrop-blur">
+            <span>{contextWarning}</span>
+            <button type="button" onClick={() => setContextWarning("")} className="underline">Tutup</button>
+          </div>
+        )}
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<SchoolLogin />} />
+          <Route path="/sekolah" element={<SchoolHome />} />
+          <Route path="/lms/login" element={<LmsLogin />} />
+          <Route path="/lms" element={<LmsHome />} />
+          <Route path="/ppdb/:slug" element={<PublicPPDB />} />
+          <Route path="*" element={<Unavailable />} />
+        </Routes>
+      </>
+    );
+  }
   return <AppRoutes />;
 }

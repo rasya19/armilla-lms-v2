@@ -15,6 +15,7 @@ import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
 import { Lock } from "lucide-react";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Row = { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null };
 type Result = { rows: Row[]; page: number; pageSize?: number; hasNext: boolean; total?: number };
@@ -99,16 +100,15 @@ export function SchoolData({
     setError("");
     if (!activeEndpoint) return () => controller.abort();
     const cached = getCached<Result>(activeEndpoint);
-    fetch(activeEndpoint, { signal: controller.signal }).then(async (response) => {
+    fetchWithTimeout(activeEndpoint, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Data belum dapat dimuat.");
       const body: unknown = await response.json();
       if (!isResult(body) || body.page !== page || (kind === "guru" && (typeof body.total !== "number" || !Number.isInteger(body.total) || body.total < 0)) || (kind === "siswa" && !body.rows.every((row) => row.kelasId === null || typeof row.kelasId === "string"))) throw new Error("Respons data sekolah tidak valid.");
       setCached(activeEndpoint, body);
       setFetched({ endpoint: activeEndpoint, data: body });
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) {
-        console.error(error);
-        if (!cached) setError(error instanceof Error ? error.message : "Data belum dapat dimuat.");
+    }).catch((failure: unknown) => {
+      if (!isCallerAborted(failure, controller.signal)) {
+        if (!cached) setError(describeFetchError(failure, "Data belum dapat dimuat."));
       }
     });
     return () => controller.abort();
@@ -119,16 +119,15 @@ export function SchoolData({
     setClassError("");
     const cachedClasses = getCached<{ kelas: PlacementClass[] }>("/api/sekolah/kelas");
     if (cachedClasses) setClasses(cachedClasses.kelas);
-    ensureStandardClasses().then(() => fetch("/api/sekolah/kelas", { signal: controller.signal })).then(async (response) => {
+    ensureStandardClasses(controller.signal).then(() => fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal })).then(async (response) => {
       if (!response.ok) throw new Error("Daftar kelas belum dapat dimuat.");
       const body: unknown = await response.json();
       if (!body || typeof body !== "object" || !("kelas" in body) || !Array.isArray(body.kelas) || !body.kelas.every((item: unknown) => item !== null && typeof item === "object" && "id" in item && typeof item.id === "string" && "nama" in item && typeof item.nama === "string")) throw new Error("Respons daftar kelas tidak valid.");
       setCached("/api/sekolah/kelas", body);
       setClasses(body.kelas);
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted) {
-        console.error("Gagal memuat kelas:", failure);
-        if (!cachedClasses) { setClasses([]); setClassError(failure instanceof Error ? failure.message : "Daftar kelas belum dapat dimuat."); }
+      if (!isCallerAborted(failure, controller.signal)) {
+        if (!cachedClasses) { setClasses([]); setClassError(describeFetchError(failure, "Daftar kelas belum dapat dimuat.")); }
       }
     });
     return () => controller.abort();
@@ -143,7 +142,7 @@ export function SchoolData({
     if (credential || !await confirm(confirmText)) return;
     setAccountBusy(true); setAccountError("");
     try {
-      const response = await fetch(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/${reset ? "reset-password" : "akun"}`, { method: "POST" });
+      const response = await fetchWithTimeout(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/${reset ? "reset-password" : "akun"}`, { method: "POST" });
       if (!response.ok) {
         let message = "Akun belum dapat dibuat.";
         if (response.headers.get("content-type")?.includes("application/json")) {
@@ -158,9 +157,8 @@ export function SchoolData({
       setCopiedCredential(false);
       setCredential({ nama: row.nama, password: body.temporaryPassword });
       setVersion((value) => value + 1);
-    } catch (error) {
-      console.error("Gagal membuat akun:", error);
-      setAccountError(error instanceof TypeError ? "Koneksi terputus. Muat ulang daftar; jika akun sudah ada, reset password untuk memperoleh password baru." : error instanceof Error ? error.message : "Akun belum dapat diproses.");
+    } catch (failure) {
+      setAccountError(describeFetchError(failure, "Akun belum dapat diproses."));
     } finally { setAccountBusy(false); }
   }
   async function changeStatus(row: Row, role: "siswa" | "guru") {
@@ -168,7 +166,7 @@ export function SchoolData({
     if (!await confirm(active ? `Aktifkan kembali ${row.nama}?` : `Nonaktifkan ${row.nama}? Akun tidak dapat masuk dan sesi akan berakhir. Riwayat tetap tersimpan.`)) return;
     setAccountBusy(true); setAccountError("");
     try {
-      const response = await fetch(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: active ? "Aktif" : "Nonaktif" }) });
+      const response = await fetchWithTimeout(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: active ? "Aktif" : "Nonaktif" }) });
       if (!response.ok) {
         const body: unknown = await response.json();
         throw new Error(typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" ? body.error : "Status belum dapat diubah.");
@@ -177,8 +175,7 @@ export function SchoolData({
       setVersion((value) => value + 1);
       setToast(active ? "Data berhasil diaktifkan." : "Data dinonaktifkan; riwayat tetap tersimpan.");
     } catch (failure) {
-      console.error("Gagal mengubah status:", failure);
-      setAccountError(failure instanceof TypeError ? "Koneksi terputus. Muat ulang data sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Status belum dapat diubah.");
+      setAccountError(describeFetchError(failure, "Status belum dapat diubah."));
     } finally { setAccountBusy(false); }
   }
   return <section hidden={!visible} className="dashboard-glass space-y-6 rounded-2xl p-6">

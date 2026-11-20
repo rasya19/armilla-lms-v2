@@ -3,6 +3,7 @@ import { BookOpen, GraduationCap, Users } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
 import { LmsLearning } from "./LmsLearning";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type Role = "ADMIN" | "GURU" | "SISWA";
 type Named = { id: string; nama: string };
@@ -17,7 +18,7 @@ function details(value: unknown): value is Details {
   return named(value) && object(value) && (value.wali === null || typeof value.wali === "string") && Array.isArray(value.siswa) && value.siswa.every(named) && Array.isArray(value.guru) && value.guru.every(named) && Array.isArray(value.mapel) && value.mapel.every(named) && (value.presensi === null || typeof value.presensi === "string");
 }
 async function request(path: string, method = "GET", signal?: AbortSignal, sandboxRole?: "GURU" | "SISWA"): Promise<unknown> {
-  const response = await fetch(path, {
+  const response = await fetchWithTimeout(path, {
     method,
     signal,
     ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
@@ -27,7 +28,7 @@ async function request(path: string, method = "GET", signal?: AbortSignal, sandb
   return value;
 }
 function failureMessage(failure: unknown) {
-  return failure instanceof TypeError ? "Koneksi terputus. Muat ulang untuk memeriksa hasil." : failure instanceof Error ? failure.message : "Ruang kelas belum dapat dimuat.";
+  return describeFetchError(failure, "Ruang kelas belum dapat dimuat.");
 }
 
 export function Classroom({ role, sandboxRole }: { role: Role; sandboxRole?: "GURU" | "SISWA" }) {
@@ -47,7 +48,7 @@ export function Classroom({ role, sandboxRole }: { role: Role; sandboxRole?: "GU
       setCached(cacheKey, value.rows);
       setRooms(value.rows);
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat lobi kelas:", failure); setError(failureMessage(failure)); }
+      if (!isCallerAborted(failure, controller.signal) && !cached) { setError(failureMessage(failure)); }
     });
     return () => controller.abort();
   }, [base, cacheKey, version, sandboxRole]);
@@ -82,7 +83,7 @@ function ClassroomWorkspace({ role, sandboxRole, base, kelasId, onExit }: { role
       setData(value);
       setError("");
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat ruang kelas:", failure); setError(failureMessage(failure)); }
+      if (!isCallerAborted(failure, controller.signal) && !cached) { setError(failureMessage(failure)); }
     });
     return () => controller.abort();
   }, [endpoint, detailCacheKey, kelasId, version, sandboxRole]);
@@ -95,7 +96,7 @@ function ClassroomWorkspace({ role, sandboxRole, base, kelasId, onExit }: { role
       invalidateCache([detailCacheKey, "/api/sekolah/rekap-akademik"]);
       setNotice(value.sudahAda ? `Presensi hari ini sudah tercatat: ${value.status}.` : "Kehadiran hari ini berhasil dicatat.");
       setVersion((current) => current + 1);
-    } catch (failure) { console.error("Gagal mengonfirmasi hadir:", failure); setError(failureMessage(failure)); setVersion((current) => current + 1); }
+    } catch (failure) { setError(failureMessage(failure)); setVersion((current) => current + 1); }
     finally { setBusy(false); }
   }
   return <div className="animate-page-enter space-y-4">

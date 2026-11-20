@@ -17,6 +17,7 @@ import {
   Inbox,
   Landmark,
   LogOut,
+  Menu,
   Pencil,
   Printer,
   RotateCcw,
@@ -744,7 +745,13 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
 export function DinasHome() {
   const location = useLocation();
   const navigate = useNavigate();
-  const isBeritaAcaraPage = location.pathname.replace(/\/+$/, "").endsWith("/berita-acara");
+  const normalizedPath = location.pathname.replace(/\/+$/, "");
+  const activeMenu: "verifikasi" | "buat-ba" | "arsip-ba" = normalizedPath.endsWith("/arsip-berita-acara")
+    ? "arsip-ba"
+    : normalizedPath.endsWith("/berita-acara")
+      ? "buat-ba"
+      : "verifikasi";
+  const [menuOpen, setMenuOpen] = useState(false);
   const initialAuth = getAuthCache<DinasAuthCache>("dinas");
   const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() =>
     initialAuth ? "ready" : "loading",
@@ -1355,10 +1362,9 @@ export function DinasHome() {
     setBaPejabatNip(item.pejabatNip === "—" ? "" : item.pejabatNip);
     setBaCatatan(item.catatan);
     setBaFormError("");
-    setTimeout(
-      () => document.getElementById("form-berita-acara-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      60,
-    );
+    setMenuOpen(false);
+    navigate("/dinas/berita-acara");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleDeleteBa(id: string) {
@@ -1381,10 +1387,17 @@ export function DinasHome() {
     }
     setBaNomorSurat(buildDefaultBaNumber(target.mode, baTanggalIso, target.pkbmNpsn));
     setBaCatatan("");
-    setTimeout(
-      () => document.getElementById("form-berita-acara-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      60,
-    );
+    setMenuOpen(false);
+    navigate("/dinas/berita-acara");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function selectDinasMenu(target: "verifikasi" | "buat-ba" | "arsip-ba") {
+    setMenuOpen(false);
+    if (target === "verifikasi") navigate("/dinas");
+    else if (target === "buat-ba") navigate("/dinas/berita-acara");
+    else navigate("/dinas/arsip-berita-acara");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handlePrintFromForm() {
@@ -1419,10 +1432,17 @@ export function DinasHome() {
     );
   }
 
+  const activeMenuTitle =
+    activeMenu === "verifikasi"
+      ? "Verifikasi & Monitoring PKBM"
+      : activeMenu === "buat-ba"
+        ? "Buat Berita Acara Verval"
+        : "Arsip & Monitoring Berita Acara";
+
   return (
     <main
       data-tenant-theme="ocean"
-      className="dashboard-canvas min-h-screen pb-10 text-slate-900 antialiased"
+      className="dashboard-canvas min-h-screen text-slate-900 antialiased"
       style={{
         backgroundImage:
           "radial-gradient(rgba(37, 99, 235, 0.14) 1px, transparent 1px), linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%)",
@@ -1430,133 +1450,247 @@ export function DinasHome() {
       }}
     >
       <div className={printBaDoc ? "no-print" : undefined}>
-      <div className="mx-auto max-w-7xl px-4 pt-3 sm:px-6 sm:pt-4">
-        <header className="sticky top-3 z-30 rounded-2xl border border-white/95 bg-white/88 px-4 py-3 shadow-[0_8px_30px_rgba(37,99,235,0.08)] backdrop-blur-xl sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+      <div className="mx-auto flex min-h-screen max-w-[1600px]">
+        {/* Sidebar Navigasi Portal Dinas Pendidikan */}
+        <aside
+          className={`${
+            menuOpen ? "flex" : "hidden"
+          } fixed inset-y-0 left-0 z-50 w-72 flex-col border-r border-white/90 bg-white/88 p-4 text-slate-900 shadow-[8px_0_32px_rgba(37,99,235,0.08)] backdrop-blur-2xl lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0`}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-4">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25">
                 <Landmark size={20} />
               </span>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-sm font-extrabold tracking-tight text-slate-950 sm:text-base">
-                    {summary ? summary.wilayah : "Portal Dinas Pendidikan"}
-                  </h1>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Dinas Aktif
-                  </span>
-                </div>
-                <p className="mt-0.5 text-[11px] font-bold tracking-wide text-slate-600">
-                  PORTAL VERVAL WILAYAH · DINAS PENDIDIKAN
+                <p className="truncate text-sm font-extrabold tracking-tight text-slate-950">Portal Dinas</p>
+                <p className="truncate text-[10px] font-extrabold uppercase tracking-wider text-blue-700">
+                  VERVAL KESETARAAN
                 </p>
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                aria-pressed={showDemoSimulation}
-                onClick={() => {
-                  const next = !showDemoSimulation;
-                  setDemoOverride(next);
-                  if (!next && selectedPkbm?.isDemoSimulation) {
-                    setSelectedPkbm(null);
-                    setInspectStudent(null);
-                  }
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold transition ${
-                  showDemoSimulation
-                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25 hover:brightness-110"
-                    : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
-                }`}
-              >
-                <Sparkles size={14} />
-                Simulasi Demo
-                <span
-                  className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${
-                    showDemoSimulation ? "bg-amber-400 text-slate-950" : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {showDemoSimulation ? "ON" : "OFF"}
-                </span>
-              </button>
-
-              {summary?.petugas.isSuperAdmin && summary.availableWilayah.length > 0 && (
-                <select
-                  aria-label="Pilih Wilayah Kabupaten/Kota"
-                  value={wilayahFilter}
-                  onChange={(e) => {
-                    setSelectedPkbm(null);
-                    setWilayahFilter(e.target.value);
-                  }}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 shadow-2xs focus:border-blue-600 focus:outline-none"
-                >
-                  <option value="">Semua Wilayah</option>
-                  {summary.availableWilayah.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <span className="hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-900 sm:inline-block">
-                {petugasNama}
-              </span>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
-              >
-                <LogOut size={14} /> Keluar
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(false)}
+              aria-label="Tutup menu sidebar Dinas"
+              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden"
+            >
+              <X size={18} />
+            </button>
           </div>
 
-          <nav
-            aria-label="Menu Portal Dinas Pendidikan"
-            className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/80 pt-3"
-          >
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600">Wilayah Aktif</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Aktif
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs font-extrabold text-slate-950">
+              {summary ? summary.wilayah : activeWilayahLabel}
+            </p>
+          </div>
+
+          <nav aria-label="Sidebar Portal Dinas Pendidikan" className="mt-5 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+            <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+              MENU UTAMA DINAS
+            </p>
+
             <button
               type="button"
-              aria-current={!isBeritaAcaraPage ? "page" : undefined}
-              onClick={() => navigate("/dinas")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
-                !isBeritaAcaraPage
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
-                  : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
+              aria-current={activeMenu === "verifikasi" ? "page" : undefined}
+              onClick={() => selectDinasMenu("verifikasi")}
+              className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                activeMenu === "verifikasi"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
+                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
               }`}
             >
-              <ShieldCheck size={15} />
-              <span>Verifikasi &amp; Monitoring PKBM</span>
-            </button>
-            <button
-              type="button"
-              aria-current={isBeritaAcaraPage ? "page" : undefined}
-              onClick={() => navigate("/dinas/berita-acara")}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
-                isBeritaAcaraPage
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
-                  : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
-              }`}
-            >
-              <FileText size={15} />
-              <span>Buat &amp; Arsip Berita Acara</span>
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    activeMenu === "verifikasi" ? "bg-white/20 text-white" : "bg-blue-50 text-blue-700"
+                  }`}
+                >
+                  <ShieldCheck size={16} />
+                </span>
+                <span className="truncate">Verifikasi &amp; Monitoring</span>
+              </span>
               <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                  isBeritaAcaraPage ? "bg-amber-400 text-slate-950" : "bg-sky-100 text-blue-900"
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  activeMenu === "verifikasi" ? "bg-amber-400 text-slate-950" : "bg-slate-100 text-slate-700"
                 }`}
               >
-                {baArchive.length} Arsip · {unsavedBaTargets.length} Belum
+                {displayedView?.kpi.totalPkbm ?? 0}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-current={activeMenu === "buat-ba" ? "page" : undefined}
+              onClick={() => selectDinasMenu("buat-ba")}
+              className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                activeMenu === "buat-ba"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
+                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    activeMenu === "buat-ba" ? "bg-white/20 text-white" : "bg-sky-50 text-sky-700"
+                  }`}
+                >
+                  <FilePlus2 size={16} />
+                </span>
+                <span className="truncate">Buat Berita Acara</span>
+              </span>
+              {editingBaId && (
+                <span className="shrink-0 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-slate-950">
+                  Edit
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              aria-current={activeMenu === "arsip-ba" ? "page" : undefined}
+              onClick={() => selectDinasMenu("arsip-ba")}
+              className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                activeMenu === "arsip-ba"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
+                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    activeMenu === "arsip-ba" ? "bg-white/20 text-white" : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  <Archive size={16} />
+                </span>
+                <span className="truncate">Arsip &amp; Status BA</span>
+              </span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  activeMenu === "arsip-ba" ? "bg-amber-400 text-slate-950" : "bg-sky-100 text-blue-900"
+                }`}
+              >
+                {baArchive.length}/{baArchive.length + unsavedBaTargets.length}
               </span>
             </button>
           </nav>
-        </header>
-      </div>
+
+          <div className="mt-4 space-y-2.5 border-t border-slate-200/80 pt-3.5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Petugas Login</p>
+              <p className="mt-0.5 truncate font-extrabold text-slate-950">{petugasNama}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100"
+            >
+              <LogOut size={14} /> Keluar Portal Dinas
+            </button>
+          </div>
+        </aside>
+
+        {menuOpen && (
+          <button
+            type="button"
+            aria-label="Tutup menu sidebar Dinas"
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-xs lg:hidden"
+          />
+        )}
+
+        {/* Konten Utama per Menu */}
+        <div className="min-w-0 flex-1 pb-10">
+          <header className="sticky top-0 z-30 border-b border-white/95 bg-white/85 px-4 py-3 shadow-[0_6px_24px_rgba(37,99,235,0.06)] backdrop-blur-xl sm:px-6">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(true)}
+                  aria-label="Buka menu sidebar Dinas"
+                  aria-expanded={menuOpen}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-800 hover:bg-sky-50 lg:hidden"
+                >
+                  <Menu size={20} />
+                </button>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="truncate text-sm font-extrabold tracking-tight text-slate-950 sm:text-base">
+                      {activeMenuTitle}
+                    </h1>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {summary ? summary.wilayah : activeWilayahLabel}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] font-bold tracking-wide text-slate-600">
+                    PORTAL VERVAL WILAYAH · DINAS PENDIDIKAN
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-pressed={showDemoSimulation}
+                  onClick={() => {
+                    const next = !showDemoSimulation;
+                    setDemoOverride(next);
+                    if (!next && selectedPkbm?.isDemoSimulation) {
+                      setSelectedPkbm(null);
+                      setInspectStudent(null);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold transition ${
+                    showDemoSimulation
+                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25 hover:brightness-110"
+                      : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
+                  }`}
+                >
+                  <Sparkles size={14} />
+                  Simulasi Demo
+                  <span
+                    className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${
+                      showDemoSimulation ? "bg-amber-400 text-slate-950" : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {showDemoSimulation ? "ON" : "OFF"}
+                  </span>
+                </button>
+
+                {summary?.petugas.isSuperAdmin && summary.availableWilayah.length > 0 && (
+                  <select
+                    aria-label="Pilih Wilayah Kabupaten/Kota"
+                    value={wilayahFilter}
+                    onChange={(e) => {
+                      setSelectedPkbm(null);
+                      setWilayahFilter(e.target.value);
+                    }}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 shadow-2xs focus:border-blue-600 focus:outline-none"
+                  >
+                    <option value="">Semua Wilayah</option>
+                    {summary.availableWilayah.map((w) => (
+                      <option key={w} value={w}>
+                        {w}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+          </header>
 
       <div className="mx-auto max-w-7xl space-y-5 px-4 pt-5 sm:px-6">
-        {/* Baris 1: Hero Ocean & Gold Kontras Tinggi sesuai Halaman Aktif */}
-        {!isBeritaAcaraPage ? (
+        {/* Hero Banner Ocean & Gold sesuai Menu Sidebar Aktif */}
+        {activeMenu === "verifikasi" ? (
           <section
             className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
             style={{
@@ -1593,20 +1727,55 @@ export function DinasHome() {
               <div className="flex shrink-0 flex-wrap items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() => navigate("/dinas/berita-acara")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
-                >
-                  <Archive size={15} aria-hidden="true" />
-                  Buat Berita Acara ({unsavedBaTargets.length} Belum)
-                </button>
-                <button
-                  type="button"
                   disabled={!displayedView || displayedView.pkbm.length === 0 || exporting}
                   onClick={() => void handleExportRekap()}
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400 disabled:opacity-50"
                 >
                   <FileSpreadsheet size={16} aria-hidden="true" />
                   {exporting ? "Menyiapkan..." : "Export Rekap Verval Kabupaten"}
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : activeMenu === "buat-ba" ? (
+          <section
+            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
+            style={{
+              background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
+            }}
+          >
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
+              <div className="min-w-0 max-w-2xl">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                  <FilePlus2 size={13} />
+                  Penerbitan Dokumen Resmi · {activeWilayahLabel}
+                </span>
+                <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                  {editingBaId ? "Edit Berita Acara Verval" : "Buat Berita Acara Verval"}
+                </h2>
+                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                  Susun Berita Acara resmi per Satuan Pendidikan (PKBM) maupun Rekapitulasi Kabupaten/Kota dengan data Dapodik &amp; kelengkapan berkas terisi otomatis.
+                </p>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => selectDinasMenu("arsip-ba")}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
+                >
+                  <Archive size={15} aria-hidden="true" />
+                  Buka Arsip BA ({baArchive.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintFromForm}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400"
+                >
+                  <Printer size={16} aria-hidden="true" />
+                  Cetak / Simpan PDF Berita Acara
                 </button>
               </div>
             </div>
@@ -1623,22 +1792,21 @@ export function DinasHome() {
             <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
               <div className="min-w-0 max-w-2xl">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
-                  <FileText size={13} />
-                  Penerbitan Dokumen Resmi · {activeWilayahLabel}
+                  <Archive size={13} />
+                  Manajemen Arsip &amp; Status Penerbitan · {activeWilayahLabel}
                 </span>
                 <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                  Buat &amp; Arsip Berita Acara Verval
+                  Arsip &amp; Monitoring Berita Acara
                 </h2>
                 <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
-                  Terbitkan, simpan permanen, edit, dan cetak Berita Acara Verifikasi &amp; Validasi per Satuan Pendidikan (PKBM) maupun Rekapitulasi Kabupaten/Kota lengkap dengan kop dan pejabat penandatangan.
+                  Kelola seluruh Berita Acara Verval yang telah diterbitkan, cetak ulang PDF, perbarui data, atau pantau lembaga PKBM yang belum menerbitkan Berita Acara.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                    <Database size={12} className="text-amber-300" />
-                    Wilayah: {activeWilayahLabel}
+                    Sudah Tersimpan: {baArchive.length}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                    Sudah Tersimpan: {baArchive.length} · Belum Dibuat: {unsavedBaTargets.length}
+                    Belum Dibuat: {unsavedBaTargets.length}
                   </span>
                 </div>
               </div>
@@ -1646,19 +1814,14 @@ export function DinasHome() {
               <div className="flex shrink-0 flex-wrap items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() => navigate("/dinas")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
-                >
-                  <ShieldCheck size={15} aria-hidden="true" />
-                  Kembali ke Verifikasi PKBM
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrintFromForm}
+                  onClick={() => {
+                    setEditingBaId(null);
+                    selectDinasMenu("buat-ba");
+                  }}
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400"
                 >
-                  <Printer size={16} aria-hidden="true" />
-                  Cetak / Simpan PDF Berita Acara
+                  <FilePlus2 size={16} aria-hidden="true" />
+                  Buat Berita Acara Baru
                 </button>
               </div>
             </div>
@@ -1711,8 +1874,8 @@ export function DinasHome() {
           </p>
         )}
 
-        {/* Halaman Verifikasi & Monitoring PKBM */}
-        {!isBeritaAcaraPage && (
+        {/* Halaman 1: Verifikasi & Monitoring PKBM */}
+        {activeMenu === "verifikasi" && (
         <>
         {/* Baris 2: 4 Kartu KPI Ocean & Gold Kontras Tinggi */}
         {!displayedView ? (
@@ -2047,8 +2210,8 @@ export function DinasHome() {
         </>
         )}
 
-        {/* Halaman Buat & Arsip Berita Acara Verval */}
-        {isBeritaAcaraPage && (
+        {/* Halaman 2: Form Buat / Edit Berita Acara Verval */}
+        {activeMenu === "buat-ba" && (
         <section
           id="panel-berita-acara-dinas"
           className="scroll-mt-6 space-y-6 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6"
@@ -2056,25 +2219,24 @@ export function DinasHome() {
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800">
-                <FileText size={13} />
-                PENERBITAN DOKUMEN RESMI · {activeWilayahLabel.toUpperCase()}
+                <FilePlus2 size={13} />
+                FORM PENERBITAN DOKUMEN · {activeWilayahLabel.toUpperCase()}
               </span>
               <h2 className="mt-2 text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">
-                Penerbitan &amp; Manajemen Arsip Berita Acara Verval
+                {editingBaId ? "Perbarui Berita Acara Verval" : "Formulir Penerbitan Berita Acara Verval"}
               </h2>
               <p className="mt-0.5 text-xs font-medium text-slate-600">
-                Terbitkan, simpan permanen, edit, cetak PDF, serta pantau PKBM atau rekap kabupaten yang sudah maupun belum memiliki Berita Acara Verval.
+                Pilih mode Per PKBM atau Rekapitulasi Kabupaten, lengkapi nomor surat dan pejabat penandatangan, lalu simpan permanen ke arsip atau cetak PDF.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 font-extrabold text-emerald-800">
-                Sudah Tersimpan: {baArchive.length}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 font-extrabold text-amber-900">
-                Belum Dibuat: {unsavedBaTargets.length}
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => selectDinasMenu("arsip-ba")}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-extrabold text-blue-800 hover:bg-blue-100"
+            >
+              <Archive size={14} /> Lihat Daftar Arsip ({baArchive.length})
+            </button>
           </div>
 
           {/* Form Penerbitan / Edit Berita Acara */}
@@ -2398,9 +2560,12 @@ export function DinasHome() {
               </button>
             </div>
           </form>
+        </section>
+        )}
 
-          {/* Daftar Berita Acara Tersimpan & Target Belum Dibuat */}
-          <div className="space-y-4">
+        {/* Halaman 3: Daftar Berita Acara Tersimpan & Target Belum Dibuat */}
+        {activeMenu === "arsip-ba" && (
+        <section className="space-y-4 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-extrabold tracking-tight text-slate-950">
@@ -2644,13 +2809,14 @@ export function DinasHome() {
                 </table>
               </div>
             )}
-          </div>
         </section>
         )}
       </div>
       </div>
+      </div>
+      </div>
 
-      {!isBeritaAcaraPage && inspectStudent && (
+      {activeMenu === "verifikasi" && inspectStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
           <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white bg-white text-slate-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50/70 px-6 py-4">

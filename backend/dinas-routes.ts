@@ -99,6 +99,7 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
             plan: true,
             kabupatenKota: true,
             izinVervalDinas: true,
+            tanggalCutOffDapodik: true,
             totalSiswaDapodik: true,
           },
           orderBy: [{ nama: "asc" }, { id: "asc" }],
@@ -163,9 +164,10 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
       let totalPaketB = 0;
       let totalPaketC = 0;
       let totalCutoff = 0;
-      let totalLolosDinas = 0;
-      let totalDapodikTarik = 0;
+      let totalLolosVervalDinas = 0;
+      let totalDapodik = 0;
       let totalBerkasLengkap = 0;
+      let totalSelisihTanpaBerkas = 0;
 
       const pkbm = scopedSchools.map((school) => {
         const list = studentsBySchool.get(school.id) ?? [];
@@ -177,10 +179,10 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
         let siapVerifikasiCount = 0;
         let terverifikasiPkbmCount = 0;
         let belumLengkapCount = 0;
-        let lolosDinasCount = 0;
+        let lolosVervalDinas = 0;
         let perluPerbaikanCount = 0;
         let menungguDinasCount = 0;
-        let berkasLengkapCount = 0;
+        let berkasLengkap = 0;
         let tanpaBerkasCount = 0;
         let sumberDapodikCount = 0;
 
@@ -191,7 +193,8 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
           else if (paket === "Paket B") paketB += 1;
           else if (paket === "Paket C") paketC += 1;
 
-          if (st.tanggalMasuk && st.tanggalMasuk.getTime() <= cutoffDate.getTime()) {
+          const effectiveSchoolCutoff = school.tanggalCutOffDapodik ?? cutoffDate;
+          if (st.tanggalMasuk && st.tanggalMasuk.getTime() <= effectiveSchoolCutoff.getTime()) {
             siswaMemenuhiCutoff += 1;
           }
 
@@ -199,7 +202,7 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
 
           const completeness = computeVervalCompleteness(st);
           sumCompleteness += completeness.kelengkapanPersen;
-          if (completeness.berkasLengkap) berkasLengkapCount += 1;
+          if (completeness.berkasLengkap) berkasLengkap += 1;
           if (completeness.tanpaBerkas) tanpaBerkasCount += 1;
 
           const normalizedPkbm = normalizeVervalStatus(st.statusVerval);
@@ -207,21 +210,24 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
           else if (normalizedPkbm === "TERVERIFIKASI_PKBM") terverifikasiPkbmCount += 1;
           else belumLengkapCount += 1;
 
-          if (st.statusVervalDinas === "LOLOS_VERVAL") lolosDinasCount += 1;
+          if (st.statusVervalDinas === "LOLOS_VERVAL") lolosVervalDinas += 1;
           else if (st.statusVervalDinas === "PERLU_PERBAIKAN") perluPerbaikanCount += 1;
           else menungguDinasCount += 1;
         }
 
         const totalSiswa = list.length;
-        const totalSiswaDapodik = Math.max(school.totalSiswaDapodik ?? 0, sumberDapodikCount);
+        const pkbmTotalDapodik = Math.max(school.totalSiswaDapodik ?? 0, sumberDapodikCount);
+        const selisihTanpaBerkas = Math.max(0, pkbmTotalDapodik - berkasLengkap);
+
         totalWargaBelajar += totalSiswa;
         totalPaketA += paketA;
         totalPaketB += paketB;
         totalPaketC += paketC;
         totalCutoff += siswaMemenuhiCutoff;
-        totalLolosDinas += lolosDinasCount;
-        totalDapodikTarik += totalSiswaDapodik;
-        totalBerkasLengkap += berkasLengkapCount;
+        totalLolosVervalDinas += lolosVervalDinas;
+        totalDapodik += pkbmTotalDapodik;
+        totalBerkasLengkap += berkasLengkap;
+        totalSelisihTanpaBerkas += selisihTanpaBerkas;
 
         return {
           id: school.id,
@@ -231,8 +237,11 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
           plan: school.plan ?? "basic",
           kabupatenKota: school.kabupatenKota,
           totalSiswa,
-          totalSiswaDapodik,
-          berkasLengkapCount,
+          totalDapodik: pkbmTotalDapodik,
+          totalSiswaDapodik: pkbmTotalDapodik,
+          berkasLengkap,
+          berkasLengkapCount: berkasLengkap,
+          selisihTanpaBerkas,
           tanpaBerkasCount,
           paketA,
           paketB,
@@ -242,10 +251,11 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
           siapVerifikasiCount,
           terverifikasiPkbmCount,
           kelengkapanVervalPersen: totalSiswa ? Math.round(sumCompleteness / totalSiswa) : 0,
-          lolosDinasCount,
+          lolosVervalDinas,
+          lolosDinasCount: lolosVervalDinas,
           perluPerbaikanCount,
           menungguDinasCount,
-          persentaseLolosDinas: totalSiswa ? Math.round((lolosDinasCount / totalSiswa) * 100) : 0,
+          persentaseLolosDinas: totalSiswa ? Math.round((lolosVervalDinas / totalSiswa) * 100) : 0,
         };
       });
 
@@ -269,14 +279,17 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
         kpi: {
           totalPkbm: pkbm.length,
           totalWargaBelajar,
-          totalDapodikTarik,
+          totalDapodik,
+          totalDapodikTarik: totalDapodik,
           totalBerkasLengkap,
+          totalSelisihTanpaBerkas,
           totalPaketA,
           totalPaketB,
           totalPaketC,
           totalCutoff,
-          totalLolosDinas,
-          persentaseLolosVerval: totalWargaBelajar ? Math.round((totalLolosDinas / totalWargaBelajar) * 100) : 0,
+          totalLolosVervalDinas,
+          totalLolosDinas: totalLolosVervalDinas,
+          persentaseLolosVerval: totalWargaBelajar ? Math.round((totalLolosVervalDinas / totalWargaBelajar) * 100) : 0,
         },
         pkbm,
       });
@@ -305,7 +318,7 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
     try {
       const school = await prisma.sekolah.findUnique({
         where: { id: sekolahId },
-        select: { id: true, nama: true, npsn: true, slug: true, kabupatenKota: true, izinVervalDinas: true, status: true },
+        select: { id: true, nama: true, npsn: true, slug: true, kabupatenKota: true, izinVervalDinas: true, tanggalCutOffDapodik: true, status: true },
       });
       if (!school || school.status !== "ACTIVE" || !school.izinVervalDinas) {
         return res.status(404).json({ error: "PKBM tidak ditemukan atau tidak mengaktifkan akses verval Dinas." });
@@ -381,7 +394,7 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
             paketKategori,
             kelasNama,
             tanggalMasuk: formatIsoDate(st.tanggalMasuk),
-            memenuhiCutoff: Boolean(st.tanggalMasuk && st.tanggalMasuk.getTime() <= cutoffDate.getTime()),
+            memenuhiCutoff: Boolean(st.tanggalMasuk && st.tanggalMasuk.getTime() <= (school.tanggalCutOffDapodik ?? cutoffDate).getTime()),
             namaIbuKandung,
             alamatLengkap: st.alamatLengkap ?? null,
             desaKelurahan: st.desaKelurahan ?? null,

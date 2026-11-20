@@ -128,9 +128,10 @@ test("resolveSchoolWithSandboxSeed auto-seeds sandbox tenant and demo records on
     assert.equal(seeded.status, "ACTIVE");
 
     assert.equal(schools.length, 1);
+    assert.equal(schools[0].totalSiswaDapodik, 0);
     assert.equal(websiteSettings.length, 1);
     assert.equal(teachers.length, 2);
-    assert.equal(students.length, 5);
+    assert.equal(students.length, 0);
     assert.equal(classes.length, 3);
     assert.equal(subjects.length, 4);
     assert.equal(years.length, 1);
@@ -148,7 +149,7 @@ test("resolveSchoolWithSandboxSeed auto-seeds sandbox tenant and demo records on
     const secondCall = await resolveSchoolWithSandboxSeed(mockPrisma, "sandbox");
     assert.equal(secondCall?.id, seeded.id);
     assert.equal(schools.length, 1);
-    assert.equal(students.length, 5);
+    assert.equal(students.length, 0);
   } finally {
     if (prevDbUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = prevDbUrl;

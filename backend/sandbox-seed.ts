@@ -35,17 +35,6 @@ const FULL_SCHOOL_SELECT = {
   themeKey: true,
 } as const;
 
-const SANDBOX_MOCK_SCHOOL: ResolvedTenantSchool = {
-  id: "sandbox-tenant-id",
-  slug: SANDBOX_SLUG,
-  nama: "Sandbox PKBM Rasyatech",
-  npsn: "P9999999",
-  status: "ACTIVE",
-  expiresAt: null,
-  plan: "pro",
-  themeKey: "ocean",
-};
-
 let inFlightSandboxSeed: Promise<ResolvedTenantSchool | null> | null = null;
 let sandboxSeeded = false;
 let cachedSandboxSchool: ResolvedTenantSchool | null = null;
@@ -103,14 +92,14 @@ async function findSandboxSchoolSafe(prisma: PrismaClient): Promise<ResolvedTena
 async function pickUniqueCode(
   checkExists: (candidate: string) => Promise<boolean>,
   preferred: string,
-  fallback: string,
+  suffixCode: string,
 ): Promise<string> {
   try {
     if (!(await checkExists(preferred))) return preferred;
   } catch {
-    // Fall back to unique suffix if check fails
+    // Use unique suffix if lookup fails
   }
-  return fallback;
+  return suffixCode;
 }
 
 async function createSandboxSchoolRecord(prisma: PrismaClient): Promise<ResolvedTenantSchool | null> {
@@ -139,21 +128,18 @@ async function createSandboxSchoolRecord(prisma: PrismaClient): Promise<Resolved
         kelasStandarDibuat: true,
         kabupatenKota: "Kabupaten Bandung",
         izinVervalDinas: true,
-        totalSiswaDapodik: 5,
+        totalSiswaDapodik: 0,
       },
       select: FULL_SCHOOL_SELECT,
     });
-    if (!created?.id) {
-      return process.env.DATABASE_URL ? null : { ...SANDBOX_MOCK_SCHOOL };
-    }
-    return created;
+    return created?.id ? created : null;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return findSandboxSchoolSafe(prisma);
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022") {
       try {
-        const fallback = await prisma.sekolah.create({
+        const createdMinimal = await prisma.sekolah.create({
           data: {
             nama: "Sandbox PKBM Rasyatech",
             slug: SANDBOX_SLUG,
@@ -163,32 +149,30 @@ async function createSandboxSchoolRecord(prisma: PrismaClient): Promise<Resolved
           },
           select: MINIMAL_SCHOOL_SELECT,
         });
-        if (!fallback?.id) {
-          return process.env.DATABASE_URL ? null : { ...SANDBOX_MOCK_SCHOOL };
-        }
+        if (!createdMinimal?.id) return null;
         return {
-          ...fallback,
+          ...createdMinimal,
           nama: "Sandbox PKBM Rasyatech",
           npsn: npsnTaken ? null : "P9999999",
           plan: "pro",
           themeKey: "ocean",
         };
-      } catch (fallbackError) {
-        if (fallbackError instanceof Prisma.PrismaClientKnownRequestError && fallbackError.code === "P2002") {
+      } catch (errMinimal) {
+        if (errMinimal instanceof Prisma.PrismaClientKnownRequestError && errMinimal.code === "P2002") {
           return findSandboxSchoolSafe(prisma);
         }
-        throw fallbackError;
+        throw errMinimal;
       }
     }
     throw error;
   }
 }
 
-async function seedSandboxDemoRecords(prisma: PrismaClient, school: ResolvedTenantSchool): Promise<void> {
+async function seedSandboxInitialStructure(prisma: PrismaClient, school: ResolvedTenantSchool): Promise<void> {
   const passwordHash = await hashPassword(SANDBOX_DEMO_PASSWORD);
   const suffix = school.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6) || "sbx";
 
-  // 1. WebsiteSettings (safe optional relation)
+  // 1. WebsiteSettings
   try {
     const existingSettings = await prisma.websiteSettings.findUnique({
       where: { school_id: school.id },
@@ -211,7 +195,7 @@ async function seedSandboxDemoRecords(prisma: PrismaClient, school: ResolvedTena
     console.warn("Auto-seed WebsiteSettings sandbox dilewati:", err instanceof Error ? err.message : "UnknownError");
   }
 
-  // 2. Admin Sandbox (ismantoj88@gmail.com / 123456) & Akun Demo Verifikator Dinas
+  // 2. Admin Sandbox & Akun Verifikator Dinas Kab. Bandung (0 siswa — siap diuji Impor Dapodik / PPDB nyata)
   try {
     const existingAdmin = await prisma.akun.findUnique({
       where: { email: SANDBOX_ADMIN_EMAIL },
@@ -235,7 +219,7 @@ async function seedSandboxDemoRecords(prisma: PrismaClient, school: ResolvedTena
   }
   await ensureSandboxDinasAccount(prisma, passwordHash);
 
-  // 3. 2 Guru Demo
+  // 3. 2 Guru
   const guruSpecs = [
     {
       nuptk: "9999000100000001",
@@ -325,194 +309,7 @@ async function seedSandboxDemoRecords(prisma: PrismaClient, school: ResolvedTena
     }
   }
 
-  // 5. 5 Siswa Demo
-  const siswaSpecs = [
-    {
-      nisn: "9999000001",
-      nama: "Budi Santoso",
-      jenjang: "Paket A",
-      kelasIndex: 0,
-      email: "siswa1.sandbox@pkbm.siput.id",
-      telepon: "081399990001",
-      nik: "3204010101120001",
-      noKk: "3204010101129001",
-      namaIbuKandung: "Siti Aminah",
-      tempatLahir: "Bandung",
-      tanggalLahir: new Date("2012-03-14T00:00:00.000Z"),
-      jenisKelamin: "L",
-      alamatLengkap: "Jl. Cendrawasih No. 12",
-      desaKelurahan: "Cibeunying",
-      kecamatan: "Cimenyan",
-      sekolahAsal: "SDN Cibeunying 1",
-      npsnAsal: "20227001",
-      nomorIjazahTerakhir: "DN-02/SD/2023/00112",
-      tanggalMasuk: new Date("2026-07-14T00:00:00.000Z"),
-      statusVerval: "TERVERIFIKASI_PKBM",
-      statusVervalDinas: "LOLOS_VERVAL",
-    },
-    {
-      nisn: "9999000002",
-      nama: "Citra Lestari",
-      jenjang: "Paket B",
-      kelasIndex: 1,
-      email: "siswa2.sandbox@pkbm.siput.id",
-      telepon: "081399990002",
-      nik: "3204010508090002",
-      noKk: "3204010508099002",
-      namaIbuKandung: "Nurhayati",
-      tempatLahir: "Cimahi",
-      tanggalLahir: new Date("2009-08-05T00:00:00.000Z"),
-      jenisKelamin: "P",
-      alamatLengkap: "Jl. Melati Raya No. 8",
-      desaKelurahan: "Sukamaju",
-      kecamatan: "Baleendah",
-      sekolahAsal: "SMPN 2 Baleendah",
-      npsnAsal: "20227002",
-      nomorIjazahTerakhir: "DN-02/SD/2021/00441",
-      tanggalMasuk: new Date("2026-07-20T00:00:00.000Z"),
-      statusVerval: "SIAP_VERVAL",
-      statusVervalDinas: "MENUNGGU_DINAS",
-    },
-    {
-      nisn: "9999000003",
-      nama: "Dewi Anggraini",
-      jenjang: "Paket B",
-      kelasIndex: 1,
-      email: "siswa3.sandbox@pkbm.siput.id",
-      telepon: "081399990003",
-      nik: "3204011104080003",
-      noKk: null,
-      namaIbuKandung: "Kartini",
-      tempatLahir: "Bandung",
-      tanggalLahir: new Date("2008-04-11T00:00:00.000Z"),
-      jenisKelamin: "P",
-      alamatLengkap: "Kp. Mekarsari RT 02/04",
-      desaKelurahan: "Mekarsari",
-      kecamatan: "Soreang",
-      sekolahAsal: "MTs Al-Huda",
-      npsnAsal: null,
-      nomorIjazahTerakhir: null,
-      tanggalMasuk: new Date("2026-08-10T00:00:00.000Z"),
-      statusVerval: "BELUM_LENGKAP",
-      statusVervalDinas: "PERLU_PERBAIKAN",
-    },
-    {
-      nisn: "9999000004",
-      nama: "Eko Prasetyo",
-      jenjang: "Paket C",
-      kelasIndex: 2,
-      email: "siswa4.sandbox@pkbm.siput.id",
-      telepon: "081399990004",
-      nik: "3204012209050004",
-      noKk: "3204012209059004",
-      namaIbuKandung: "Sri Wahyuni",
-      tempatLahir: "Garut",
-      tanggalLahir: new Date("2005-09-22T00:00:00.000Z"),
-      jenisKelamin: "L",
-      alamatLengkap: "Jl. Terusan Buahbatu No. 45",
-      desaKelurahan: "Bojongsoang",
-      kecamatan: "Bojongsoang",
-      sekolahAsal: "SMPN 1 Bojongsoang",
-      npsnAsal: "20227004",
-      nomorIjazahTerakhir: "DN-02/SMP/2021/00918",
-      tanggalMasuk: new Date("2026-07-10T00:00:00.000Z"),
-      statusVerval: "TERVERIFIKASI_PKBM",
-      statusVervalDinas: "LOLOS_VERVAL",
-    },
-    {
-      nisn: "9999000005",
-      nama: "Fitri Handayani",
-      jenjang: "Paket C",
-      kelasIndex: 2,
-      email: "siswa5.sandbox@pkbm.siput.id",
-      telepon: "081399990005",
-      nik: "3204011702060005",
-      noKk: "3204011702069005",
-      namaIbuKandung: "Yanti Susanti",
-      tempatLahir: "Sumedang",
-      tanggalLahir: new Date("2006-02-17T00:00:00.000Z"),
-      jenisKelamin: "P",
-      alamatLengkap: "Jl. Raya Rancaekek Km 18",
-      desaKelurahan: "Rancaekek Wetan",
-      kecamatan: "Rancaekek",
-      sekolahAsal: "SMP Pasundan",
-      npsnAsal: "20227005",
-      nomorIjazahTerakhir: "DN-02/SMP/2022/00315",
-      tanggalMasuk: new Date("2026-08-25T00:00:00.000Z"),
-      statusVerval: "SIAP_VERVAL",
-      statusVervalDinas: "MENUNGGU_DINAS",
-    },
-  ];
-  for (let i = 0; i < siswaSpecs.length; i++) {
-    const spec = siswaSpecs[i];
-    try {
-      const fallbackNisn = `${Date.now().toString().slice(-9)}${i}`;
-      const nisn = await pickUniqueCode(
-        async (candidate) => Boolean(await prisma.siswa.findUnique({ where: { nisn: candidate }, select: { id: true } })),
-        spec.nisn,
-        fallbackNisn,
-      );
-      const baseData = {
-        sekolahId: school.id,
-        nisn,
-        nama: spec.nama,
-        jenjang: spec.jenjang,
-        kelasId: classes[spec.kelasIndex]?.id ?? null,
-        email: spec.email,
-        telepon: spec.telepon,
-        status: "Aktif",
-      };
-      let student: { id: string; nama: string };
-      try {
-        student = await prisma.siswa.create({
-          data: {
-            ...baseData,
-            nik: spec.nik,
-            noKk: spec.noKk,
-            namaIbu: spec.namaIbuKandung,
-            namaIbuKandung: spec.namaIbuKandung,
-            tempatLahir: spec.tempatLahir,
-            tanggalLahir: spec.tanggalLahir,
-            jenisKelamin: spec.jenisKelamin,
-            alamatLengkap: spec.alamatLengkap,
-            desaKelurahan: spec.desaKelurahan,
-            kecamatan: spec.kecamatan,
-            sekolahAsal: spec.sekolahAsal,
-            npsnAsal: spec.npsnAsal,
-            nomorIjazahTerakhir: spec.nomorIjazahTerakhir,
-            tanggalMasuk: spec.tanggalMasuk,
-            sumberDapodik: true,
-            statusVerval: spec.statusVerval,
-            statusVervalDinas: spec.statusVervalDinas,
-          },
-          select: { id: true, nama: true },
-        });
-      } catch (innerErr) {
-        if (innerErr instanceof Prisma.PrismaClientKnownRequestError && innerErr.code === "P2022") {
-          student = await prisma.siswa.create({ data: baseData, select: { id: true, nama: true } });
-        } else {
-          throw innerErr;
-        }
-      }
-      if (student?.id) {
-        await prisma.akun.create({
-          data: {
-            sekolahId: school.id,
-            siswaId: student.id,
-            nama: student.nama,
-            passwordHash,
-            peran: "SISWA",
-            aktif: true,
-            wajibGantiPassword: false,
-          },
-        });
-      }
-    } catch (err) {
-      console.warn("Auto-seed siswa sandbox dilewati:", err instanceof Error ? err.message : "UnknownError");
-    }
-  }
-
-  // 6. 4 Mapel Demo
+  // 5. 4 Mapel
   const mapelSpecs = [
     { kode: "SBX-BIND", nama: "Bahasa Indonesia", kkm: 75 },
     { kode: "SBX-MTK", nama: "Matematika", kkm: 70 },
@@ -542,7 +339,7 @@ async function seedSandboxDemoRecords(prisma: PrismaClient, school: ResolvedTena
     }
   }
 
-  // 7. Tahun Ajaran & Jadwal Pelajaran agar LMS Guru/Siswa langsung aktif
+  // 6. Tahun Ajaran & Jadwal Pelajaran
   if (classes.length >= 3 && mapels.length >= 3 && gurus.length >= 2) {
     try {
       const tahunAjaran = await prisma.tahunAjaran.create({
@@ -638,10 +435,7 @@ async function seedSandboxTenantInternal(prisma: PrismaClient): Promise<Resolved
     const school = await createSandboxSchoolRecord(prisma);
     if (!school?.id) return null;
 
-    if (school.id !== SANDBOX_MOCK_SCHOOL.id) {
-      await seedSandboxDemoRecords(prisma, school);
-    }
-
+    await seedSandboxInitialStructure(prisma, school);
     return rememberSandboxSchool(prisma, school);
   } catch (error) {
     console.error("Gagal auto-seed tenant sandbox:", error instanceof Error ? error.message : "UnknownError");
@@ -651,7 +445,7 @@ async function seedSandboxTenantInternal(prisma: PrismaClient): Promise<Resolved
     } catch {
       // Ignore recovery lookup error
     }
-    return process.env.DATABASE_URL ? null : { ...SANDBOX_MOCK_SCHOOL };
+    return null;
   }
 }
 
@@ -696,8 +490,8 @@ export async function resolveSchoolWithSandboxSeed(
     if (existing) return rememberSandboxSchool(prisma, existing);
     return await ensureSandboxTenant(prisma);
   } catch (error) {
-    console.error("Resolusi tenant sandbox fallback:", error instanceof Error ? error.message : "UnknownError");
-    return process.env.DATABASE_URL ? null : { ...SANDBOX_MOCK_SCHOOL };
+    console.error("Resolusi tenant sandbox gagal:", error instanceof Error ? error.message : "UnknownError");
+    return null;
   }
 }
 
@@ -719,7 +513,7 @@ export async function resolveTenantHostSchool(
     if (existing?.id) return rememberSandboxSchool(prisma, existing);
     return await ensureSandboxTenant(prisma);
   } catch (error) {
-    console.error("Resolusi host sandbox fallback:", error instanceof Error ? error.message : "UnknownError");
-    return process.env.DATABASE_URL ? null : { ...SANDBOX_MOCK_SCHOOL };
+    console.error("Resolusi host sandbox gagal:", error instanceof Error ? error.message : "UnknownError");
+    return null;
   }
 }

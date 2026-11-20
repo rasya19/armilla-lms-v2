@@ -199,6 +199,8 @@ export default function App() {
           <Route path="/lms/login" element={<LmsLogin />} />
           <Route path="/lms" element={<LmsHome />} />
           <Route path="/ppdb/:slug" element={<PublicPPDB />} />
+          <Route path="/dinas/login" element={<DinasLogin />} />
+          <Route path="/dinas" element={<DinasHome />} />
           <Route path="*" element={<Unavailable />} />
         </Routes>
       </>

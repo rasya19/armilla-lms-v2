@@ -153,6 +153,41 @@ export function formatDmyDate(value: Date | string | null | undefined): string {
   return `${d}/${m}/${y}`;
 }
 
+export function defaultCutoffIso(now = new Date()): string {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const cutoffYear = month >= 6 ? year : year - 1;
+  return `${cutoffYear}-08-31`;
+}
+
+function serializeVervalSchool(school: {
+  id: string;
+  nama: string;
+  npsn: string | null;
+  slug: string;
+  kabupatenKota: string | null;
+  izinVervalDinas: boolean;
+  totalSiswaDapodik?: number;
+  tanggalCutOffDapodik?: Date | string | null;
+  alamatSekolah?: string | null;
+  namaKepalaSekolah?: string | null;
+  namaOperatorDapodik?: string | null;
+}) {
+  return {
+    id: school.id,
+    nama: school.nama,
+    npsn: school.npsn ?? null,
+    slug: school.slug,
+    kabupatenKota: school.kabupatenKota ?? null,
+    izinVervalDinas: Boolean(school.izinVervalDinas),
+    totalSiswaDapodik: school.totalSiswaDapodik ?? 0,
+    tanggalCutOffDapodik: formatIsoDate(school.tanggalCutOffDapodik) ?? defaultCutoffIso(),
+    alamatSekolah: school.alamatSekolah ?? null,
+    namaKepalaSekolah: school.namaKepalaSekolah ?? null,
+    namaOperatorDapodik: school.namaOperatorDapodik ?? null,
+  };
+}
+
 export function detectPaketCategory(jenjang?: string | null, kelasNama?: string | null): "Paket A" | "Paket B" | "Paket C" | "Lainnya" {
   const combined = `${jenjang ?? ""} ${kelasNama ?? ""}`.toLowerCase();
   if (combined.includes("paket a") || /\bkelas\s*[1-6]\b/.test(combined)) return "Paket A";
@@ -231,6 +266,7 @@ const SISWA_VERVAL_SELECT = {
   nisn: true,
   nama: true,
   kelasId: true,
+  telepon: true,
   status: true,
   nik: true,
   noKk: true,
@@ -278,6 +314,7 @@ function serializeVervalStudent(student: SelectedSiswaVerval, kelasNamaMap: Map<
     nama: student.nama,
     kelasId: student.kelasId,
     kelasNama: student.kelasId ? (kelasNamaMap.get(student.kelasId) ?? "Kelas Terhapus") : "Belum ditempatkan",
+    telepon: student.telepon ?? null,
     status: student.status,
     nik: student.nik ?? null,
     noKk: student.noKk ?? null,
@@ -458,15 +495,96 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
           select: { id: true, nama: true },
         }),
       ]);
-      if (!student) return res.status(404).json({ error: "Data siswa tidak ditemukan." });
+      if (!student || !school) {
+        return res.status(404).json({ error: "Data siswa atau sekolah tidak ditemukan di database." });
+      }
       const kelasMap = new Map(kelasList.map((k) => [k.id, k.nama]));
       return res.json({
-        sekolah: school ?? { id: ctx.sekolahId, nama: "PKBM", npsn: null, kabupatenKota: null },
+        sekolah: school,
         siswa: serializeVervalStudent(student, kelasMap),
       });
     } catch (error) {
       console.error("Gagal memuat biodata verval siswa:", error);
       return res.status(503).json({ error: "Biodata Dapodik siswa belum dapat dimuat." });
+    }
+  });
+
+  router.patch("/pengaturan-sekolah", async (req, res) => {
+    const ctx = res.locals.vervalCtx as VervalContext;
+    if (ctx.role !== "ADMIN") {
+      return res.status(403).json({ error: "Hanya admin/operator PKBM yang dapat mengubah pengaturan sinkronisasi Dinas." });
+    }
+    const body = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return res.status(400).json({ error: "Payload pengaturan sekolah tidak valid." });
+    }
+    const payload = body as Record<string, unknown>;
+    const updateData: Prisma.SekolahUpdateInput = {};
+
+    if (Object.prototype.hasOwnProperty.call(payload, "kabupatenKota")) {
+      const parsed = parseOptionalString(payload.kabupatenKota, 150);
+      if (!parsed.ok) return res.status(400).json({ error: "Nama Kabupaten/Kota maksimal 150 karakter." });
+      updateData.kabupatenKota = parsed.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "izinVervalDinas")) {
+      if (typeof payload.izinVervalDinas !== "boolean") {
+        return res.status(400).json({ error: "Status izin sinkronisasi Dinas harus bernilai boolean." });
+      }
+      updateData.izinVervalDinas = payload.izinVervalDinas;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "tanggalCutOffDapodik")) {
+      const parsed = parseFlexibleDateInput(payload.tanggalCutOffDapodik);
+      if (!parsed.ok) {
+        return res.status(400).json({ error: "Format tanggal cut-off Dapodik tidak valid (gunakan YYYY-MM-DD atau DD/MM/YYYY)." });
+      }
+      updateData.tanggalCutOffDapodik = parsed.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "alamatSekolah")) {
+      const parsed = parseOptionalString(payload.alamatSekolah, 300);
+      if (!parsed.ok) return res.status(400).json({ error: "Alamat sekolah maksimal 300 karakter." });
+      updateData.alamatSekolah = parsed.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "namaKepalaSekolah")) {
+      const parsed = parseOptionalString(payload.namaKepalaSekolah, 150);
+      if (!parsed.ok) return res.status(400).json({ error: "Nama Kepala PKBM maksimal 150 karakter." });
+      updateData.namaKepalaSekolah = parsed.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "namaOperatorDapodik")) {
+      const parsed = parseOptionalString(payload.namaOperatorDapodik, 150);
+      if (!parsed.ok) return res.status(400).json({ error: "Nama Operator Dapodik maksimal 150 karakter." });
+      updateData.namaOperatorDapodik = parsed.value;
+    }
+
+    try {
+      const updated = await prisma.sekolah.update({
+        where: { id: ctx.sekolahId },
+        data: updateData,
+        select: {
+          id: true,
+          nama: true,
+          npsn: true,
+          slug: true,
+          kabupatenKota: true,
+          izinVervalDinas: true,
+          tanggalCutOffDapodik: true,
+          alamatSekolah: true,
+          namaKepalaSekolah: true,
+          namaOperatorDapodik: true,
+          totalSiswaDapodik: true,
+        },
+      });
+      return res.json({
+        message: "Pengaturan sinkronisasi Dinas Pendidikan berhasil disimpan.",
+        sekolah: serializeVervalSchool(updated),
+      });
+    } catch (error) {
+      console.error("Gagal memperbarui pengaturan sekolah verval:", error);
+      return res.status(503).json({ error: "Pengaturan sinkronisasi Dinas belum dapat disimpan." });
     }
   });
 
@@ -707,6 +825,10 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
             slug: true,
             kabupatenKota: true,
             izinVervalDinas: true,
+            tanggalCutOffDapodik: true,
+            alamatSekolah: true,
+            namaKepalaSekolah: true,
+            namaOperatorDapodik: true,
             totalSiswaDapodik: true,
           },
         }),
@@ -766,9 +888,12 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
         if (!hasKk && !hasAkta && !hasIjazah && !hasSuratPindah) belumAdaBerkas += 1;
       }
 
-      const totalDapodik = Math.max(school?.totalSiswaDapodik ?? 0, sumberDapodikCount);
-      const selisihTanpaBerkas =
-        totalDapodik > 0 ? Math.max(0, totalDapodik - berkasLengkap) : belumAdaBerkas;
+      if (!school) {
+        return res.status(404).json({ error: "Data sekolah tidak ditemukan di database." });
+      }
+
+      const totalDapodik = Math.max(school.totalSiswaDapodik ?? 0, sumberDapodikCount);
+      const selisihTanpaBerkas = Math.max(0, totalDapodik - berkasLengkap);
 
       const summary = {
         total: allStatusRows.length,
@@ -786,15 +911,7 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
 
       const kelasMap = new Map(kelasList.map((k) => [k.id, k.nama]));
       return res.json({
-        sekolah: school ?? {
-          id: ctx.sekolahId,
-          nama: "PKBM",
-          npsn: null,
-          slug: "",
-          kabupatenKota: null,
-          izinVervalDinas: true,
-          totalSiswaDapodik: 0,
-        },
+        sekolah: serializeVervalSchool(school),
         summary,
         kelasList,
         rows: rows.slice(0, pageSize).map((item) => serializeVervalStudent(item, kelasMap)),
@@ -916,6 +1033,14 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
       const parsed = parseOptionalString(payload.nomorIjazahTerakhir, 120);
       if (!parsed.ok) return res.status(400).json({ error: "Nomor ijazah terakhir maksimal 120 karakter." });
       updateData.nomorIjazahTerakhir = parsed.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "telepon")) {
+      const parsed = parseOptionalString(payload.telepon, 30);
+      if (!parsed.ok || (parsed.value && !/^[+0-9 ()-]{6,30}$/.test(parsed.value))) {
+        return res.status(400).json({ error: "Nomor telepon/WhatsApp tidak valid (6-30 karakter)." });
+      }
+      updateData.telepon = parsed.value;
     }
 
     for (const [fieldKey, label] of [
@@ -1074,8 +1199,12 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
         return res.send(csvContent);
       }
 
+      if (!school) {
+        return res.status(404).json({ error: "Data sekolah tidak ditemukan di database." });
+      }
+
       return res.json({
-        sekolah: school ?? { id: ctx.sekolahId, nama: "PKBM", npsn: null, slug: "", kabupatenKota: null },
+        sekolah: school,
         exportedAt: new Date().toISOString(),
         columns,
         rows: exportRows,

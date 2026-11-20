@@ -23,6 +23,7 @@ export type StudentVervalRecord = {
   nama: string;
   kelasId: string | null;
   kelasNama: string;
+  telepon?: string | null;
   status: string;
   nik: string | null;
   noKk: string | null;
@@ -87,7 +88,7 @@ function statusDinasBadge(status: VervalDinasStatus): { label: string; cls: stri
   }
 }
 
-async function compressOrEncodeDocument(file: File): Promise<string> {
+export async function compressOrEncodeDocument(file: File): Promise<string> {
   if (file.type === "application/pdf") {
     if (file.size > 1_500_000) {
       throw new Error("Ukuran file PDF maksimal 1,5 MB. Silakan kompres PDF atau gunakan tautan URL.");
@@ -113,18 +114,23 @@ async function compressOrEncodeDocument(file: File): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const maxDim = 1280;
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.width * scale));
-      canvas.height = Math.max(1, Math.round(img.height * scale));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        resolve(dataUrl);
-        return;
+      const encodeAt = (maxDim: number, quality: number) => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return dataUrl;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/jpeg", quality);
+      };
+      let compressed = encodeAt(1280, 0.78);
+      if (compressed.length > 1_600_000) {
+        compressed = encodeAt(1080, 0.64);
       }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.78));
+      resolve(compressed);
     };
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;

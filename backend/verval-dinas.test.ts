@@ -558,13 +558,33 @@ test("dinasRoutes enforces regional kabupaten isolation, administrative-only dat
     const bdgRes = await fetch(`${base}/ringkasan`, { headers: { "x-dinas": "bandung" } });
     assert.equal(bdgRes.status, 200);
     const bdgBody = (await bdgRes.json()) as {
-      kpi: { totalPkbm: number; totalWargaBelajar: number; totalPaketC: number; totalCutoff: number; totalDapodikTarik: number; totalBerkasLengkap: number };
-      pkbm: Array<{ id: string; totalSiswaDapodik: number; berkasLengkapCount: number }>;
+      kpi: {
+        totalPkbm: number;
+        totalWargaBelajar: number;
+        totalPaketC: number;
+        totalCutoff: number;
+        totalDapodik: number;
+        totalBerkasLengkap: number;
+        totalSelisihTanpaBerkas: number;
+        totalLolosVervalDinas: number;
+      };
+      pkbm: Array<{
+        id: string;
+        totalDapodik: number;
+        berkasLengkap: number;
+        selisihTanpaBerkas: number;
+        lolosVervalDinas: number;
+      }>;
     };
     assert.equal(bdgBody.kpi.totalPkbm, 1);
     assert.equal(bdgBody.pkbm[0].id, "pkbm-bdg");
-    assert.equal(bdgBody.pkbm[0].totalSiswaDapodik, 2);
-    assert.equal(bdgBody.pkbm[0].berkasLengkapCount, 1);
+    assert.equal(bdgBody.pkbm[0].totalDapodik, 2);
+    assert.equal(bdgBody.pkbm[0].berkasLengkap, 1);
+    assert.equal(bdgBody.pkbm[0].selisihTanpaBerkas, 1);
+    assert.equal(bdgBody.pkbm[0].lolosVervalDinas, 0);
+    assert.equal(bdgBody.kpi.totalDapodik, 2);
+    assert.equal(bdgBody.kpi.totalBerkasLengkap, 1);
+    assert.equal(bdgBody.kpi.totalSelisihTanpaBerkas, 1);
     assert.equal(bdgBody.kpi.totalPaketC, 1);
     assert.equal(bdgBody.kpi.totalCutoff, 1);
 
@@ -612,6 +632,23 @@ test("dinasRoutes enforces regional kabupaten isolation, administrative-only dat
     });
     assert.equal(approveRes.status, 200);
     assert.equal(students[0].statusVervalDinas, "LOLOS_VERVAL");
+
+    // Empty region returns 0 KPIs and empty pkbm array without mock fallback
+    const emptyRegionRes = await fetch(`${base}/ringkasan?kabupaten=Kabupaten%20Kosong`, {
+      headers: { "x-dinas": "master" },
+    });
+    assert.equal(emptyRegionRes.status, 200);
+    const emptyBody = (await emptyRegionRes.json()) as {
+      kpi: { totalPkbm: number; totalWargaBelajar: number; totalDapodik: number; totalBerkasLengkap: number; totalSelisihTanpaBerkas: number; totalLolosVervalDinas: number };
+      pkbm: unknown[];
+    };
+    assert.equal(emptyBody.kpi.totalPkbm, 0);
+    assert.equal(emptyBody.kpi.totalWargaBelajar, 0);
+    assert.equal(emptyBody.kpi.totalDapodik, 0);
+    assert.equal(emptyBody.kpi.totalBerkasLengkap, 0);
+    assert.equal(emptyBody.kpi.totalSelisihTanpaBerkas, 0);
+    assert.equal(emptyBody.kpi.totalLolosVervalDinas, 0);
+    assert.equal(emptyBody.pkbm.length, 0);
   } finally {
     server.close();
   }

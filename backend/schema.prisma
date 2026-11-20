@@ -221,9 +221,13 @@ model Sekolah {
   kelasStandarDibuat Boolean               @default(false)
   themeKey           String                @default("ocean")
   adminPhone         String?
-  kabupatenKota      String?
-  izinVervalDinas    Boolean               @default(true)
-  totalSiswaDapodik  Int                   @default(0)
+  kabupatenKota         String?
+  izinVervalDinas       Boolean               @default(true)
+  tanggalCutOffDapodik  DateTime?             @db.Date
+  alamatSekolah         String?
+  namaKepalaSekolah     String?
+  namaOperatorDapodik   String?
+  totalSiswaDapodik     Int                   @default(0)
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   akun               Akun[]

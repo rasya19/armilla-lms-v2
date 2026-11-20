@@ -73,7 +73,7 @@ Oleh karena itu, desain **Portal Verval Wilayah Dinas Pendidikan (`/dinas`)** me
 - `GET /api/verval/export` *(Khusus Admin PKBM)* — Mengunduh daftar nominatif format Dapodik dalam JSON/CSV/Excel.
 
 #### B. Endpoint Portal Dinas Pendidikan (`/api/dinas`)
-- `GET /api/dinas/ringkasan` — Mengembalikan KPI wilayah (`totalPkbm`, `totalWargaBelajar`, `totalDapodikTarik`, `totalBerkasLengkap`, distribusi Paket A/B/C, kepatuhan *cut-off* 31 Agustus, serta capaian `LOLOS_VERVAL`).
+- `GET /api/dinas/ringkasan` — Mengembalikan KPI wilayah 100% dinamis langsung dari tabel `Sekolah` dan `Siswa` di PostgreSQL (`totalPkbm`, `totalWargaBelajar`, `totalDapodik`, `totalBerkasLengkap`, `totalSelisihTanpaBerkas`, distribusi Paket A/B/C, kepatuhan *cut-off* 31 Agustus, serta capaian `lolosVervalDinas`). Jika belum ada PKBM/siswa di wilayah tersebut, seluruh nilai dikembalikan `0` dan daftar `pkbm: []` tanpa data dummy/fallback.
 - `GET /api/dinas/pkbm/:sekolahId/siswa` — Mengembalikan daftar nominatif administratif warga belajar PKBM tertentu (biodata, *cut-off*, 4 dokumen, dan status verval — **tanpa data presensi maupun nilai KBM**).
 - `PATCH /api/dinas/siswa/:siswaId/verval` — Menetapkan keputusan verifikasi Dinas (`MENUNGGU_DINAS`, `LOLOS_VERVAL`, atau `PERLU_PERBAIKAN` dengan `catatanDinas` wajib diisi).
 
@@ -82,6 +82,7 @@ Oleh karena itu, desain **Portal Verval Wilayah Dinas Pendidikan (`/dinas`)** me
 ### 4. Panduan Operasional Pengguna
 
 #### Langkah 1 — Operator PKBM: Impor Excel Dapodik & Rekonsiliasi
+> **Catatan Lingkungan Sandbox (`sandbox.pkbm.siput.id`)**: Tenant Sandbox dimulai dalam kondisi bersih dengan **0 siswa** (`totalSiswaDapodik: 0`) dan tanpa data warga belajar dummy agar pengujian selalu menggunakan data nyata dari fitur **Impor Excel Dapodik** maupun **PPDB / Data Siswa**.
 1. Masuk ke Portal Admin Sekolah (`https://<slug>.pkbm.siput.id/login`), lalu buka menu **Verval Data Dapodik**.
 2. Klik **Impor Excel Dapodik** dan unggah file `.xlsx` / `.xls` ekspor Peserta Didik dari aplikasi Dapodik.
 3. Periksa pratinjau hasil pemetaan kolom (`Nama`, `NISN`, `NIK`, `No KK`, `Nama Ibu Kandung`, `Jenjang/Rombel`, `Sekolah Asal`, `No Ijazah`, `Tanggal Masuk`), lalu klik **Sinkronkan ke Tabel Siswa**.
@@ -102,11 +103,11 @@ Oleh karena itu, desain **Portal Verval Wilayah Dinas Pendidikan (`/dinas`)** me
 4. Gunakan **Cetak Nominatif** atau **Export Excel** apabila diperlukan arsip tanda tangan kepala PKBM.
 
 #### Langkah 4 — Verifikator Dinas Pendidikan: Pemeriksaan Wilayah
-1. Buka **Portal Dinas Pendidikan** pada domain utama (`https://pkbm.siput.id/dinas` atau `/dinas` pada lingkungan pengembangan) dan masuk menggunakan akun `DINAS` wilayah Anda.
-   - *Akun uji Sandbox Kabupaten Bandung*: `dinas.sandbox@pkbm.siput.id` · kata sandi: `123456`
-2. Tinjau KPI wilayah, distribusi Paket A/B/C, kesesuaian *cut-off* 31 Agustus, serta perbandingan *Dapodik vs Berkas Lengkap* per PKBM.
-3. Klik **Periksa Berkas** pada PKBM tujuan, lalu pilih **Cek & Putuskan** pada warga belajar yang akan diverifikasi.
-4. Pratinjau keempat berkas (KK, Akta/KTP, Ijazah, Surat Pindah), lalu putuskan:
+1. Buka **Portal Dinas Pendidikan** pada rute `/dinas` (dapat diakses dari domain utama `https://pkbm.siput.id/dinas` maupun subdomain `https://sandbox.pkbm.siput.id/dinas`), lalu masuk menggunakan akun `DINAS` wilayah Anda (`dinas.sandbox@pkbm.siput.id` / `123456` untuk wilayah Sandbox Kabupaten Bandung).
+2. Tinjau KPI wilayah dalam tampilan tema gelap kontras tinggi (`bg-slate-950` / `bg-slate-900`), meliputi distribusi Paket A/B/C, kesesuaian *cut-off* 31 Agustus, serta perbandingan *Dapodik vs Berkas Lengkap vs Selisih Tanpa Berkas* secara real-time dari database PostgreSQL.
+3. Untuk keperluan paparan/presentasi, gunakan tombol sakelar **"Tampilkan Data Simulasi Demo"** di pojok atas Dashboard Dinas (otomatis aktif jika data riil di wilayah tersebut masih `0`, dan dapat dimatikan/dinyalakan kapan saja) guna menampilkan contoh rekonsiliasi anti-WB fiktif (misalnya **100 siswa tercatat di Dapodik vs 40 berkas fisik lengkap vs 60 selisih belum lengkap**) berdampingan dengan data PKBM riil database.
+4. Klik **Periksa Berkas** pada PKBM tujuan, lalu pilih **Cek & Putuskan** pada warga belajar yang akan diverifikasi.
+5. Pratinjau keempat berkas (KK, Akta/KTP, Ijazah, Surat Pindah) — murni administratif tanpa eksposur presensi maupun nilai KBM — lalu putuskan:
    - **Loloskan** (`LOLOS_VERVAL`) jika data dan berkas dinyatakan sah.
    - **Minta Perbaikan** (`PERLU_PERBAIKAN`) disertai catatan perbaikan yang otomatis muncul di layar Operator PKBM dan Warga Belajar terkait.
-5. Klik **Export Rekap Verval Kabupaten** untuk mengunduh laporan rekapitulasi wilayah dalam format `.xlsx`.
+6. Klik **Export Rekap Verval Kabupaten** untuk mengunduh laporan rekapitulasi wilayah dalam format `.xlsx`.

@@ -1,22 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   Building2,
-  CalendarCheck2,
   CheckCircle2,
+  Database,
   ExternalLink,
   Eye,
+  FileCheck2,
   FileSpreadsheet,
   FileText,
+  Inbox,
   Landmark,
   LogOut,
   RotateCcw,
   Search,
   ShieldCheck,
+  Sparkles,
   Users,
   X,
 } from "lucide-react";
-import { CardGridSkeleton, DashboardHero, EmptyState, PortalSpinner, TableSkeleton } from "./DashboardUI";
+import { PortalSpinner } from "./DashboardUI";
 import {
   clearAuthCache,
   getAuthCache,
@@ -34,8 +38,11 @@ type PkbmSummary = {
   plan: string;
   kabupatenKota: string | null;
   totalSiswa: number;
+  totalDapodik: number;
   totalSiswaDapodik: number;
+  berkasLengkap: number;
   berkasLengkapCount: number;
+  selisihTanpaBerkas: number;
   tanpaBerkasCount: number;
   paketA: number;
   paketB: number;
@@ -45,10 +52,12 @@ type PkbmSummary = {
   siapVerifikasiCount: number;
   terverifikasiPkbmCount: number;
   kelengkapanVervalPersen: number;
+  lolosVervalDinas: number;
   lolosDinasCount: number;
   perluPerbaikanCount: number;
   menungguDinasCount: number;
   persentaseLolosDinas: number;
+  isDemoSimulation?: boolean;
 };
 
 type DinasSummaryResponse = {
@@ -59,12 +68,15 @@ type DinasSummaryResponse = {
   kpi: {
     totalPkbm: number;
     totalWargaBelajar: number;
+    totalDapodik: number;
     totalDapodikTarik: number;
     totalBerkasLengkap: number;
+    totalSelisihTanpaBerkas: number;
     totalPaketA: number;
     totalPaketB: number;
     totalPaketC: number;
     totalCutoff: number;
+    totalLolosVervalDinas: number;
     totalLolosDinas: number;
     persentaseLolosVerval: number;
   };
@@ -102,17 +114,294 @@ type DinasStudentRow = {
   statusVervalDinas: VervalDinasStatus;
   catatanDinas: string | null;
   kelengkapanPersen: number;
+  isDemoSimulation?: boolean;
 };
+
+function makeDemoDocPreviewUrl(title: string, holder: string, docNumber: string): string {
+  const safe = (v: string) => v.replace(/[<>&"']/g, "");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+    <rect width="640" height="360" rx="18" fill="#0f172a"/>
+    <rect x="18" y="18" width="604" height="324" rx="14" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <text x="42" y="64" fill="#38bdf8" font-family="sans-serif" font-size="14" font-weight="bold">PRATINJAU ARSIP ADMINISTRASI SIMULASI</text>
+    <text x="42" y="106" fill="#f8fafc" font-family="sans-serif" font-size="24" font-weight="bold">${safe(title)}</text>
+    <text x="42" y="156" fill="#cbd5e1" font-family="sans-serif" font-size="16">Pemilik Berkas: ${safe(holder)}</text>
+    <text x="42" y="190" fill="#94a3b8" font-family="monospace" font-size="15">Nomor Dokumen: ${safe(docNumber)}</text>
+    <rect x="42" y="230" width="556" height="72" rx="10" fill="#0f172a" stroke="#10b981" stroke-opacity="0.45"/>
+    <text x="60" y="264" fill="#34d399" font-family="sans-serif" font-size="14" font-weight="bold">TERVALIDASI SEBAGAI CONTOH PAPARAN DIKMAS</text>
+    <text x="60" y="286" fill="#94a3b8" font-family="sans-serif" font-size="12">Hanya menampilkan metadata &amp; dokumen administratif (non-KBM)</text>
+  </svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function buildDemoSimulationDataset(wilayah: string, cutoffDate: string): {
+  pkbm: PkbmSummary[];
+  studentsByPkbmId: Record<string, DinasStudentRow[]>;
+} {
+  const regionLabel = wilayah && wilayah !== "Semua Wilayah" ? wilayah : "Kabupaten Bandung";
+  const pkbmList: PkbmSummary[] = [
+    {
+      id: "demo-pkbm-bina-harapan",
+      nama: "PKBM Bina Harapan Bangsa",
+      npsn: "P2029901",
+      slug: "demo-bina-harapan",
+      plan: "pro",
+      kabupatenKota: regionLabel,
+      totalSiswa: 100,
+      totalDapodik: 100,
+      totalSiswaDapodik: 100,
+      berkasLengkap: 40,
+      berkasLengkapCount: 40,
+      selisihTanpaBerkas: 60,
+      tanpaBerkasCount: 42,
+      paketA: 15,
+      paketB: 35,
+      paketC: 50,
+      siswaMemenuhiCutoff: 88,
+      belumLengkapCount: 45,
+      siapVerifikasiCount: 15,
+      terverifikasiPkbmCount: 40,
+      kelengkapanVervalPersen: 58,
+      lolosVervalDinas: 32,
+      lolosDinasCount: 32,
+      perluPerbaikanCount: 18,
+      menungguDinasCount: 50,
+      persentaseLolosDinas: 32,
+      isDemoSimulation: true,
+    },
+    {
+      id: "demo-pkbm-cendekia",
+      nama: "PKBM Cendekia Nusantara",
+      npsn: "P2029902",
+      slug: "demo-cendekia",
+      plan: "reguler",
+      kabupatenKota: regionLabel,
+      totalSiswa: 60,
+      totalDapodik: 60,
+      totalSiswaDapodik: 60,
+      berkasLengkap: 48,
+      berkasLengkapCount: 48,
+      selisihTanpaBerkas: 12,
+      tanpaBerkasCount: 5,
+      paketA: 10,
+      paketB: 18,
+      paketC: 32,
+      siswaMemenuhiCutoff: 56,
+      belumLengkapCount: 8,
+      siapVerifikasiCount: 4,
+      terverifikasiPkbmCount: 48,
+      kelengkapanVervalPersen: 86,
+      lolosVervalDinas: 44,
+      lolosDinasCount: 44,
+      perluPerbaikanCount: 4,
+      menungguDinasCount: 12,
+      persentaseLolosDinas: 73,
+      isDemoSimulation: true,
+    },
+  ];
+
+  const studentsByPkbmId: Record<string, DinasStudentRow[]> = {
+    "demo-pkbm-bina-harapan": [
+      {
+        id: "demo-st-1",
+        nisn: "0048129011",
+        nama: "Rizky Pratama",
+        nik: "3204120905040001",
+        noKk: "3204121108150023",
+        tempatLahir: "Bandung",
+        tanggalLahir: "2004-05-09",
+        jenisKelamin: "L",
+        jenjang: "Paket C",
+        paketKategori: "Paket C",
+        kelasNama: "Paket C XII",
+        tanggalMasuk: `${cutoffDate.slice(0, 4)}-07-14`,
+        memenuhiCutoff: true,
+        namaIbuKandung: "Nining Suryani",
+        alamatLengkap: "Kp. Sukamaju RT 02/05",
+        desaKelurahan: "Cileunyi Kulon",
+        kecamatan: "Cileunyi",
+        sekolahAsal: "SMPN 1 Cileunyi",
+        npsnAsal: "20206123",
+        nomorIjazahTerakhir: "DN-02/SMP/2020/00412",
+        sumberDapodik: true,
+        urlKk: makeDemoDocPreviewUrl("Kartu Keluarga (KK)", "Rizky Pratama", "3204121108150023"),
+        urlAktaKtp: makeDemoDocPreviewUrl("Akta Kelahiran / KTP", "Rizky Pratama", "3204-LT-20040509"),
+        urlIjazah: makeDemoDocPreviewUrl("Ijazah SMP / Paket B", "Rizky Pratama", "DN-02/SMP/2020/00412"),
+        urlSuratPindah: makeDemoDocPreviewUrl("Surat Keterangan Pindah (SKP)", "Rizky Pratama", "421.3/SKP-018"),
+        statusVerval: "TERVERIFIKASI_PKBM",
+        catatanVerval: "Dokumen fisik lengkap & diverifikasi operator.",
+        statusVervalDinas: "LOLOS_VERVAL",
+        catatanDinas: "Berkas administrasi lengkap, NIK/KK padan dan sesuai cut-off.",
+        kelengkapanPersen: 100,
+        isDemoSimulation: true,
+      },
+      {
+        id: "demo-st-2",
+        nisn: "0059238144",
+        nama: "Siti Nurhaliza",
+        nik: "3204185408050002",
+        noKk: "3204182203140019",
+        tempatLahir: "Soreang",
+        tanggalLahir: "2005-08-14",
+        jenisKelamin: "P",
+        jenjang: "Paket C",
+        paketKategori: "Paket C",
+        kelasNama: "Paket C XI",
+        tanggalMasuk: `${cutoffDate.slice(0, 4)}-08-10`,
+        memenuhiCutoff: true,
+        namaIbuKandung: "Euis Kartika",
+        alamatLengkap: "Jl. Gading Tutuka No. 18",
+        desaKelurahan: "Pamekaran",
+        kecamatan: "Soreang",
+        sekolahAsal: "MTs Al-Ikhlas",
+        npsnAsal: "20278011",
+        nomorIjazahTerakhir: null,
+        sumberDapodik: true,
+        urlKk: makeDemoDocPreviewUrl("Kartu Keluarga (KK)", "Siti Nurhaliza", "3204182203140019"),
+        urlAktaKtp: makeDemoDocPreviewUrl("Akta Kelahiran / KTP", "Siti Nurhaliza", "3204-LT-20050814"),
+        urlIjazah: null,
+        urlSuratPindah: null,
+        statusVerval: "SIAP_VERVAL",
+        catatanVerval: "Menunggu scan ijazah terakhir dari warga belajar.",
+        statusVervalDinas: "PERLU_PERBAIKAN",
+        catatanDinas: "Scan Ijazah/SKHUN sebelumnya belum diunggah untuk verifikasi syarat Paket C.",
+        kelengkapanPersen: 80,
+        isDemoSimulation: true,
+      },
+      {
+        id: "demo-st-3",
+        nisn: "0067114902",
+        nama: "Deden Kurniawan (Anomali Tanpa Berkas)",
+        nik: "3204251203030009",
+        noKk: null,
+        tempatLahir: "Banjaran",
+        tanggalLahir: "2003-03-12",
+        jenisKelamin: "L",
+        jenjang: "Paket B",
+        paketKategori: "Paket B",
+        kelasNama: "Paket B IX",
+        tanggalMasuk: `${cutoffDate.slice(0, 4)}-08-29`,
+        memenuhiCutoff: true,
+        namaIbuKandung: null,
+        alamatLengkap: null,
+        desaKelurahan: null,
+        kecamatan: "Banjaran",
+        sekolahAsal: null,
+        npsnAsal: null,
+        nomorIjazahTerakhir: null,
+        sumberDapodik: true,
+        urlKk: null,
+        urlAktaKtp: null,
+        urlIjazah: null,
+        urlSuratPindah: null,
+        statusVerval: "BELUM_LENGKAP",
+        catatanVerval: "Tercatat pada tarikan Dapodik, belum ada berkas fisik (KK/Akta/Ijazah).",
+        statusVervalDinas: "MENUNGGU_DINAS",
+        catatanDinas: null,
+        kelengkapanPersen: 20,
+        isDemoSimulation: true,
+      },
+    ],
+    "demo-pkbm-cendekia": [
+      {
+        id: "demo-st-4",
+        nisn: "0051120088",
+        nama: "Asep Saepudin",
+        nik: "3204081102050004",
+        noKk: "3204080401120077",
+        tempatLahir: "Majalaya",
+        tanggalLahir: "2005-02-11",
+        jenisKelamin: "L",
+        jenjang: "Paket B",
+        paketKategori: "Paket B",
+        kelasNama: "Paket B VIII",
+        tanggalMasuk: `${cutoffDate.slice(0, 4)}-07-18`,
+        memenuhiCutoff: true,
+        namaIbuKandung: "Ai Rohaeti",
+        alamatLengkap: "Kp. Biru No. 45",
+        desaKelurahan: "Biru",
+        kecamatan: "Majalaya",
+        sekolahAsal: "SDN Biru 01",
+        npsnAsal: "20206789",
+        nomorIjazahTerakhir: "DN-02/SD/2018/00918",
+        sumberDapodik: true,
+        urlKk: makeDemoDocPreviewUrl("Kartu Keluarga (KK)", "Asep Saepudin", "3204080401120077"),
+        urlAktaKtp: makeDemoDocPreviewUrl("Akta Kelahiran / KTP", "Asep Saepudin", "3204-LT-20050211"),
+        urlIjazah: makeDemoDocPreviewUrl("Ijazah SD / Paket A", "Asep Saepudin", "DN-02/SD/2018/00918"),
+        urlSuratPindah: null,
+        statusVerval: "TERVERIFIKASI_PKBM",
+        catatanVerval: "Sesuai dokumen asli.",
+        statusVervalDinas: "LOLOS_VERVAL",
+        catatanDinas: "Memenuhi syarat administrasi & cut-off 31 Agustus.",
+        kelengkapanPersen: 93,
+        isDemoSimulation: true,
+      },
+    ],
+  };
+
+  return { pkbm: pkbmList, studentsByPkbmId };
+}
 
 function statusDinasBadge(status: VervalDinasStatus): { label: string; cls: string } {
   switch (status) {
     case "LOLOS_VERVAL":
-      return { label: "Lolos Verval", cls: "border-emerald-300 bg-emerald-100 text-emerald-900" };
+      return { label: "Lolos Verval", cls: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300" };
     case "PERLU_PERBAIKAN":
-      return { label: "Perlu Perbaikan", cls: "border-rose-300 bg-rose-100 text-rose-900" };
+      return { label: "Perlu Perbaikan", cls: "border-rose-500/40 bg-rose-500/15 text-rose-300" };
     default:
-      return { label: "Menunggu Dinas", cls: "border-amber-300 bg-amber-100 text-amber-900" };
+      return { label: "Menunggu Dinas", cls: "border-amber-500/40 bg-amber-500/15 text-amber-300" };
   }
+}
+
+function DinasCardSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div role="status" aria-label="Menyiapkan ringkasan wilayah" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/90 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="h-3.5 w-2/5 animate-pulse rounded-md bg-slate-800" />
+            <div className="h-8 w-8 animate-pulse rounded-xl bg-slate-800" />
+          </div>
+          <div className="h-8 w-1/2 animate-pulse rounded-lg bg-slate-800" />
+          <div className="h-3 w-3/4 animate-pulse rounded-md bg-slate-800/80" />
+        </div>
+      ))}
+      <span className="sr-only">Memuat ringkasan wilayah...</span>
+    </div>
+  );
+}
+
+function DinasTableSkeleton({ rows = 4, columns = 6 }: { rows?: number; columns?: number }) {
+  return (
+    <div role="status" aria-label="Menyiapkan data tabel" className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+      <div className="space-y-3">
+        <div className="grid gap-3 border-b border-slate-800 pb-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+          {Array.from({ length: columns }).map((_, index) => (
+            <div key={index} className="h-3.5 animate-pulse rounded-md bg-slate-800" />
+          ))}
+        </div>
+        {Array.from({ length: rows }).map((_, rowIndex) => (
+          <div key={rowIndex} className="grid items-center gap-3 py-2" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+            {Array.from({ length: columns }).map((__, colIndex) => (
+              <div key={colIndex} className={`h-4 animate-pulse rounded-lg bg-slate-800/80 ${colIndex === 0 ? "w-4/5" : "w-3/5"}`} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <span className="sr-only">Memuat tabel...</span>
+    </div>
+  );
+}
+
+function DinasEmptyState({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-5 py-9 text-center">
+      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-cyan-400">
+        <Inbox size={22} />
+      </span>
+      <p className="mt-3 text-sm font-bold text-white">{title}</p>
+      <p className="mx-auto mt-1 max-w-lg text-xs leading-5 text-slate-400">{description}</p>
+    </div>
+  );
 }
 
 export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: string) => void } = {}) {
@@ -169,8 +458,8 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
   }
 
   return (
-    <main className="master-auth glass-login-shell flex min-h-screen items-center justify-center px-5 py-5">
-      <div className="master-login glass-login w-full max-w-md rounded-2xl p-6">
+    <main className="master-auth glass-login-shell flex min-h-screen items-center justify-center bg-slate-950 px-5 py-5 text-slate-100">
+      <div className="master-login glass-login w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl">
         <span className="master-logo">
           <Landmark size={21} />
         </span>
@@ -203,7 +492,7 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
             />
           </label>
           {error && (
-            <p role="alert" className="text-sm text-rose-300">
+            <p role="alert" className="text-sm text-rose-400">
               {error}
             </p>
           )}
@@ -211,11 +500,7 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
             {busy ? "Memeriksa..." : "Masuk Portal Dinas"}
           </button>
         </form>
-        <p className="mt-4 rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
-          Akun uji sandbox Kab. Bandung: <code className="font-mono text-cyan-300">dinas.sandbox@pkbm.siput.id</code> · sandi{" "}
-          <code className="font-mono text-cyan-300">123456</code>
-        </p>
-        <Link to="/" className="mt-4 inline-block text-sm font-semibold text-indigo-200 underline">
+        <Link to="/" className="mt-4 inline-block text-sm font-semibold text-cyan-300 underline">
           Kembali ke beranda
         </Link>
       </div>
@@ -231,6 +516,7 @@ export function DinasHome() {
   const [petugasNama, setPetugasNama] = useState(() => initialAuth?.nama ?? "Verifikator Dinas");
   const [wilayahFilter, setWilayahFilter] = useState("");
   const [summary, setSummary] = useState<DinasSummaryResponse | null>(null);
+  const [demoOverride, setDemoOverride] = useState<boolean | null>(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -308,14 +594,81 @@ export function DinasHome() {
       })
       .catch((failure: unknown) => {
         if (!isCallerAborted(failure, controller.signal)) {
+          setSummary(null);
           setError(describeFetchError(failure, "Ringkasan Portal Dinas Pendidikan belum tersedia."));
         }
       });
     return () => controller.abort();
   }, [status, wilayahFilter, reloadTick]);
 
+  const hasZeroRealData = Boolean(summary && (summary.pkbm.length === 0 || summary.kpi.totalWargaBelajar === 0));
+  const showDemoSimulation = demoOverride ?? hasZeroRealData;
+
+  const demoDataset = useMemo(
+    () => buildDemoSimulationDataset(summary?.wilayah ?? "Kabupaten Bandung", summary?.cutoffDate ?? "2026-08-31"),
+    [summary?.wilayah, summary?.cutoffDate],
+  );
+
+  const displayedView = useMemo(() => {
+    if (!summary) return null;
+    if (!showDemoSimulation) {
+      return {
+        pkbm: summary.pkbm,
+        kpi: summary.kpi,
+      };
+    }
+    const combinedPkbm = [...summary.pkbm, ...demoDataset.pkbm];
+    const totalPkbm = combinedPkbm.length;
+    const totalWargaBelajar = combinedPkbm.reduce((acc, item) => acc + item.totalSiswa, 0);
+    const totalDapodik = combinedPkbm.reduce((acc, item) => acc + item.totalDapodik, 0);
+    const totalBerkasLengkap = combinedPkbm.reduce((acc, item) => acc + item.berkasLengkap, 0);
+    const totalSelisihTanpaBerkas = combinedPkbm.reduce((acc, item) => acc + item.selisihTanpaBerkas, 0);
+    const totalPaketA = combinedPkbm.reduce((acc, item) => acc + item.paketA, 0);
+    const totalPaketB = combinedPkbm.reduce((acc, item) => acc + item.paketB, 0);
+    const totalPaketC = combinedPkbm.reduce((acc, item) => acc + item.paketC, 0);
+    const totalCutoff = combinedPkbm.reduce((acc, item) => acc + item.siswaMemenuhiCutoff, 0);
+    const totalLolosVervalDinas = combinedPkbm.reduce((acc, item) => acc + item.lolosVervalDinas, 0);
+    return {
+      pkbm: combinedPkbm,
+      kpi: {
+        totalPkbm,
+        totalWargaBelajar,
+        totalDapodik,
+        totalDapodikTarik: totalDapodik,
+        totalBerkasLengkap,
+        totalSelisihTanpaBerkas,
+        totalPaketA,
+        totalPaketB,
+        totalPaketC,
+        totalCutoff,
+        totalLolosVervalDinas,
+        totalLolosDinas: totalLolosVervalDinas,
+        persentaseLolosVerval: totalWargaBelajar ? Math.round((totalLolosVervalDinas / totalWargaBelajar) * 100) : 0,
+      },
+    };
+  }, [summary, showDemoSimulation, demoDataset]);
+
   useEffect(() => {
     if (!selectedPkbm) return;
+    if (selectedPkbm.isDemoSimulation) {
+      const baseRows = demoDataset.studentsByPkbmId[selectedPkbm.id] ?? [];
+      const term = studentSearch.trim().toLowerCase();
+      const filtered = baseRows.filter((row) => {
+        if (studentStatusFilter && row.statusVervalDinas !== studentStatusFilter) return false;
+        if (term) {
+          const matches =
+            row.nama.toLowerCase().includes(term) ||
+            row.nisn.toLowerCase().includes(term) ||
+            (row.nik ?? "").toLowerCase().includes(term);
+          if (!matches) return false;
+        }
+        return true;
+      });
+      setStudentsLoading(false);
+      setPkbmStudents(filtered);
+      return;
+    }
+
     const controller = new AbortController();
     setStudentsLoading(true);
     const params = new URLSearchParams({
@@ -341,7 +694,7 @@ export function DinasHome() {
         if (!controller.signal.aborted) setStudentsLoading(false);
       });
     return () => controller.abort();
-  }, [selectedPkbm, studentStatusFilter, studentSearch, reloadTick]);
+  }, [selectedPkbm, studentStatusFilter, studentSearch, reloadTick, demoDataset]);
 
   useEffect(() => {
     if (!toast) return;
@@ -362,25 +715,26 @@ export function DinasHome() {
   }
 
   async function handleExportRekap() {
-    if (!summary) return;
+    if (!summary || !displayedView) return;
     setExporting(true);
     try {
       const XLSX = await import("xlsx");
-      const rows = summary.pkbm.map((item, index) => ({
+      const rows = displayedView.pkbm.map((item, index) => ({
         No: index + 1,
-        "Nama PKBM": item.nama,
+        "Nama PKBM": item.isDemoSimulation ? `${item.nama} [Simulasi Demo]` : item.nama,
+        Sumber: item.isDemoSimulation ? "Simulasi Demo" : "Database Riil",
         NPSN: item.npsn ?? "-",
         "Kabupaten/Kota": item.kabupatenKota ?? "-",
-        "Hasil Tarik Dapodik": item.totalSiswaDapodik,
+        "Total Dapodik": item.totalDapodik,
         "Total Siswa LMS": item.totalSiswa,
-        "Berkas Lengkap": item.berkasLengkapCount,
-        "Tanpa Berkas": item.tanpaBerkasCount,
+        "Berkas Lengkap": item.berkasLengkap,
+        "Selisih Tanpa Berkas": item.selisihTanpaBerkas,
         "Paket A": item.paketA,
         "Paket B": item.paketB,
         "Paket C": item.paketC,
         "Memenuhi Cut-Off": item.siswaMemenuhiCutoff,
         "Kelengkapan Verval (%)": `${item.kelengkapanVervalPersen}%`,
-        "Lolos Verval Dinas": item.lolosDinasCount,
+        "Lolos Verval Dinas": item.lolosVervalDinas,
         "Persentase Lolos Dinas": `${item.persentaseLolosDinas}%`,
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
@@ -398,6 +752,11 @@ export function DinasHome() {
 
   async function submitDinasDecision(statusVervalDinas: VervalDinasStatus) {
     if (!inspectStudent) return;
+    if (inspectStudent.isDemoSimulation) {
+      setToast("Mode Simulasi Demo bersifat pratinjau paparan — gunakan data PKBM riil untuk menyimpan keputusan ke database.");
+      setInspectStudent(null);
+      return;
+    }
     setActionBusy(true);
     setActionError("");
     try {
@@ -438,22 +797,22 @@ export function DinasHome() {
   if (status === "loading") return <PortalSpinner label="Memuat Portal Dinas Pendidikan" />;
   if (status !== "ready") {
     return (
-      <main className="min-h-screen bg-slate-950 p-8 text-white">
+      <main className="min-h-screen bg-slate-950 p-8 text-slate-100">
         {error || "Sesi Portal Dinas Pendidikan tidak tersedia."}
       </main>
     );
   }
 
   return (
-    <main data-tenant-theme="dark" className="dashboard-canvas glass-area min-h-screen text-slate-100">
-      <header className="dashboard-header sticky top-0 z-30 border-b border-white/10 bg-slate-950/75 px-5 py-3.5 backdrop-blur-xl">
+    <main className="min-h-screen bg-slate-950 text-slate-100">
+      <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/90 px-5 py-3.5 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-md">
               <Landmark size={20} />
             </span>
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-300">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400">
                 PORTAL VERVAL WILAYAH · DINAS PENDIDIKAN
               </p>
               <h1 className="text-sm font-extrabold text-white sm:text-base">
@@ -463,6 +822,34 @@ export function DinasHome() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              aria-pressed={showDemoSimulation}
+              onClick={() => {
+                const next = !showDemoSimulation;
+                setDemoOverride(next);
+                if (!next && selectedPkbm?.isDemoSimulation) {
+                  setSelectedPkbm(null);
+                  setInspectStudent(null);
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                showDemoSimulation
+                  ? "border-amber-500/50 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
+                  : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Sparkles size={14} />
+              Tampilkan Data Simulasi Demo
+              <span
+                className={`ml-1 rounded-md px-1.5 py-0.5 text-[10px] font-extrabold ${
+                  showDemoSimulation ? "bg-amber-400/20 text-amber-200" : "bg-slate-800 text-slate-400"
+                }`}
+              >
+                {showDemoSimulation ? "ON" : "OFF"}
+              </span>
+            </button>
+
             {summary?.petugas.isSuperAdmin && summary.availableWilayah.length > 0 && (
               <select
                 aria-label="Pilih Wilayah Kabupaten/Kota"
@@ -481,13 +868,13 @@ export function DinasHome() {
                 ))}
               </select>
             )}
-            <span className="hidden rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 sm:inline-block">
+            <span className="hidden rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs font-bold text-slate-200 sm:inline-block">
               {petugasNama}
             </span>
             <button
               type="button"
               onClick={() => void logout()}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 px-3.5 py-2 text-xs font-bold text-rose-200 hover:bg-rose-500/25"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-500/15 px-3.5 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/25"
             >
               <LogOut size={14} /> Keluar
             </button>
@@ -496,152 +883,229 @@ export function DinasHome() {
       </header>
 
       <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-7">
-        {/* Baris 1: Hero */}
-        <DashboardHero
-          eyebrow="VERIFIKASI & VALIDASI KESETARAAN WILAYAH (ADMINISTRATIF)"
-          title="Dashboard Dinas Pendidikan"
-          description={`Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), hasil tarik Dapodik, dan cut-off pendaftaran (${summary?.cutoffDate ?? "31 Agustus"}) PKBM wilayah Anda.`}
-          badge={summary ? `Wilayah: ${summary.wilayah}` : "Portal Dinas"}
-          action={
+        {/* Baris 1: Hero Gelap Kontras Tinggi */}
+        <section className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900/95 to-emerald-950/60 p-6 shadow-xl sm:p-7">
+          <div className="pointer-events-none absolute -right-12 -top-12 h-52 w-52 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-0 left-1/3 h-40 w-40 rounded-full bg-cyan-500/10 blur-3xl" />
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
+            <div className="min-w-0 max-w-2xl">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-widest text-emerald-300">
+                <ShieldCheck size={12} />
+                VERIFIKASI &amp; VALIDASI KESETARAAN WILAYAH (ADMINISTRATIF)
+              </span>
+              <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">Dashboard Dinas Pendidikan</h2>
+              <p className="mt-1.5 text-sm leading-6 text-slate-300">
+                Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), rekonsiliasi hasil tarik Dapodik vs bukti fisik, dan cut-off pendaftaran ({summary?.cutoffDate ?? "31 Agustus"}) tanpa mengakses nilai atau presensi KBM.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 font-bold text-slate-200">
+                  <Database size={12} className="text-cyan-400" />
+                  Wilayah: {summary ? summary.wilayah : "Memuat..."}
+                </span>
+                {summary && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 font-bold text-slate-300">
+                    Data Riil DB: {summary.pkbm.length} PKBM · {summary.kpi.totalWargaBelajar} Siswa
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0">
+              <button
+                type="button"
+                disabled={!displayedView || displayedView.pkbm.length === 0 || exporting}
+                onClick={() => void handleExportRekap()}
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-600 px-4 py-2.5 text-xs font-extrabold text-white shadow-lg transition hover:bg-emerald-500 disabled:opacity-50"
+              >
+                <FileSpreadsheet size={15} aria-hidden="true" />
+                {exporting ? "Menyiapkan..." : "Export Rekap Verval Kabupaten"}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {showDemoSimulation && summary && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+            <div className="flex items-start gap-2.5 sm:items-center">
+              <Sparkles size={16} className="mt-0.5 shrink-0 text-amber-400 sm:mt-0" />
+              <p className="leading-5">
+                <strong className="font-extrabold text-amber-300">Mode Paparan Aktif:</strong>{" "}
+                {hasZeroRealData
+                  ? "Data riil PKBM/warga belajar di wilayah ini masih 0, sehingga simulasi contoh rekonsiliasi anti-WB fiktif ditampilkan otomatis."
+                  : "Menampilkan simulasi contoh rekonsiliasi anti-WB fiktif berdampingan dengan data PKBM riil dari database PostgreSQL."}
+              </p>
+            </div>
             <button
               type="button"
-              disabled={!summary || summary.pkbm.length === 0 || exporting}
-              onClick={() => void handleExportRekap()}
-              className="dashboard-hero-action disabled:opacity-50"
+              onClick={() => {
+                setDemoOverride(false);
+                if (selectedPkbm?.isDemoSimulation) {
+                  setSelectedPkbm(null);
+                  setInspectStudent(null);
+                }
+              }}
+              className="shrink-0 rounded-lg border border-amber-500/40 bg-slate-900/90 px-3 py-1.5 text-[11px] font-bold text-amber-300 hover:bg-slate-800"
             >
-              <FileSpreadsheet size={15} aria-hidden="true" />
-              {exporting ? "Menyiapkan..." : "Export Rekap Verval Kabupaten"}
+              Sembunyikan Simulasi
             </button>
-          }
-        />
+          </div>
+        )}
 
         {toast && (
-          <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-400/40 bg-emerald-600/90 px-4 py-3 text-sm font-bold text-white shadow-lg">
+          <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-950/90 px-4 py-3 text-sm font-bold text-emerald-200 shadow-lg">
             <span className="flex items-center gap-2">
-              <CheckCircle2 size={16} />
+              <CheckCircle2 size={16} className="text-emerald-400" />
               {toast}
             </span>
-            <button type="button" onClick={() => setToast("")}>
+            <button type="button" onClick={() => setToast("")} className="text-emerald-300 hover:text-white">
               <X size={16} />
             </button>
           </div>
         )}
 
         {error && (
-          <p role="alert" className="rounded-2xl border border-rose-400/40 bg-rose-950/60 p-4 text-sm font-semibold text-rose-200">
+          <p role="alert" className="flex items-center gap-2 rounded-2xl border border-rose-500/40 bg-rose-950/70 p-4 text-sm font-semibold text-rose-200">
+            <AlertTriangle size={16} className="shrink-0 text-rose-400" />
             {error}
           </p>
         )}
 
-        {/* Baris 2: 4 Kartu KPI Regional */}
-        {!summary ? (
-          <CardGridSkeleton count={4} columns={4} />
+        {/* Baris 2: 4 Kartu KPI Regional Gelap Kontras Tinggi */}
+        {!displayedView ? (
+          error ? null : <DinasCardSkeleton count={4} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <article className="dashboard-glass rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-300">
+            <article className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
                 <span>Total PKBM Terdaftar</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300">
                   <Building2 size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black text-white">{summary.kpi.totalPkbm}</p>
-              <p className="mt-1 text-xs text-slate-300">Lembaga aktif dengan izin verval Dinas</p>
-            </article>
-
-            <article className="dashboard-glass rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-300">
-                <span>Total Warga Belajar</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300">
-                  <Users size={16} />
-                </span>
-              </div>
-              <p className="mt-3 text-3xl font-black text-white">{summary.kpi.totalWargaBelajar}</p>
-              <p className="mt-1 text-xs text-slate-300">
-                Paket A: {summary.kpi.totalPaketA} · B: {summary.kpi.totalPaketB} · C: {summary.kpi.totalPaketC}
+              <p className="mt-3 text-3xl font-black text-white">{displayedView.kpi.totalPkbm}</p>
+              <p className="mt-1 text-xs text-slate-400">
+                {summary?.pkbm.length ?? 0} lembaga riil DB
+                {showDemoSimulation ? ` + ${demoDataset.pkbm.length} simulasi` : ""}
               </p>
             </article>
 
-            <article className="dashboard-glass rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-300">
-                <span>Memenuhi Cut-Off</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
-                  <CalendarCheck2 size={16} />
+            <article className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                <span>Total Warga Belajar</span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/15 text-cyan-300">
+                  <Users size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black text-amber-300">{summary.kpi.totalCutoff}</p>
-              <p className="mt-1 text-xs text-slate-300">Tanggal masuk &le; {summary.cutoffDate}</p>
+              <p className="mt-3 text-3xl font-black text-white">{displayedView.kpi.totalWargaBelajar}</p>
+              <p className="mt-1 text-xs text-slate-300">
+                Paket A: {displayedView.kpi.totalPaketA} · B: {displayedView.kpi.totalPaketB} · C: {displayedView.kpi.totalPaketC}
+              </p>
             </article>
 
-            <article className="dashboard-glass rounded-2xl p-5">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-300">
+            <article className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                <span>Dapodik vs Berkas Fisik</span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-400">
+                  <FileCheck2 size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-3xl font-black text-amber-400">{displayedView.kpi.totalDapodik}</p>
+              <p className="mt-1 text-xs text-slate-300">
+                Lengkap:{" "}
+                <span className="font-bold text-emerald-400">{displayedView.kpi.totalBerkasLengkap}</span>
+                {" · "}Selisih:{" "}
+                <span className="font-bold text-rose-400">{displayedView.kpi.totalSelisihTanpaBerkas}</span>
+                {" · "}Cut-Off: {displayedView.kpi.totalCutoff}
+              </p>
+            </article>
+
+            <article className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
                 <span>Lolos Verval Dinas</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/15 text-emerald-400">
                   <ShieldCheck size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black text-emerald-300">{summary.kpi.persentaseLolosVerval}%</p>
+              <p className="mt-3 text-3xl font-black text-emerald-400">{displayedView.kpi.persentaseLolosVerval}%</p>
               <p className="mt-1 text-xs text-slate-300">
-                {summary.kpi.totalLolosDinas} dari {summary.kpi.totalWargaBelajar} warga belajar
+                {displayedView.kpi.totalLolosVervalDinas} dari {displayedView.kpi.totalWargaBelajar} warga belajar
               </p>
             </article>
           </div>
         )}
 
         {/* Baris 3: Tabel Monitoring PKBM */}
-        <section className="dashboard-glass space-y-4 rounded-2xl p-5 sm:p-6">
+        <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-extrabold text-white">Monitoring Kesiapan Verval per PKBM</h2>
-              <p className="mt-0.5 text-xs text-slate-300">
-                Klik &ldquo;Periksa Berkas&rdquo; pada lembaga untuk memeriksa berkas warga belajar secara nominatif.
+              <p className="mt-0.5 text-xs text-slate-400">
+                Klik &ldquo;Periksa Berkas&rdquo; pada lembaga untuk memeriksa biodata Dapodik &amp; 4 dokumen fisik (KK, Akta/KTP, Ijazah, Surat Pindah).
               </p>
             </div>
           </div>
 
-          {!summary ? (
-            <TableSkeleton rows={4} columns={6} />
-          ) : summary.pkbm.length === 0 ? (
-            <EmptyState
-              title="Belum ada PKBM aktif di wilayah ini"
-              description="Minta Master Admin menetapkan kabupaten/kota pada tenant PKBM terkait agar muncul pada rekap Dinas."
+          {!displayedView ? (
+            error ? (
+              <DinasEmptyState
+                title="Data wilayah belum dapat dimuat"
+                description="Periksa koneksi server atau muat ulang halaman untuk menarik data langsung dari database."
+              />
+            ) : (
+              <DinasTableSkeleton rows={4} columns={6} />
+            )
+          ) : displayedView.pkbm.length === 0 ? (
+            <DinasEmptyState
+              title="Belum ada data PKBM atau warga belajar yang disinkronkan di wilayah ini"
+              description="Belum ada PKBM aktif dengan izin verval Dinas di kabupaten/kota ini, atau Anda dapat menekan 'Tampilkan Data Simulasi Demo' di pojok atas untuk melihat contoh paparan."
             />
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-700/70 bg-slate-900/75">
+            <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60">
               <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-700 bg-slate-800/90 text-xs font-extrabold uppercase tracking-wider text-slate-200">
+                <thead className="border-b border-slate-800 bg-slate-900 text-xs font-extrabold uppercase tracking-wider text-slate-300">
                   <tr>
                     <th className="px-4 py-3.5">PKBM / NPSN</th>
-                    <th className="px-4 py-3.5">Warga Belajar (A / B / C)</th>
+                    <th className="px-4 py-3.5">Dapodik &amp; Paket (A/B/C)</th>
                     <th className="px-4 py-3.5">Cut-Off</th>
-                    <th className="px-4 py-3.5">Kelengkapan Data</th>
+                    <th className="px-4 py-3.5">Rekonsiliasi Berkas</th>
                     <th className="px-4 py-3.5">Lolos Dinas</th>
                     <th className="px-4 py-3.5 text-right">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {summary.pkbm.map((item) => (
+                <tbody className="divide-y divide-slate-800/80">
+                  {displayedView.pkbm.map((item) => (
                     <tr
                       key={item.id}
-                      className={selectedPkbm?.id === item.id ? "bg-indigo-500/15" : "hover:bg-slate-800/50"}
+                      className={selectedPkbm?.id === item.id ? "bg-indigo-500/15" : "hover:bg-slate-800/60"}
                     >
                       <td className="px-4 py-3.5">
-                        <p className="font-bold text-white">{item.nama}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-bold text-white">{item.nama}</p>
+                          {item.isDemoSimulation ? (
+                            <span className="rounded-md border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-300">
+                              Simulasi Demo
+                            </span>
+                          ) : (
+                            <span className="rounded-md border border-cyan-500/35 bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-cyan-300">
+                              Data Riil DB
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 text-xs text-slate-400">
                           NPSN: {item.npsn ?? "—"} · {item.kabupatenKota ?? "—"}
                         </p>
                       </td>
                       <td className="px-4 py-3.5 text-xs text-slate-200">
-                        <span className="font-extrabold text-white">{item.totalSiswa} siswa</span>
-                        <span className="ml-1.5 text-cyan-300">(Dapodik: {item.totalSiswaDapodik})</span>
+                        <span className="font-extrabold text-white">{item.totalDapodik} Dapodik</span>
+                        <span className="ml-1.5 text-slate-400">({item.totalSiswa} siswa LMS)</span>
                         <p className="mt-0.5 text-slate-400">
                           A: {item.paketA} · B: {item.paketB} · C: {item.paketC}
                         </p>
                       </td>
-                      <td className="px-4 py-3.5 text-xs font-bold text-amber-300">{item.siswaMemenuhiCutoff} siswa</td>
+                      <td className="px-4 py-3.5 text-xs font-bold text-amber-400">{item.siswaMemenuhiCutoff} siswa</td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-700">
+                          <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-800">
                             <div
                               className="h-full rounded-full bg-cyan-400"
                               style={{ width: `${item.kelengkapanVervalPersen}%` }}
@@ -649,14 +1113,19 @@ export function DinasHome() {
                           </div>
                           <span className="text-xs font-bold text-white">{item.kelengkapanVervalPersen}%</span>
                         </div>
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          Berkas lengkap: {item.berkasLengkapCount} · Tanpa berkas: {item.tanpaBerkasCount}
+                        <p className="mt-1 text-[11px] text-slate-300">
+                          Lengkap:{" "}
+                          <span className="font-bold text-emerald-400">{item.berkasLengkap}</span>
+                          {" · "}Selisih:{" "}
+                          <span className={item.selisihTanpaBerkas > 0 ? "font-bold text-rose-400" : "text-slate-400"}>
+                            {item.selisihTanpaBerkas}
+                          </span>
                         </p>
                       </td>
                       <td className="px-4 py-3.5 text-xs">
-                        <span className="font-extrabold text-emerald-300">{item.persentaseLolosDinas}%</span>
+                        <span className="font-extrabold text-emerald-400">{item.persentaseLolosDinas}%</span>
                         <p className="mt-0.5 text-slate-400">
-                          {item.lolosDinasCount} lolos · {item.perluPerbaikanCount} perbaikan
+                          {item.lolosVervalDinas} lolos · {item.perluPerbaikanCount} perbaikan
                         </p>
                       </td>
                       <td className="px-4 py-3.5 text-right">
@@ -682,12 +1151,19 @@ export function DinasHome() {
 
         {/* Baris 4: Panel Pemeriksaan Nominatif PKBM Terpilih */}
         {selectedPkbm && (
-          <section className="dashboard-glass space-y-4 rounded-2xl p-5 sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/70 pb-4">
+          <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-slate-100 shadow-lg sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">
-                  PEMERIKSAAN NOMINATIF LEMBAGA
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-400">
+                    PEMERIKSAAN NOMINATIF LEMBAGA (ADMINISTRATIF NON-KBM)
+                  </p>
+                  {selectedPkbm.isDemoSimulation && (
+                    <span className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-extrabold text-amber-300">
+                      CONTOH SIMULASI PAPARAN
+                    </span>
+                  )}
+                </div>
                 <h2 className="mt-1 text-lg font-extrabold text-white">
                   {selectedPkbm.nama} (NPSN: {selectedPkbm.npsn ?? "—"})
                 </h2>
@@ -700,14 +1176,14 @@ export function DinasHome() {
                     value={studentSearch}
                     onChange={(e) => setStudentSearch(e.target.value)}
                     placeholder="Cari nama/NISN/NIK..."
-                    className="rounded-xl border border-slate-700 bg-slate-900 py-2 pl-8 pr-3 text-xs text-white"
+                    className="rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-xs text-white placeholder:text-slate-500"
                   />
                 </div>
                 <select
                   aria-label="Filter Status Verval Dinas"
                   value={studentStatusFilter}
                   onChange={(e) => setStudentStatusFilter(e.target.value)}
-                  className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-white"
+                  className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-bold text-white"
                 >
                   <option value="">Semua Status Dinas</option>
                   <option value="MENUNGGU_DINAS">Menunggu Dinas</option>
@@ -725,16 +1201,16 @@ export function DinasHome() {
             </div>
 
             {studentsLoading ? (
-              <TableSkeleton rows={4} columns={5} />
+              <DinasTableSkeleton rows={4} columns={5} />
             ) : pkbmStudents.length === 0 ? (
-              <EmptyState
-                title="Tidak ada data warga belajar"
-                description="Belum ada siswa aktif yang cocok dengan filter status Dinas atau pencarian Anda."
+              <DinasEmptyState
+                title="Belum ada data warga belajar yang disinkronkan"
+                description="Belum ada siswa aktif di PKBM ini atau tidak ada yang cocok dengan filter status/pencarian."
               />
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-700/70 bg-slate-900/75">
+              <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/60">
                 <table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-700 bg-slate-800/90 text-xs font-extrabold uppercase tracking-wider text-slate-200">
+                  <thead className="border-b border-slate-800 bg-slate-900 text-xs font-extrabold uppercase tracking-wider text-slate-300">
                     <tr>
                       <th className="px-4 py-3">Warga Belajar</th>
                       <th className="px-4 py-3">NIK / KK / Ibu</th>
@@ -744,11 +1220,11 @@ export function DinasHome() {
                       <th className="px-4 py-3 text-right">Verifikasi</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800">
+                  <tbody className="divide-y divide-slate-800/80">
                     {pkbmStudents.map((st) => {
                       const badge = statusDinasBadge(st.statusVervalDinas);
                       return (
-                        <tr key={st.id} className="hover:bg-slate-800/50">
+                        <tr key={st.id} className="hover:bg-slate-800/60">
                           <td className="px-4 py-3">
                             <p className="font-bold text-white">{st.nama}</p>
                             <p className="text-xs text-slate-400">NISN {st.nisn} · {st.kelengkapanPersen}% lengkap</p>
@@ -760,22 +1236,22 @@ export function DinasHome() {
                           </td>
                           <td className="px-4 py-3 text-xs">
                             <p className="font-bold text-white">{st.paketKategori} · {st.kelasNama}</p>
-                            <p className={st.memenuhiCutoff ? "text-emerald-300" : "text-slate-400"}>
+                            <p className={st.memenuhiCutoff ? "text-emerald-400" : "text-slate-400"}>
                               {st.memenuhiCutoff ? "Memenuhi Cut-Off" : "Di luar Cut-Off / Kosong"}
                             </p>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1 text-[10px] font-bold">
-                              <span className={`rounded px-1.5 py-0.5 ${st.urlKk ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800 text-slate-500"}`}>
+                              <span className={`rounded px-1.5 py-0.5 ${st.urlKk ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-500"}`}>
                                 KK
                               </span>
-                              <span className={`rounded px-1.5 py-0.5 ${st.urlAktaKtp ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800 text-slate-500"}`}>
+                              <span className={`rounded px-1.5 py-0.5 ${st.urlAktaKtp ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-500"}`}>
                                 Akta
                               </span>
-                              <span className={`rounded px-1.5 py-0.5 ${st.urlIjazah ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-800 text-slate-500"}`}>
+                              <span className={`rounded px-1.5 py-0.5 ${st.urlIjazah ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-500"}`}>
                                 Ijazah
                               </span>
-                              <span className={`rounded px-1.5 py-0.5 ${st.urlSuratPindah ? "bg-cyan-500/20 text-cyan-200" : "bg-slate-800 text-slate-500"}`}>
+                              <span className={`rounded px-1.5 py-0.5 ${st.urlSuratPindah ? "bg-cyan-500/20 text-cyan-300" : "bg-slate-800 text-slate-500"}`}>
                                 Surat Pindah
                               </span>
                             </div>
@@ -785,7 +1261,7 @@ export function DinasHome() {
                               {badge.label}
                             </span>
                             {st.catatanDinas && (
-                              <p className="mt-1 max-w-[180px] truncate text-[11px] text-rose-300" title={st.catatanDinas}>
+                              <p className="mt-1 max-w-[180px] truncate text-[11px] text-rose-400" title={st.catatanDinas}>
                                 {st.catatanDinas}
                               </p>
                             )}
@@ -809,7 +1285,7 @@ export function DinasHome() {
                                           : "kk",
                                 );
                               }}
-                              className="inline-flex items-center gap-1 rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25"
+                              className="inline-flex items-center gap-1 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/25"
                             >
                               <FileText size={13} /> Cek &amp; Putuskan
                             </button>
@@ -826,12 +1302,12 @@ export function DinasHome() {
       </div>
 
       {inspectStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 text-slate-100 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
               <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">
-                  VERIFIKASI DINAS PENDIDIKAN
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">
+                  VERIFIKASI DINAS PENDIDIKAN {inspectStudent.isDemoSimulation ? "· SIMULASI PAPARAN" : ""}
                 </p>
                 <h3 className="text-lg font-extrabold text-white">{inspectStudent.nama}</h3>
               </div>
@@ -846,18 +1322,24 @@ export function DinasHome() {
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 text-xs">
-              <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:grid-cols-2">
+              {inspectStudent.isDemoSimulation && (
+                <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs font-semibold text-amber-200">
+                  Contoh data simulasi paparan (hanya pratinjau dokumen administrasi — perubahan tidak disimpan ke database).
+                </p>
+              )}
+
+              <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-950/80 p-4 sm:grid-cols-2">
                 <p><span className="text-slate-400">NISN:</span> <strong className="font-mono text-white">{inspectStudent.nisn}</strong></p>
                 <p><span className="text-slate-400">NIK:</span> <strong className="font-mono text-white">{inspectStudent.nik ?? "—"}</strong></p>
                 <p><span className="text-slate-400">No. KK:</span> <strong className="font-mono text-white">{inspectStudent.noKk ?? "—"}</strong></p>
                 <p><span className="text-slate-400">Ibu Kandung:</span> <strong className="text-white">{inspectStudent.namaIbuKandung ?? "—"}</strong></p>
                 <p><span className="text-slate-400">Sekolah Asal:</span> <strong className="text-white">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
                 <p><span className="text-slate-400">No. Ijazah:</span> <strong className="text-white">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
-                <p><span className="text-slate-400">Status PKBM:</span> <strong className="text-cyan-300">{inspectStudent.statusVerval}</strong></p>
+                <p><span className="text-slate-400">Status PKBM:</span> <strong className="text-cyan-400">{inspectStudent.statusVerval}</strong></p>
                 <p><span className="text-slate-400">Tanggal Masuk:</span> <strong className="text-white">{inspectStudent.tanggalMasuk ?? "—"}</strong></p>
               </div>
 
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                   <span className="font-extrabold uppercase tracking-wider text-slate-300">Pratinjau Berkas</span>
                   <div className="flex flex-wrap gap-1.5">
@@ -872,7 +1354,7 @@ export function DinasHome() {
                         type="button"
                         onClick={() => setDocTab(tab.id)}
                         className={`rounded-lg px-3 py-1 font-bold ${
-                          docTab === tab.id ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-300"
+                          docTab === tab.id ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                         }`}
                       >
                         {tab.label}
@@ -898,7 +1380,7 @@ export function DinasHome() {
                   }
                   return (
                     <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-slate-900 p-3">
-                      <span className="break-all font-mono text-cyan-200">{u}</span>
+                      <span className="break-all font-mono text-cyan-300">{u}</span>
                       {u.startsWith("http") && (
                         <a href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-indigo-300 underline">
                           Buka <ExternalLink size={12} />
@@ -917,14 +1399,14 @@ export function DinasHome() {
                   value={catatanInput}
                   onChange={(e) => setCatatanInput(e.target.value)}
                   placeholder="Contoh: Scan KK buram, mohon unggah ulang yang lebih jelas."
-                  className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white"
+                  className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-white placeholder:text-slate-500"
                 />
               </label>
 
-              {actionError && <p role="alert" className="font-semibold text-rose-300">{actionError}</p>}
+              {actionError && <p role="alert" className="font-semibold text-rose-400">{actionError}</p>}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 bg-slate-950/80 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 bg-slate-950/90 px-6 py-4">
               <button
                 type="button"
                 disabled={actionBusy}

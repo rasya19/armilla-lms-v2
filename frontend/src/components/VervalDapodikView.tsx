@@ -1,18 +1,23 @@
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
+  Building2,
   CheckCircle2,
   ClipboardCheck,
   Download,
   ExternalLink,
   Eye,
   FileCheck2,
+  FileSignature,
   FileSpreadsheet,
   FileText,
   FileWarning,
+  MessageCircle,
   Printer,
   Search,
+  Settings2,
   ShieldCheck,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -20,7 +25,12 @@ import { DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
 import { SchoolModal } from "./SchoolModal";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
-import type { StudentVervalRecord, VervalDinasStatus, VervalStatus } from "./StudentVervalForm";
+import {
+  compressOrEncodeDocument,
+  type StudentVervalRecord,
+  type VervalDinasStatus,
+  type VervalStatus,
+} from "./StudentVervalForm";
 
 type VervalSummary = {
   total: number;
@@ -36,16 +46,22 @@ type VervalSummary = {
   perluPerbaikanDinas: number;
 };
 
+type VervalSchoolInfo = {
+  id: string;
+  nama: string;
+  npsn: string | null;
+  slug: string;
+  kabupatenKota: string | null;
+  izinVervalDinas: boolean;
+  tanggalCutOffDapodik: string | null;
+  alamatSekolah: string | null;
+  namaKepalaSekolah: string | null;
+  namaOperatorDapodik: string | null;
+  totalSiswaDapodik?: number;
+};
+
 type VervalListResponse = {
-  sekolah: {
-    id: string;
-    nama: string;
-    npsn: string | null;
-    slug: string;
-    kabupatenKota: string | null;
-    izinVervalDinas: boolean;
-    totalSiswaDapodik?: number;
-  };
+  sekolah: VervalSchoolInfo;
   summary: VervalSummary;
   kelasList: Array<{ id: string; nama: string }>;
   rows: StudentVervalRecord[];
@@ -76,12 +92,113 @@ type ParsedDapodikRow = {
   email: string;
 };
 
+const KABUPATEN_KOTA_SUGGESTIONS = [
+  "Kabupaten Bandung",
+  "Kabupaten Bandung Barat",
+  "Kota Bandung",
+  "Kota Cimahi",
+  "Kabupaten Sumedang",
+  "Kabupaten Garut",
+  "Kabupaten Tasikmalaya",
+  "Kota Tasikmalaya",
+  "Kabupaten Ciamis",
+  "Kabupaten Kuningan",
+  "Kabupaten Cirebon",
+  "Kota Cirebon",
+  "Kabupaten Majalengka",
+  "Kabupaten Indramayu",
+  "Kabupaten Subang",
+  "Kabupaten Purwakarta",
+  "Kabupaten Karawang",
+  "Kabupaten Bekasi",
+  "Kota Bekasi",
+  "Kabupaten Bogor",
+  "Kota Bogor",
+  "Kota Depok",
+  "Kabupaten Sukabumi",
+  "Kota Sukabumi",
+  "Kabupaten Cianjur",
+  "Kabupaten Pangandaran",
+  "Kota Banjar",
+  "Kota Jakarta Selatan",
+  "Kota Jakarta Timur",
+  "Kota Jakarta Pusat",
+  "Kota Jakarta Barat",
+  "Kota Jakarta Utara",
+  "Kota Semarang",
+  "Kota Surabaya",
+  "Kota Yogyakarta",
+];
+
+function defaultCutoffIso(): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const cutoffYear = month >= 6 ? year : year - 1;
+  return `${cutoffYear}-08-31`;
+}
+
 function isoToDmy(iso: string | null | undefined): string {
   if (!iso) return "";
   const clean = iso.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return "";
   const [y, m, d] = clean.split("-");
   return `${d}/${m}/${y}`;
+}
+
+function formatLongIndonesianDate(dateInput?: string | null): string {
+  const parsed = dateInput ? new Date(`${dateInput.slice(0, 10)}T00:00:00Z`) : new Date();
+  if (Number.isNaN(parsed.getTime())) return "31 Agustus";
+  return parsed.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatWhatsappPhone(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 8) return "";
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  if (digits.startsWith("8")) return `62${digits}`;
+  if (digits.startsWith("62")) return digits;
+  return digits;
+}
+
+function listMissingDocsLabel(student: StudentVervalRecord): string[] {
+  const missing: string[] = [];
+  if (!student.urlKk) missing.push("Kartu Keluarga (KK)");
+  if (!student.urlAktaKtp) missing.push("Akta Kelahiran / KTP");
+  if (!student.urlIjazah) missing.push("Ijazah / Rapor Terakhir");
+  if (!student.nik) missing.push("NIK (16 digit)");
+  if (!student.noKk) missing.push("Nomor KK (16 digit)");
+  if (!student.namaIbuKandung) missing.push("Nama Ibu Kandung");
+  return missing;
+}
+
+function buildWhatsappReminderUrl(student: StudentVervalRecord, schoolName: string): string {
+  const missingItems = listMissingDocsLabel(student);
+  const missingText =
+    missingItems.length > 0 ? missingItems.join(", ") : "kelengkapan biodata & dokumen pendukung Dapodik";
+  const portalUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/lms/login` : "https://pkbm.siput.id/lms/login";
+  const dinasNote =
+    student.statusVervalDinas === "PERLU_PERBAIKAN" && student.catatanDinas
+      ? `\nCatatan Dinas Pendidikan: ${student.catatanDinas}`
+      : "";
+  const message =
+    `Assalamu'alaikum / Salam sejahtera, ${student.nama} (NISN ${student.nisn}).\n\n` +
+    `Kami dari Operator Dapodik *${schoolName}* mengingatkan agar segera melengkapi berkas administrasi verval Dapodik yang masih kurang:\n` +
+    `- *${missingText}*${dinasNote}\n\n` +
+    `Silakan login ke Portal Warga Belajar melalui tautan berikut untuk mengunggah foto/scan berkas langsung:\n` +
+    `${portalUrl}\n\n` +
+    `Terima kasih atas kerja samanya.`;
+  const phone = formatWhatsappPhone(student.telepon);
+  return phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+    : `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
 
 function normalizeHeader(value: string): string {
@@ -109,23 +226,39 @@ function normalizeExcelDate(raw: unknown): string {
 }
 
 const DAPODIK_FIELD_ALIASES: Array<{ key: keyof ParsedDapodikRow; aliases: string[] }> = [
-  { key: "nama", aliases: ["nama", "nama peserta didik", "nama siswa", "nama lengkap"] },
+  { key: "nama", aliases: ["nama", "nama peserta didik", "nama siswa", "nama lengkap", "nama pd"] },
   { key: "nisn", aliases: ["nisn"] },
-  { key: "nik", aliases: ["nik", "no nik", "nomor nik"] },
-  { key: "noKk", aliases: ["no kk", "nomor kk", "no kartu keluarga", "nomor kartu keluarga", "kk"] },
-  { key: "jenisKelamin", aliases: ["jk", "jenis kelamin", "kelamin"] },
-  { key: "tempatLahir", aliases: ["tempat lahir"] },
+  { key: "nik", aliases: ["nik", "no nik", "nomor nik", "nik peserta didik"] },
+  { key: "noKk", aliases: ["no kk", "nomor kk", "no kartu keluarga", "nomor kartu keluarga", "kk", "no kk peserta didik"] },
+  { key: "jenisKelamin", aliases: ["jk", "jenis kelamin", "kelamin", "l p"] },
+  { key: "tempatLahir", aliases: ["tempat lahir", "tmp lahir"] },
   { key: "tanggalLahir", aliases: ["tanggal lahir", "tgl lahir"] },
-  { key: "namaIbuKandung", aliases: ["nama ibu kandung", "data ibu nama", "nama ibu", "ibu kandung"] },
+  {
+    key: "namaIbuKandung",
+    aliases: [
+      "nama ibu kandung",
+      "data ibu kandung nama",
+      "data ibu nama",
+      "ibu kandung nama",
+      "nama ibu",
+      "ibu kandung",
+    ],
+  },
   { key: "alamatLengkap", aliases: ["alamat", "alamat jalan", "alamat lengkap"] },
   { key: "desaKelurahan", aliases: ["desa kelurahan", "desa", "kelurahan"] },
   { key: "kecamatan", aliases: ["kecamatan"] },
-  { key: "sekolahAsal", aliases: ["sekolah asal", "asal sekolah"] },
+  { key: "sekolahAsal", aliases: ["sekolah asal", "asal sekolah", "sekolah asal sd smp"] },
   { key: "npsnAsal", aliases: ["npsn sekolah asal", "npsn asal"] },
-  { key: "nomorIjazahTerakhir", aliases: ["no ijazah", "nomor ijazah", "no seri ijazah", "nomor ijazah terakhir"] },
-  { key: "tanggalMasuk", aliases: ["tanggal masuk", "tgl masuk", "tmt masuk"] },
-  { key: "jenjang", aliases: ["jenjang", "paket", "rombel saat ini", "rombel", "tingkat pendidikan"] },
-  { key: "telepon", aliases: ["hp", "no hp", "telepon", "no telepon", "nomor telepon", "nomor hp"] },
+  {
+    key: "nomorIjazahTerakhir",
+    aliases: ["no seri ijazah", "nomor seri ijazah", "no ijazah", "nomor ijazah", "nomor ijazah terakhir", "seri ijazah"],
+  },
+  { key: "tanggalMasuk", aliases: ["tanggal masuk", "tgl masuk", "tmt masuk", "tanggal registrasi", "tanggal mulai masuk"] },
+  {
+    key: "jenjang",
+    aliases: ["rombel saat ini", "rombongan belajar", "rombel", "jenjang", "paket", "tingkat pendidikan", "tingkat"],
+  },
+  { key: "telepon", aliases: ["hp", "no hp", "telepon", "no telepon", "nomor telepon", "nomor hp", "no wa"] },
   { key: "email", aliases: ["email", "e mail"] },
 ];
 
@@ -133,6 +266,9 @@ async function parseDapodikWorkbook(file: File): Promise<{
   rows: ParsedDapodikRow[];
   skipped: Array<{ number: number; nama: string; reason: string }>;
   totalRowsInSheet: number;
+  detectedHeaderRow: number;
+  mappedFieldCount: number;
+  sheetName: string;
 }> {
   if (file.size > 10_000_000) {
     throw new Error("Ukuran file Excel maksimal 10 MB.");
@@ -140,13 +276,49 @@ async function parseDapodikWorkbook(file: File): Promise<{
   const XLSX = await import("xlsx");
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array", raw: true });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) throw new Error("Workbook Excel tidak memiliki sheet.");
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet || !sheet["!ref"]) throw new Error("Sheet Excel kosong.");
+  if (!workbook.SheetNames.length) throw new Error("Workbook Excel tidak memiliki sheet.");
 
+  // Smart sheet selection: prioritize sheets named Peserta Didik / Dapodik or first matching valid header
+  const prioritizedSheets = [...workbook.SheetNames].sort((a, b) => {
+    const score = (name: string) => {
+      const n = name.toLowerCase();
+      if (n.includes("peserta didik") || n.includes("dapodik")) return 0;
+      if (n.includes("siswa") || n.includes("verval")) return 1;
+      return 2;
+    };
+    return score(a) - score(b);
+  });
+
+  let chosenSheetName = prioritizedSheets[0];
+  let chosenHeaderRow = -1;
+
+  for (const name of prioritizedSheets) {
+    const candidate = workbook.Sheets[name];
+    if (!candidate || !candidate["!ref"]) continue;
+    const range = XLSX.utils.decode_range(candidate["!ref"]);
+    const colCount = Math.min(range.e.c - range.s.c + 1, 120);
+    for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 25); r++) {
+      const labels = Array.from({ length: colCount }, (_, idx) => {
+        const cell = candidate[XLSX.utils.encode_cell({ r, c: range.s.c + idx })];
+        return normalizeHeader(cell ? XLSX.utils.format_cell(cell).trim() : "");
+      });
+      const hasName = labels.some((l) => ["nama", "nama peserta didik", "nama siswa", "nama lengkap"].includes(l));
+      const hasId = labels.some((l) => ["nisn", "nik"].includes(l));
+      if (hasName && hasId) {
+        chosenSheetName = name;
+        chosenHeaderRow = r;
+        break;
+      }
+    }
+    if (chosenHeaderRow !== -1) break;
+  }
+
+  const sheet = workbook.Sheets[chosenSheetName];
+  if (!sheet || !sheet["!ref"]) throw new Error("Sheet Excel kosong.");
   const range = XLSX.utils.decode_range(sheet["!ref"]);
-  const colCount = Math.min(range.e.c - range.s.c + 1, 100);
+  const colCount = Math.min(range.e.c - range.s.c + 1, 120);
+  const headerRow = chosenHeaderRow === -1 ? range.s.r : chosenHeaderRow;
+
   const getCellText = (r: number, c: number) => {
     const cell = sheet[XLSX.utils.encode_cell({ r, c })];
     return cell ? XLSX.utils.format_cell(cell).trim() : "";
@@ -155,17 +327,6 @@ async function parseDapodikWorkbook(file: File): Promise<{
     const cell = sheet[XLSX.utils.encode_cell({ r, c })];
     return cell ? cell.v : "";
   };
-
-  let headerRow = range.s.r;
-  for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 15); r++) {
-    const labels = Array.from({ length: colCount }, (_, idx) => normalizeHeader(getCellText(r, range.s.c + idx)));
-    const hasName = labels.some((l) => ["nama", "nama peserta didik", "nama siswa", "nama lengkap"].includes(l));
-    const hasId = labels.some((l) => ["nisn", "nik"].includes(l));
-    if (hasName && hasId) {
-      headerRow = r;
-      break;
-    }
-  }
 
   const merges = sheet["!merges"] ?? [];
   const twoRows = merges.some((m) => m.s.r === headerRow && m.e.r === headerRow + 1);
@@ -186,10 +347,22 @@ async function parseDapodikWorkbook(file: File): Promise<{
         break;
       }
     }
+    if (!colMap.has(spec.key)) {
+      for (const alias of spec.aliases) {
+        if (alias.length < 5) continue;
+        const idx = headers.findIndex((h) => h.includes(alias));
+        if (idx !== -1 && !Array.from(colMap.values()).includes(range.s.c + idx)) {
+          colMap.set(spec.key, range.s.c + idx);
+          break;
+        }
+      }
+    }
   }
 
   if (!colMap.has("nama") || (!colMap.has("nisn") && !colMap.has("nik"))) {
-    throw new Error("Header kolom Dapodik tidak dikenali. Pastikan tersedia kolom Nama serta NISN atau NIK.");
+    throw new Error(
+      "Header kolom Dapodik tidak dikenali. Pastikan tersedia kolom Nama serta NISN atau NIK (header otomatis dicari hingga baris ke-25).",
+    );
   }
 
   const firstDataRow = headerRow + (twoRows ? 2 : 1);
@@ -200,13 +373,18 @@ async function parseDapodikWorkbook(file: File): Promise<{
   for (let r = firstDataRow; r <= range.e.r; r++) {
     const rowValues = Array.from({ length: colCount }, (_, idx) => getCellText(r, range.s.c + idx));
     if (!rowValues.some(Boolean)) continue;
-    totalRowsInSheet += 1;
-    if (rows.length >= 1000) continue;
 
     const readText = (key: keyof ParsedDapodikRow) => {
       const col = colMap.get(key);
-      return col === undefined ? "" : getCellText(r, col);
+      return col === undefined ? "" : getCellText(r, col).replace(/^'+/, "");
     };
+    const nama = readText("nama");
+    const normNama = normalizeHeader(nama);
+    if (["nama", "nama peserta didik", "jumlah", "total"].includes(normNama)) continue;
+
+    totalRowsInSheet += 1;
+    if (rows.length >= 1000) continue;
+
     const readNumericId = (key: keyof ParsedDapodikRow) => readText(key).replace(/\D/g, "");
     const readDate = (key: keyof ParsedDapodikRow) => {
       const col = colMap.get(key);
@@ -215,7 +393,6 @@ async function parseDapodikWorkbook(file: File): Promise<{
       return typeof raw === "number" ? normalizeExcelDate(raw) : normalizeExcelDate(getCellText(r, col));
     };
 
-    const nama = readText("nama");
     const nisn = readNumericId("nisn");
     const nik = readNumericId("nik");
 
@@ -262,7 +439,14 @@ async function parseDapodikWorkbook(file: File): Promise<{
     throw new Error("Tidak ada baris valid yang dapat diimpor dari file Dapodik tersebut.");
   }
 
-  return { rows, skipped, totalRowsInSheet };
+  return {
+    rows,
+    skipped,
+    totalRowsInSheet,
+    detectedHeaderRow: headerRow + 1,
+    mappedFieldCount: colMap.size,
+    sheetName: chosenSheetName,
+  };
 }
 
 function statusPkbmMeta(status: VervalStatus): { label: string; cls: string } {
@@ -296,6 +480,7 @@ type ModalEditState = {
   tempatLahir: string;
   tanggalLahir: string;
   jenisKelamin: string;
+  telepon: string;
   alamatLengkap: string;
   desaKelurahan: string;
   kecamatan: string;
@@ -311,6 +496,15 @@ type ModalEditState = {
   catatanVerval: string;
 };
 
+type SchoolSettingsForm = {
+  kabupatenKota: string;
+  tanggalCutOffDapodik: string;
+  izinVervalDinas: boolean;
+  alamatSekolah: string;
+  namaKepalaSekolah: string;
+  namaOperatorDapodik: string;
+};
+
 function toModalEditState(s: StudentVervalRecord): ModalEditState {
   return {
     nik: s.nik ?? "",
@@ -319,6 +513,7 @@ function toModalEditState(s: StudentVervalRecord): ModalEditState {
     tempatLahir: s.tempatLahir ?? "",
     tanggalLahir: isoToDmy(s.tanggalLahir),
     jenisKelamin: s.jenisKelamin ?? "",
+    telepon: s.telepon ?? "",
     alamatLengkap: s.alamatLengkap ?? "",
     desaKelurahan: s.desaKelurahan ?? "",
     kecamatan: s.kecamatan ?? "",
@@ -359,12 +554,28 @@ export function VervalDapodikView() {
   const [toast, setToast] = useState("");
   const [exporting, setExporting] = useState(false);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsForm, setSettingsForm] = useState<SchoolSettingsForm>({
+    kabupatenKota: "",
+    tanggalCutOffDapodik: defaultCutoffIso(),
+    izinVervalDinas: true,
+    alamatSekolah: "",
+    namaKepalaSekolah: "",
+    namaOperatorDapodik: "",
+  });
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+
   const [activeStudent, setActiveStudent] = useState<StudentVervalRecord | null>(null);
   const [editForm, setEditForm] = useState<ModalEditState | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState<DocTabKey | null>(null);
   const [modalError, setModalError] = useState("");
   const [activeDocTab, setActiveDocTab] = useState<DocTabKey>("kk");
+
   const [printOpen, setPrintOpen] = useState(false);
+  const [sptjmOpen, setSptjmOpen] = useState(false);
+  const [sptjmOnlyVerified, setSptjmOnlyVerified] = useState(false);
 
   const [importOpen, setImportOpen] = useState(false);
   const [importFileName, setImportFileName] = useState("");
@@ -372,6 +583,9 @@ export function VervalDapodikView() {
     rows: ParsedDapodikRow[];
     skipped: Array<{ number: number; nama: string; reason: string }>;
     totalRowsInSheet: number;
+    detectedHeaderRow: number;
+    mappedFieldCount: number;
+    sheetName: string;
   } | null>(null);
   const [importParseBusy, setImportParseBusy] = useState(false);
   const [importSubmitBusy, setImportSubmitBusy] = useState(false);
@@ -393,7 +607,7 @@ export function VervalDapodikView() {
         setData(payload);
       })
       .catch((failure: unknown) => {
-        if (!isCallerAborted(failure, controller.signal) && !cached) {
+        if (!isCallerAborted(failure, controller.signal)) {
           setError(describeFetchError(failure, "Data verval Dapodik belum tersedia."));
         }
       });
@@ -405,6 +619,49 @@ export function VervalDapodikView() {
     const t = window.setTimeout(() => setToast(""), 5000);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  function openSettingsModal() {
+    if (data?.sekolah) {
+      setSettingsForm({
+        kabupatenKota: data.sekolah.kabupatenKota ?? "",
+        tanggalCutOffDapodik: data.sekolah.tanggalCutOffDapodik ?? defaultCutoffIso(),
+        izinVervalDinas: data.sekolah.izinVervalDinas,
+        alamatSekolah: data.sekolah.alamatSekolah ?? "",
+        namaKepalaSekolah: data.sekolah.namaKepalaSekolah ?? "",
+        namaOperatorDapodik: data.sekolah.namaOperatorDapodik ?? "",
+      });
+    }
+    setSettingsError("");
+    setSettingsOpen(true);
+  }
+
+  async function saveSchoolSettings() {
+    setSettingsBusy(true);
+    setSettingsError("");
+    try {
+      const response = await fetchWithTimeout("/api/verval/pengaturan-sekolah", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settingsForm),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+        sekolah?: VervalSchoolInfo;
+      } | null;
+      if (!response.ok || !body?.sekolah) {
+        throw new Error(body?.error || "Gagal menyimpan pengaturan sinkronisasi Dinas.");
+      }
+      invalidateCache(["/api/verval"]);
+      setToast(body.message || "Pengaturan sinkronisasi Dinas berhasil disimpan.");
+      setSettingsOpen(false);
+      setReloadTick((v) => v + 1);
+    } catch (failure: unknown) {
+      setSettingsError(describeFetchError(failure, "Gagal memperbarui pengaturan sinkronisasi Dinas."));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
 
   function openStudentModal(student: StudentVervalRecord) {
     setActiveStudent(student);
@@ -421,6 +678,24 @@ export function VervalDapodikView() {
               ? "pindah"
               : "kk",
     );
+  }
+
+  async function handleOperatorFileUpload(
+    tab: DocTabKey,
+    fieldKey: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah",
+    file: File | undefined,
+  ) {
+    if (!file || !editForm) return;
+    setUploadingDoc(tab);
+    setModalError("");
+    try {
+      const encoded = await compressOrEncodeDocument(file);
+      setEditForm((prev) => (prev ? { ...prev, [fieldKey]: encoded } : prev));
+    } catch (failure: unknown) {
+      setModalError(failure instanceof Error ? failure.message : "Gagal memproses berkas.");
+    } finally {
+      setUploadingDoc(null);
+    }
   }
 
   async function saveStudentVerval(overrideStatus?: VervalStatus) {
@@ -539,13 +814,16 @@ export function VervalDapodikView() {
 
   const summary = data?.summary;
   const rows = data?.rows ?? [];
+  const sptjmRows = sptjmOnlyVerified
+    ? rows.filter((r) => r.statusVerval === "TERVERIFIKASI_PKBM" || r.statusVerval === "SIAP_VERVAL")
+    : rows;
 
   return (
     <div className="space-y-6">
       <DashboardHero
         eyebrow="REKONSILIASI DAPODIK & VERVAL ADMINISTRASI"
         title="Verval Data Dapodik & Dinas Pendidikan"
-        description="Impor Excel Peserta Didik Dapodik langsung ke tabel Siswa terpadu, pantau selisih berkas fisik (KK, Akta/KTP, Ijazah, Surat Pindah), dan sinkronkan verifikasi Dinas."
+        description="Atur wilayah Dinas mandiri, impor file Excel Daftar Peserta Didik Dapodik langsung ke tabel Siswa terpadu, tagih kelengkapan berkas via WhatsApp, dan cetak SPTJM Kepala PKBM."
         action={
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -560,6 +838,15 @@ export function VervalDapodikView() {
             >
               <Upload size={15} aria-hidden="true" />
               Impor Excel Dapodik
+            </button>
+            <button
+              type="button"
+              onClick={() => setSptjmOpen(true)}
+              disabled={!data}
+              className="dashboard-hero-action dashboard-hero-secondary disabled:opacity-50"
+            >
+              <FileSignature size={15} aria-hidden="true" />
+              Cetak SPTJM &amp; Berita Acara Verval
             </button>
             <button
               type="button"
@@ -582,6 +869,41 @@ export function VervalDapodikView() {
           </div>
         }
       />
+
+      {/* Panel Pengaturan Sinkronisasi Dinas Mandiri */}
+      <section className="dashboard-glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4 sm:px-6">
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+            <Building2 size={17} />
+          </span>
+          <div>
+            <p className="font-extrabold text-slate-900">
+              Pengaturan Sinkronisasi Dinas Pendidikan &amp; Profil SPTJM
+            </p>
+            <p className="mt-0.5 text-slate-600">
+              Wilayah:{" "}
+              <strong className="text-slate-900">{data?.sekolah.kabupatenKota || "Belum ditetapkan"}</strong>
+              {" · "}Cut-Off:{" "}
+              <strong className="text-slate-900">
+                {formatLongIndonesianDate(data?.sekolah.tanggalCutOffDapodik)}
+              </strong>
+              {" · "}Sinkron Dinas:{" "}
+              <strong className={data?.sekolah.izinVervalDinas ? "text-emerald-700" : "text-rose-700"}>
+                {data?.sekolah.izinVervalDinas ? "Aktif" : "Dinonaktifkan"}
+              </strong>
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={openSettingsModal}
+          disabled={!data}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+        >
+          <Settings2 size={14} aria-hidden="true" />
+          Atur Wilayah &amp; Sinkron Dinas
+        </button>
+      </section>
 
       {toast && (
         <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-300 bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg">
@@ -736,8 +1058,8 @@ export function VervalDapodikView() {
           <TableSkeleton rows={5} columns={6} />
         ) : rows.length === 0 ? (
           <EmptyState
-            title="Belum ada data verval yang sesuai"
-            description="Coba ubah filter status/berkas atau gunakan tombol Impor Excel Dapodik untuk menarik data warga belajar."
+            title="Belum ada data PKBM atau warga belajar yang disinkronkan"
+            description="Gunakan tombol Impor Excel Dapodik atau tambahkan warga belajar melalui Data Siswa / PPDB untuk mulai melakukan verval berkas."
           />
         ) : (
           <>
@@ -757,6 +1079,10 @@ export function VervalDapodikView() {
                   {rows.map((student) => {
                     const pkbmMeta = statusPkbmMeta(student.statusVerval);
                     const dinasMeta = statusDinasMeta(student.statusVervalDinas);
+                    const needsWaReminder =
+                      student.statusVerval === "BELUM_LENGKAP" ||
+                      student.statusVervalDinas === "PERLU_PERBAIKAN" ||
+                      !student.berkasLengkap;
                     return (
                       <tr key={student.id} className="hover:bg-indigo-50/40">
                         <td className="px-4 py-3.5">
@@ -828,14 +1154,32 @@ export function VervalDapodikView() {
                           </div>
                         </td>
                         <td className="px-4 py-3.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => openStudentModal(student)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100"
-                          >
-                            <Eye size={14} aria-hidden="true" />
-                            Lihat / Verifikasi
-                          </button>
+                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                            {needsWaReminder && (
+                              <a
+                                href={buildWhatsappReminderUrl(student, data.sekolah.nama)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={
+                                  student.telepon
+                                    ? `Kirim pengingat WA ke ${student.telepon}`
+                                    : "No. HP siswa belum diisi — buka WhatsApp untuk pilih kontak"
+                                }
+                                className="inline-flex items-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                              >
+                                <MessageCircle size={13} aria-hidden="true" />
+                                Tagih via WA
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => openStudentModal(student)}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100"
+                            >
+                              <Eye size={14} aria-hidden="true" />
+                              Lihat / Verifikasi
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -871,6 +1215,127 @@ export function VervalDapodikView() {
         )}
       </section>
 
+      {/* Modal Pengaturan Sinkronisasi Dinas Mandiri */}
+      {settingsOpen && (
+        <SchoolModal
+          busy={settingsBusy}
+          title="Pengaturan Sinkronisasi Dinas Pendidikan"
+          titleIcon={<Settings2 size={20} className="text-indigo-600" />}
+          onClose={() => {
+            if (!settingsBusy) setSettingsOpen(false);
+          }}
+        >
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-7 sm:py-5">
+            <label className="block text-xs font-bold text-slate-700">
+              Kabupaten / Kota Wilayah Dinas
+              <input
+                type="text"
+                list="kabupaten-kota-list"
+                maxLength={150}
+                value={settingsForm.kabupatenKota}
+                onChange={(e) => setSettingsForm({ ...settingsForm, kabupatenKota: e.target.value })}
+                placeholder="Contoh: Kabupaten Bandung / Kabupaten Kuningan"
+                className="glass-input mt-1 w-full rounded-xl px-3 py-2.5 text-sm"
+              />
+              <datalist id="kabupaten-kota-list">
+                {KABUPATEN_KOTA_SUGGESTIONS.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="block text-xs font-bold text-slate-700">
+              Tanggal Cut-Off Dapodik (Default: 31 Agustus)
+              <input
+                type="date"
+                value={settingsForm.tanggalCutOffDapodik}
+                onChange={(e) => setSettingsForm({ ...settingsForm, tanggalCutOffDapodik: e.target.value })}
+                className="glass-input mt-1 w-full rounded-xl px-3 py-2.5 text-sm"
+              />
+            </label>
+
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/90 p-3.5">
+              <div>
+                <p className="text-xs font-extrabold text-slate-900">
+                  Sinkronkan Rekap Administrasi ke Dashboard Dinas Pendidikan
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-600">
+                  Hanya mengirim data biodata Dapodik &amp; 4 berkas dokumen (zero data presensi/nilai KBM).
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={settingsForm.izinVervalDinas}
+                onChange={(e) => setSettingsForm({ ...settingsForm, izinVervalDinas: e.target.checked })}
+                className="h-5 w-5 accent-indigo-600"
+              />
+            </label>
+
+            <div className="space-y-3 border-t border-slate-200 pt-3">
+              <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                Identitas Kop &amp; Penandatangan SPTJM (Opsional)
+              </p>
+              <label className="block text-xs font-bold text-slate-700">
+                Alamat Lengkap PKBM
+                <input
+                  type="text"
+                  maxLength={300}
+                  value={settingsForm.alamatSekolah}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, alamatSekolah: e.target.value })}
+                  placeholder="Jl. Pendidikan No. 12, Kec. ..."
+                  className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-bold text-slate-700">
+                  Nama Kepala PKBM
+                  <input
+                    type="text"
+                    maxLength={150}
+                    value={settingsForm.namaKepalaSekolah}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, namaKepalaSekolah: e.target.value })}
+                    placeholder="Contoh: H. Ahmad Fauzi, M.Pd."
+                    className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="block text-xs font-bold text-slate-700">
+                  Nama Operator Dapodik
+                  <input
+                    type="text"
+                    maxLength={150}
+                    value={settingsForm.namaOperatorDapodik}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, namaOperatorDapodik: e.target.value })}
+                    placeholder="Contoh: Rina Kartika, S.Kom."
+                    className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {settingsError && <p role="alert" className="text-xs font-semibold text-rose-700">{settingsError}</p>}
+          </div>
+
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/90 px-5 py-3.5 sm:px-7">
+            <button
+              type="button"
+              disabled={settingsBusy}
+              onClick={() => setSettingsOpen(false)}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={settingsBusy}
+              onClick={() => void saveSchoolSettings()}
+              className="master-primary rounded-xl px-4 py-2 text-xs disabled:opacity-50"
+            >
+              {settingsBusy ? "Menyimpan..." : "Simpan Pengaturan"}
+            </button>
+          </div>
+        </SchoolModal>
+      )}
+
       {/* Modal Impor Excel Dapodik Terpadu */}
       {importOpen && (
         <SchoolModal
@@ -884,9 +1349,9 @@ export function VervalDapodikView() {
         >
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-7 sm:py-5">
             <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5 text-xs leading-5 text-indigo-950">
-              <p className="font-extrabold">Satu Tabel Siswa Terpadu (Zero Double-Input):</p>
+              <p className="font-extrabold">Smart Parser File Asli Dapodik (Zero Double-Input):</p>
               <p className="mt-1">
-                Unggah file <span className="font-mono font-bold">.xlsx / .xls</span> ekspor Peserta Didik dari Dapodik. Sistem otomatis mencocokkan NIK/NISN ke tabel <strong>Siswa</strong>, mengisi biodata awal LMS, menandai sumber Dapodik, dan memperbarui angka <em>Hasil Tarik Dapodik</em> tanpa menimpa berkas fisik yang sudah diunggah.
+                Unggah file <span className="font-mono font-bold">.xlsx / .xls</span> ekspor <strong>Daftar Peserta Didik</strong> langsung dari Dapodik (otomatis melewati baris kop/judul sekolah 1–5 dan memetakan kolom <em>Nama, NIK, NISN, JK, Tempat/Tgl Lahir, Nama Ibu Kandung, Rombel Saat Ini, Sekolah Asal, No Seri Ijazah</em>).
               </p>
             </div>
 
@@ -908,7 +1373,7 @@ export function VervalDapodikView() {
               />
             </label>
 
-            {importParseBusy && <p className="text-xs font-semibold text-indigo-700">Membaca lembar Excel Dapodik...</p>}
+            {importParseBusy && <p className="text-xs font-semibold text-indigo-700">Mencari header &amp; membaca lembar Excel Dapodik...</p>}
             {importError && (
               <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-semibold text-rose-800">
                 {importError}
@@ -917,9 +1382,11 @@ export function VervalDapodikView() {
 
             {importParsed && (
               <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
+                <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
                   <span className="font-extrabold">{importParsed.rows.length} baris siap disinkronkan</span>
-                  <span>· Total baris di sheet: {importParsed.totalRowsInSheet}</span>
+                  <span>· Sheet: <strong>{importParsed.sheetName}</strong></span>
+                  <span>· Header terdeteksi di baris ke-{importParsed.detectedHeaderRow} ({importParsed.mappedFieldCount} kolom)</span>
+                  <span>· Total baris: {importParsed.totalRowsInSheet}</span>
                   {importParsed.skipped.length > 0 && (
                     <span className="font-bold text-amber-800">· {importParsed.skipped.length} baris dilewati</span>
                   )}
@@ -933,7 +1400,7 @@ export function VervalDapodikView() {
                         <th className="px-3 py-2">NISN</th>
                         <th className="px-3 py-2">NIK</th>
                         <th className="px-3 py-2">Ibu Kandung</th>
-                        <th className="px-3 py-2">Jenjang/Rombel</th>
+                        <th className="px-3 py-2">Rombel / Jenjang</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -1058,6 +1525,17 @@ export function VervalDapodikView() {
                   <option value="P">P</option>
                 </select>
               </label>
+              <label className="text-xs font-bold text-slate-700">
+                No. HP / WhatsApp Siswa
+                <input
+                  type="tel"
+                  maxLength={30}
+                  value={editForm.telepon}
+                  onChange={(e) => setEditForm({ ...editForm, telepon: e.target.value })}
+                  placeholder="08xxxxxxxxxx"
+                  className="glass-input mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
               <label className="text-xs font-bold text-slate-700 sm:col-span-2">
                 Alamat Lengkap
                 <input
@@ -1119,7 +1597,7 @@ export function VervalDapodikView() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                 <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                  <FileText size={14} /> Pratinjau &amp; Tautan 4 Berkas Dokumen
+                  <FileText size={14} /> Unggah Langsung &amp; Pratinjau 4 Berkas Dokumen
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {([
@@ -1157,13 +1635,38 @@ export function VervalDapodikView() {
                 const currentUrl = editForm[fieldKey];
                 return (
                   <div className="mt-3 space-y-3">
-                    <input
-                      type="text"
-                      value={currentUrl.startsWith("data:") ? "[Berkas Terunggah]" : currentUrl}
-                      onChange={(e) => setEditForm({ ...editForm, [fieldKey]: e.target.value })}
-                      placeholder="Tempel tautan URL dokumen (https://...) jika melengkapi sebagai Operator"
-                      className="glass-input w-full rounded-xl px-3 py-2 text-xs"
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={currentUrl.startsWith("data:") ? "[Berkas Terunggah]" : currentUrl}
+                        onChange={(e) => setEditForm({ ...editForm, [fieldKey]: e.target.value })}
+                        placeholder="Tempel tautan URL dokumen (https://...) atau pilih file foto/PDF di samping"
+                        className="glass-input min-w-[220px] flex-1 rounded-xl px-3 py-2 text-xs"
+                      />
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100">
+                        <Upload size={13} aria-hidden="true" />
+                        {uploadingDoc === activeDocTab ? "Mengompres..." : "Upload File / Foto"}
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          disabled={modalBusy || uploadingDoc !== null}
+                          onChange={(e) => {
+                            void handleOperatorFileUpload(activeDocTab, fieldKey, e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                          className="sr-only"
+                        />
+                      </label>
+                      {currentUrl.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setEditForm({ ...editForm, [fieldKey]: "" })}
+                          className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                        >
+                          <Trash2 size={13} /> Hapus
+                        </button>
+                      )}
+                    </div>
                     {!currentUrl.trim() ? (
                       <p className="py-5 text-center text-xs text-slate-500">Berkas belum dilampirkan.</p>
                     ) : currentUrl.startsWith("data:application/pdf") || currentUrl.toLowerCase().endsWith(".pdf") ? (
@@ -1263,6 +1766,254 @@ export function VervalDapodikView() {
         </SchoolModal>
       )}
 
+      {/* Modal Cetak SPTJM Kepala PKBM + Berita Acara + Lampiran Daftar Nominatif */}
+      {sptjmOpen && data && summary && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-6 text-slate-900 sm:p-10">
+          <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div>
+              <h3 className="text-lg font-extrabold">Paket Dokumen Verval (SPTJM Kepala PKBM + Daftar Nominatif)</h3>
+              <p className="text-xs text-slate-600">
+                Siap dicetak atau disimpan sebagai PDF resmi untuk diserahkan ke Bidang Dikmas Dinas Pendidikan.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={sptjmOnlyVerified}
+                  onChange={(e) => setSptjmOnlyVerified(e.target.checked)}
+                  className="accent-indigo-600"
+                />
+                Lampiran hanya Terverifikasi / Siap Verval
+              </label>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700"
+              >
+                <Printer size={14} /> Cetak / Simpan PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setSptjmOpen(false)}
+                className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+
+          {/* Halaman 1: Kop Resmi + Naskah SPTJM & Berita Acara Rekonsiliasi */}
+          <div className="mx-auto max-w-4xl text-sm leading-relaxed">
+            <header className="border-b-4 border-double border-slate-900 pb-4 text-center">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-700">
+                PUSAT KEGIATAN BELAJAR MASYARAKAT (PKBM)
+              </p>
+              <h1 className="mt-1 text-2xl font-black uppercase tracking-wide">{data.sekolah.nama}</h1>
+              <p className="mt-1 text-xs text-slate-700">
+                NPSN: <strong>{data.sekolah.npsn ?? "—"}</strong>
+                {data.sekolah.alamatSekolah ? ` · ${data.sekolah.alamatSekolah}` : ""}
+                {data.sekolah.kabupatenKota ? ` · ${data.sekolah.kabupatenKota}` : ""}
+              </p>
+            </header>
+
+            <section className="mt-6 text-center">
+              <h2 className="text-base font-black uppercase underline underline-offset-4">
+                SURAT PERNYATAAN TANGGUNG JAWAB MUTLAK (SPTJM)
+              </h2>
+              <p className="mt-1 text-xs font-bold uppercase text-slate-700">
+                DAN BERITA ACARA REKONSILIASI VERIFIKASI VALIDASI DATA DAPODIK KESETARAAN
+              </p>
+            </section>
+
+            <section className="mt-6 space-y-4 text-justify text-xs leading-6">
+              <p>Saya yang bertanda tangan di bawah ini:</p>
+              <table className="w-full text-xs">
+                <tbody>
+                  <tr>
+                    <td className="w-48 py-0.5 font-semibold">Nama Kepala PKBM</td>
+                    <td className="w-4">:</td>
+                    <td>{data.sekolah.namaKepalaSekolah || ".........................................................."}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-0.5 font-semibold">Jabatan</td>
+                    <td>:</td>
+                    <td>Kepala {data.sekolah.nama}</td>
+                  </tr>
+                  <tr>
+                    <td className="py-0.5 font-semibold">NPSN / Wilayah</td>
+                    <td>:</td>
+                    <td>
+                      {data.sekolah.npsn ?? "—"} / {data.sekolah.kabupatenKota ?? "Belum ditetapkan"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-0.5 font-semibold">Tanggal Cut-Off Acuan</td>
+                    <td>:</td>
+                    <td>{formatLongIndonesianDate(data.sekolah.tanggalCutOffDapodik)}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <p>
+                Dengan ini menyatakan dengan sesungguhnya bahwa seluruh data warga belajar yang diimpor dari Data Pokok
+                Pendidikan (Dapodik) dan diajukan untuk Verifikasi dan Validasi (Verval) Administrasi ke Dinas
+                Pendidikan {data.sekolah.kabupatenKota ?? "Kabupaten/Kota"} telah melalui pemeriksaan fisik dokumen
+                kependudukan (KK, Akta Kelahiran/KTP) serta ijazah asal oleh Operator Dapodik dan Kepala Lembaga dengan
+                hasil rekonsiliasi sebagai berikut:
+              </p>
+
+              <table className="w-full border-collapse border border-slate-800 text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-bold">
+                    <th className="border border-slate-800 px-3 py-2 text-left">Uraian Hasil Rekonsiliasi Administrasi</th>
+                    <th className="w-36 border border-slate-800 px-3 py-2 text-right">Jumlah</th>
+                    <th className="w-28 border border-slate-800 px-3 py-2 text-center">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-slate-800 px-3 py-2">Total Warga Belajar Tercatat di Dapodik</td>
+                    <td className="border border-slate-800 px-3 py-2 text-right font-bold">{summary.totalDapodik} Siswa</td>
+                    <td className="border border-slate-800 px-3 py-2 text-center">Basis Tarikan</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-800 px-3 py-2">Total Warga Belajar Aktif di Tabel Terpadu LMS</td>
+                    <td className="border border-slate-800 px-3 py-2 text-right font-bold">{summary.total} Siswa</td>
+                    <td className="border border-slate-800 px-3 py-2 text-center">Aktif</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-800 px-3 py-2">
+                      Jumlah Berkas Fisik Valid &amp; Lengkap (KK, Akta/KTP, Ijazah)
+                    </td>
+                    <td className="border border-slate-800 px-3 py-2 text-right font-bold">{summary.berkasLengkap} Siswa</td>
+                    <td className="border border-slate-800 px-3 py-2 text-center">Valid Fisik</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-800 px-3 py-2">
+                      Selisih Warga Belajar Belum Lengkap / Tanpa Berkas Fisik
+                    </td>
+                    <td className="border border-slate-800 px-3 py-2 text-right font-bold">
+                      {summary.selisihTanpaBerkas} Siswa
+                    </td>
+                    <td className="border border-slate-800 px-3 py-2 text-center">Tindak Lanjut</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-800 px-3 py-2">Status Terverifikasi Internal PKBM / Lolos Dinas</td>
+                    <td className="border border-slate-800 px-3 py-2 text-right font-bold">
+                      {summary.terverifikasiPkbm} / {summary.lolosDinas} Siswa
+                    </td>
+                    <td className="border border-slate-800 px-3 py-2 text-center">Berjenjang</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <p>
+                Apabila di kemudian hari ditemukan ketidaksesuaian data, warga belajar fiktif, atau pemalsuan dokumen
+                administrasi, saya bersedia bertanggung jawab penuh secara hukum dan administratif sesuai peraturan
+                perundang-undangan yang berlaku.
+              </p>
+            </section>
+
+            <div className="mt-10 grid grid-cols-2 gap-8 text-center text-xs">
+              <div>
+                <p>Mengetahui / Pemeriksa Data,</p>
+                <p className="font-bold">Operator Dapodik PKBM</p>
+                <div className="h-20" />
+                <p className="font-bold underline">
+                  {data.sekolah.namaOperatorDapodik || "( ........................................ )"}
+                </p>
+              </div>
+              <div>
+                <p>
+                  {data.sekolah.kabupatenKota ?? "Tempat"}, {formatLongIndonesianDate()}
+                </p>
+                <p className="font-bold">Kepala {data.sekolah.nama}</p>
+                <p className="mt-6 text-[10px] italic text-slate-500">Meterai Rp10.000</p>
+                <div className="h-10" />
+                <p className="font-bold underline">
+                  {data.sekolah.namaKepalaSekolah || "( ........................................ )"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Halaman 2: Lampiran Daftar Nominatif */}
+          <div className="mx-auto mt-12 max-w-5xl print:break-before-page">
+            <div className="border-b-2 border-slate-900 pb-3">
+              <p className="text-xs font-extrabold uppercase tracking-wide">
+                LAMPIRAN SPTJM — DAFTAR NOMINATIF WARGA BELAJAR ({data.sekolah.nama})
+              </p>
+              <p className="mt-0.5 text-xs text-slate-600">
+                Menampilkan {sptjmRows.length} warga belajar · NPSN: {data.sekolah.npsn ?? "—"}
+              </p>
+            </div>
+
+            <table className="mt-4 w-full border-collapse border border-slate-800 text-[11px]">
+              <thead>
+                <tr className="bg-slate-100 text-left font-bold">
+                  <th className="border border-slate-800 px-2 py-1.5 text-center">No</th>
+                  <th className="border border-slate-800 px-2 py-1.5">Nama Warga Belajar</th>
+                  <th className="border border-slate-800 px-2 py-1.5">NISN</th>
+                  <th className="border border-slate-800 px-2 py-1.5">NIK</th>
+                  <th className="border border-slate-800 px-2 py-1.5">No. KK</th>
+                  <th className="border border-slate-800 px-2 py-1.5">Kelas / Paket</th>
+                  <th className="border border-slate-800 px-2 py-1.5">Berkas Fisik</th>
+                  <th className="border border-slate-800 px-2 py-1.5">Status PKBM</th>
+                  <th className="border border-slate-800 px-2 py-1.5">Status Dinas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sptjmRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="border border-slate-800 px-3 py-4 text-center text-slate-500">
+                      Tidak ada baris warga belajar yang cocok dengan filter lampiran.
+                    </td>
+                  </tr>
+                ) : (
+                  sptjmRows.map((row, idx) => (
+                    <tr key={row.id}>
+                      <td className="border border-slate-800 px-2 py-1 text-center">{idx + 1}</td>
+                      <td className="border border-slate-800 px-2 py-1 font-semibold">{row.nama}</td>
+                      <td className="border border-slate-800 px-2 py-1 font-mono">{row.nisn}</td>
+                      <td className="border border-slate-800 px-2 py-1 font-mono">{row.nik ?? "—"}</td>
+                      <td className="border border-slate-800 px-2 py-1 font-mono">{row.noKk ?? "—"}</td>
+                      <td className="border border-slate-800 px-2 py-1">{row.kelasNama}</td>
+                      <td className="border border-slate-800 px-2 py-1">
+                        {[
+                          row.urlKk ? "KK" : null,
+                          row.urlAktaKtp ? "Akta" : null,
+                          row.urlIjazah ? "Ijazah" : null,
+                          row.urlSuratPindah ? "SKP" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(", ") || "Kosong"}
+                      </td>
+                      <td className="border border-slate-800 px-2 py-1">{row.statusVerval}</td>
+                      <td className="border border-slate-800 px-2 py-1">{row.statusVervalDinas}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            <div className="mt-8 grid grid-cols-2 gap-8 text-center text-xs">
+              <div>
+                <p className="font-bold">Operator Dapodik PKBM,</p>
+                <div className="h-16" />
+                <p className="font-bold underline">{data.sekolah.namaOperatorDapodik || "Operator Dapodik"}</p>
+              </div>
+              <div>
+                <p className="font-bold">Kepala {data.sekolah.nama},</p>
+                <div className="h-16" />
+                <p className="font-bold underline">{data.sekolah.namaKepalaSekolah || "Kepala Lembaga"}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pratinjau Cetak Daftar Nominatif */}
       {printOpen && data && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-6 text-slate-900 sm:p-10">
           <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">

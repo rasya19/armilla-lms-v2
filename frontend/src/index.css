@@ -175,19 +175,21 @@
 [data-tenant-theme="sunset"] .dashboard-canvas { background: linear-gradient(135deg, #faf5ff, #fdf2f8, #fff1ed); }
 [data-tenant-theme="sunset"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(167,139,250,.42), transparent 34%), radial-gradient(circle at 85% 32%, rgba(232,121,249,.36), transparent 32%), radial-gradient(circle at 52% 85%, rgba(251,146,120,.32), transparent 35%); }
 [data-tenant-theme="sunset"] .dashboard-hero, [data-tenant-theme="sunset"] .master-primary { background: linear-gradient(115deg, #6d28d9, #a21caf 60%, #be4557); }
-[data-tenant-theme="dark"] .dashboard-canvas {
-  background-color: #070c17;
+[data-tenant-theme="dark"] .dashboard-canvas,
+.dinas-grid-dark {
+  background-color: #07111f;
   background-image:
-    linear-gradient(to right, rgba(148, 163, 184, 0.055) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
-  background-size: 36px 36px;
+    linear-gradient(to right, rgba(148, 163, 184, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.065) 1px, transparent 1px);
+  background-size: 24px 24px;
   color: #e2e8f0;
 }
-[data-tenant-theme="dark"] .dashboard-canvas::before {
+[data-tenant-theme="dark"] .dashboard-canvas::before,
+.dinas-grid-dark::before {
   background:
-    radial-gradient(circle at 12% 14%, rgba(16, 185, 129, 0.18), transparent 36%),
-    radial-gradient(circle at 86% 24%, rgba(37, 99, 235, 0.18), transparent 36%),
-    radial-gradient(circle at 52% 90%, rgba(245, 158, 11, 0.10), transparent 38%);
+    radial-gradient(circle at 10% 8%, rgba(16, 185, 129, 0.17), transparent 36%),
+    radial-gradient(circle at 88% 12%, rgba(37, 99, 235, 0.2), transparent 38%),
+    radial-gradient(circle at 52% 92%, rgba(245, 158, 11, 0.09), transparent 38%);
 }
 [data-tenant-theme="dark"] .dashboard-hero {
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -411,19 +413,166 @@ html[data-tenant-theme="dark"] .glass-dialog input[type="radio"] {
   .master-content { padding-bottom: 96px; }
   .master-section { padding: 17px; }
 }
-.master-dashboard, .master-auth, .landing-page, .school-dashboard {
+.master-dashboard, .master-auth, .school-dashboard {
   background:
     radial-gradient(ellipse at 10% 12%, rgba(37, 99, 235, .3), transparent 38%),
     radial-gradient(ellipse at 85% 22%, rgba(109, 40, 217, .34), transparent 36%),
     radial-gradient(ellipse at 55% 90%, rgba(59, 130, 246, .18), transparent 40%),
     linear-gradient(135deg, #020617, #1e1b4b 50%, #0f172a);
 }
-.landing-page .glass-panel, .school-dashboard .glass-panel, .school-dashboard.glass-area section,
+.landing-page {
+  position: relative;
+  isolation: isolate;
+}
+.landing-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(48px);
+}
+.landing-page[data-tenant-theme="dark"] {
+  background-color: #07111f;
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.065) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: #f1f5f9;
+}
+.landing-page[data-tenant-theme="dark"]::before {
+  background:
+    radial-gradient(circle at 10% 8%, rgba(16, 185, 129, 0.18), transparent 36%),
+    radial-gradient(circle at 88% 14%, rgba(37, 99, 235, 0.2), transparent 38%),
+    radial-gradient(circle at 52% 90%, rgba(245, 158, 11, 0.1), transparent 38%);
+}
+.landing-page[data-tenant-theme="dark"] .landing-header {
+  background: linear-gradient(95deg, rgba(10, 44, 42, 0.85) 0%, rgba(13, 23, 42, 0.9) 40%, rgba(15, 24, 44, 0.92) 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.5);
+  color: #f1f5f9;
+}
+.landing-page[data-tenant-theme="dark"] .landing-strip,
+.landing-page[data-tenant-theme="dark"] .landing-footer {
+  background: rgba(10, 18, 34, 0.82);
+  border-color: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+.landing-page[data-tenant-theme="dark"] .glass-panel {
+  color: #f1f5f9;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(155deg, rgba(15, 25, 45, 0.84), rgba(10, 17, 32, 0.78));
+  box-shadow: 0 22px 54px rgba(2, 6, 23, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px);
+}
+.landing-page[data-tenant-theme="dark"] .landing-primary {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #0f172a;
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.36), 0 8px 20px rgba(245, 158, 11, 0.22);
+}
+.landing-page[data-tenant-theme="dark"] .landing-primary:hover {
+  filter: brightness(1.06);
+}
+.landing-page[data-tenant-theme="dark"] .landing-secondary {
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+}
+.landing-page[data-tenant-theme="dark"] .landing-secondary:hover {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(30, 41, 59, 0.85);
+  color: #ffffff;
+}
+.landing-page[data-tenant-theme="ocean"] {
+  background-color: #eefaff;
+  background-image:
+    linear-gradient(to right, rgba(14, 116, 144, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(14, 116, 144, 0.06) 1px, transparent 1px),
+    linear-gradient(135deg, #eefaff, #dceffa 52%, #edf5ff);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  color: #0c2640;
+}
+.landing-page[data-tenant-theme="ocean"]::before {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(56, 189, 248, 0.28), transparent 36%),
+    radial-gradient(circle at 86% 24%, rgba(37, 99, 235, 0.22), transparent 36%),
+    radial-gradient(circle at 50% 88%, rgba(251, 191, 36, 0.16), transparent 38%);
+}
+.landing-page[data-tenant-theme="ocean"] .landing-primary {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #422006;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.28);
+}
+.landing-page[data-tenant-theme="ocean"] .landing-secondary {
+  color: #0c4a6e;
+  border: 1px solid rgba(14, 116, 144, 0.28);
+  background: rgba(255, 255, 255, 0.72);
+}
+.landing-page[data-tenant-theme="ocean"] .landing-secondary:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+.landing-page[data-tenant-theme="emerald"] {
+  background-color: #ecfdf5;
+  background-image:
+    linear-gradient(to right, rgba(5, 150, 105, 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(5, 150, 105, 0.065) 1px, transparent 1px),
+    linear-gradient(135deg, #ecfdf5, #d7f5eb 52%, #e6fffa);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  color: #064e3b;
+}
+.landing-page[data-tenant-theme="emerald"]::before {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(52, 211, 153, 0.3), transparent 36%),
+    radial-gradient(circle at 86% 24%, rgba(45, 212, 191, 0.26), transparent 36%),
+    radial-gradient(circle at 52% 88%, rgba(16, 185, 129, 0.18), transparent 38%);
+}
+.landing-page[data-tenant-theme="emerald"] .landing-primary {
+  background: linear-gradient(120deg, #047857, #0f766e);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(5, 150, 105, 0.28);
+}
+.landing-page[data-tenant-theme="emerald"] .landing-secondary {
+  color: #065f46;
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  background: rgba(255, 255, 255, 0.72);
+}
+.landing-page[data-tenant-theme="emerald"] .landing-secondary:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+.landing-page[data-tenant-theme="sunset"] {
+  background-color: #faf5ff;
+  background-image:
+    linear-gradient(to right, rgba(124, 58, 237, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(124, 58, 237, 0.06) 1px, transparent 1px),
+    linear-gradient(135deg, #faf5ff, #fdf2f8 52%, #fff1ed);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  color: #2e1065;
+}
+.landing-page[data-tenant-theme="sunset"]::before {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(167, 139, 250, 0.32), transparent 36%),
+    radial-gradient(circle at 86% 24%, rgba(232, 121, 249, 0.26), transparent 36%),
+    radial-gradient(circle at 52% 88%, rgba(251, 146, 120, 0.22), transparent 38%);
+}
+.landing-page[data-tenant-theme="sunset"] .landing-primary {
+  background: linear-gradient(120deg, #6d28d9, #a21caf 55%, #be4557);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(147, 51, 234, 0.28);
+}
+.landing-page[data-tenant-theme="sunset"] .landing-secondary {
+  color: #5b21b6;
+  border: 1px solid rgba(139, 92, 246, 0.32);
+  background: rgba(255, 255, 255, 0.72);
+}
+.landing-page[data-tenant-theme="sunset"] .landing-secondary:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+.landing-page:not([data-tenant-theme="dark"]) .glass-panel, .school-dashboard .glass-panel, .school-dashboard.glass-area section,
 .school-dashboard.glass-area article, .school-dashboard.glass-area form[class*="border"] {
   color: #0f172a;
-  border: 1px solid rgba(255,255,255,.5);
-  background: rgba(255,255,255,.8);
-  box-shadow: 0 20px 35px -12px rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.78);
+  background: rgba(255,255,255,.78);
+  box-shadow: 0 20px 35px -12px rgba(15,23,42,.12);
   backdrop-filter: blur(24px);
 }
 .school-dashboard.glass-area section section, .school-dashboard.glass-area article,

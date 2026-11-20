@@ -411,11 +411,11 @@ function buildDemoSimulationDataset(wilayah: string, cutoffDate: string): {
 function statusDinasBadge(status: VervalDinasStatus): { label: string; cls: string } {
   switch (status) {
     case "LOLOS_VERVAL":
-      return { label: "Lolos Verval", cls: "border-emerald-300 bg-emerald-50 text-emerald-800" };
+      return { label: "Lolos Verval", cls: "border-emerald-400/35 bg-emerald-500/15 text-emerald-300" };
     case "PERLU_PERBAIKAN":
-      return { label: "Perlu Perbaikan", cls: "border-rose-300 bg-rose-50 text-rose-800" };
+      return { label: "Perlu Perbaikan", cls: "border-rose-400/35 bg-rose-500/15 text-rose-300" };
     default:
-      return { label: "Menunggu Dinas", cls: "border-amber-300 bg-amber-50 text-amber-900" };
+      return { label: "Menunggu Dinas", cls: "border-amber-400/40 bg-amber-500/15 text-amber-300" };
   }
 }
 
@@ -577,13 +577,13 @@ function DinasCardSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div role="status" aria-label="Menyiapkan ringkasan wilayah" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {Array.from({ length: count }).map((_, index) => (
-        <div key={index} className="space-y-3 rounded-2xl border border-white/90 bg-white/85 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+        <div key={index} className="space-y-3 rounded-2xl border border-slate-400/15 bg-[#0d192c]/80 p-5 shadow-[0_14px_36px_rgba(2,6,23,0.45)] backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
-            <div className="h-3.5 w-2/5 animate-pulse rounded-md bg-sky-100" />
-            <div className="h-8 w-8 animate-pulse rounded-xl bg-sky-100" />
+            <div className="h-3.5 w-2/5 animate-pulse rounded-md bg-slate-700/70" />
+            <div className="h-8 w-8 animate-pulse rounded-xl bg-slate-700/70" />
           </div>
-          <div className="h-8 w-1/2 animate-pulse rounded-lg bg-slate-200" />
-          <div className="h-3 w-3/4 animate-pulse rounded-md bg-slate-200/80" />
+          <div className="h-8 w-1/2 animate-pulse rounded-lg bg-slate-600/60" />
+          <div className="h-3 w-3/4 animate-pulse rounded-md bg-slate-700/60" />
         </div>
       ))}
       <span className="sr-only">Memuat ringkasan wilayah...</span>
@@ -593,17 +593,17 @@ function DinasCardSkeleton({ count = 4 }: { count?: number }) {
 
 function DinasTableSkeleton({ rows = 4, columns = 6 }: { rows?: number; columns?: number }) {
   return (
-    <div role="status" aria-label="Menyiapkan data tabel" className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
+    <div role="status" aria-label="Menyiapkan data tabel" className="overflow-hidden rounded-2xl border border-slate-700/60 bg-[#081222]/75 p-4 backdrop-blur-xl">
       <div className="space-y-3">
-        <div className="grid gap-3 border-b border-slate-200 pb-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+        <div className="grid gap-3 border-b border-slate-700/60 pb-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
           {Array.from({ length: columns }).map((_, index) => (
-            <div key={index} className="h-3.5 animate-pulse rounded-md bg-sky-100" />
+            <div key={index} className="h-3.5 animate-pulse rounded-md bg-slate-700/70" />
           ))}
         </div>
         {Array.from({ length: rows }).map((_, rowIndex) => (
           <div key={rowIndex} className="grid items-center gap-3 py-2" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
             {Array.from({ length: columns }).map((__, colIndex) => (
-              <div key={colIndex} className={`h-4 animate-pulse rounded-lg bg-slate-200/80 ${colIndex === 0 ? "w-4/5" : "w-3/5"}`} />
+              <div key={colIndex} className={`h-4 animate-pulse rounded-lg bg-slate-800/80 ${colIndex === 0 ? "w-4/5" : "w-3/5"}`} />
             ))}
           </div>
         ))}
@@ -615,12 +615,12 @@ function DinasTableSkeleton({ rows = 4, columns = 6 }: { rows?: number; columns?
 
 function DinasEmptyState({ title, description }: { title: string; description: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-sky-300 bg-sky-50/70 px-5 py-9 text-center">
-      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-600 shadow-xs">
+    <div className="rounded-2xl border border-dashed border-slate-700/80 bg-[#0a1426]/70 px-5 py-9 text-center backdrop-blur-md">
+      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 shadow-[0_0_18px_rgba(245,158,11,0.16)]">
         <Inbox size={22} />
       </span>
-      <p className="mt-3 text-sm font-extrabold text-slate-950">{title}</p>
-      <p className="mx-auto mt-1 max-w-lg text-xs font-medium leading-5 text-slate-700">{description}</p>
+      <p className="mt-3 text-sm font-extrabold text-slate-100">{title}</p>
+      <p className="mx-auto mt-1 max-w-lg text-xs font-medium leading-5 text-slate-400">{description}</p>
     </div>
   );
 }
@@ -680,27 +680,22 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
 
   return (
     <main
-      data-tenant-theme="ocean"
-      className="dashboard-canvas glass-login-shell flex min-h-screen items-center justify-center px-5 py-6 text-slate-900 antialiased"
-      style={{
-        backgroundImage:
-          "radial-gradient(rgba(37, 99, 235, 0.14) 1px, transparent 1px), linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%)",
-        backgroundSize: "22px 22px, 100% 100%",
-      }}
+      data-tenant-theme="dark"
+      className="dashboard-canvas dinas-grid-dark glass-login-shell flex min-h-screen items-center justify-center px-5 py-6 text-slate-100 antialiased"
     >
-      <div className="w-full max-w-md rounded-3xl border border-white/95 bg-white/90 p-7 shadow-[0_24px_60px_rgba(37,99,235,0.14)] backdrop-blur-2xl">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25">
+      <div className="w-full max-w-md rounded-3xl border border-slate-400/20 bg-gradient-to-br from-[#0f1c32]/90 to-[#0a1324]/88 p-7 shadow-[0_28px_70px_rgba(2,6,23,0.65)] backdrop-blur-2xl">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_24px_rgba(52,211,153,0.3)]">
           <Landmark size={22} />
         </span>
-        <p className="mt-4 text-[11px] font-extrabold uppercase tracking-[0.16em] text-blue-700">
+        <p className="mt-4 text-[11px] font-extrabold uppercase tracking-[0.16em] text-amber-300">
           KESETARAAN LMS / PORTAL DINAS PENDIDIKAN
         </p>
-        <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950">Login Verifikator Dinas</h1>
-        <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
+        <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-100">Login Verifikator Dinas</h1>
+        <p className="mt-2 text-sm font-medium leading-6 text-slate-300">
           Masuk dengan akun Dinas Pendidikan Kabupaten/Kota untuk memverifikasi kelengkapan berkas administrasi PKBM di wilayah Anda.
         </p>
         <form onSubmit={submit} className="mt-5 space-y-4">
-          <label className="block text-sm font-bold text-slate-900">
+          <label className="block text-sm font-bold text-slate-200">
             Email Dinas
             <input
               type="email"
@@ -708,10 +703,10 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
               autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="glass-input mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-950 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+              className="mt-2 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-4 py-2.5 text-sm font-medium text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25"
             />
           </label>
-          <label className="block text-sm font-bold text-slate-900">
+          <label className="block text-sm font-bold text-slate-200">
             Kata sandi
             <input
               type="password"
@@ -719,22 +714,22 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="glass-input mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-950 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+              className="mt-2 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-4 py-2.5 text-sm font-medium text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/25"
             />
           </label>
           {error && (
-            <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm font-semibold text-rose-800">
+            <p role="alert" className="rounded-xl border border-rose-400/35 bg-rose-500/15 px-3.5 py-2.5 text-sm font-semibold text-rose-200">
               {error}
             </p>
           )}
           <button
             disabled={busy}
-            className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3 text-sm font-extrabold text-white shadow-md shadow-blue-600/25 transition hover:brightness-110 disabled:opacity-50"
+            className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 py-3 text-sm font-extrabold text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.35)] transition hover:from-amber-300 hover:to-amber-400 disabled:opacity-50"
           >
             {busy ? "Memeriksa..." : "Masuk Portal Dinas"}
           </button>
         </form>
-        <Link to="/" className="mt-5 inline-block text-sm font-bold text-blue-700 underline hover:text-blue-900">
+        <Link to="/" className="mt-5 inline-block text-sm font-bold text-amber-300 underline hover:text-amber-200">
           Kembali ke beranda
         </Link>
       </div>
@@ -1422,11 +1417,11 @@ export function DinasHome() {
   if (status !== "ready") {
     return (
       <main
-        data-tenant-theme="ocean"
-        className="dashboard-canvas flex min-h-screen items-center justify-center p-8 text-slate-900 antialiased"
+        data-tenant-theme="dark"
+        className="dashboard-canvas dinas-grid-dark flex min-h-screen items-center justify-center p-8 text-slate-100 antialiased"
       >
-        <div className="max-w-md rounded-2xl border border-white/95 bg-white/90 p-6 shadow-xl backdrop-blur-xl">
-          <p className="text-sm font-bold text-rose-700">{error || "Sesi Portal Dinas Pendidikan tidak tersedia."}</p>
+        <div className="max-w-md rounded-2xl border border-rose-400/30 bg-[#0d192c]/90 p-6 shadow-2xl backdrop-blur-xl">
+          <p className="text-sm font-bold text-rose-300">{error || "Sesi Portal Dinas Pendidikan tidak tersedia."}</p>
         </div>
       </main>
     );
@@ -1441,13 +1436,8 @@ export function DinasHome() {
 
   return (
     <main
-      data-tenant-theme="ocean"
-      className="dashboard-canvas min-h-screen text-slate-900 antialiased"
-      style={{
-        backgroundImage:
-          "radial-gradient(rgba(37, 99, 235, 0.14) 1px, transparent 1px), linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%)",
-        backgroundSize: "22px 22px, 100% 100%",
-      }}
+      data-tenant-theme="dark"
+      className="dashboard-canvas dinas-grid-dark min-h-screen text-slate-100 antialiased"
     >
       <div className={printBaDoc ? "no-print" : undefined}>
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
@@ -1455,16 +1445,16 @@ export function DinasHome() {
         <aside
           className={`${
             menuOpen ? "flex" : "hidden"
-          } fixed inset-y-0 left-0 z-50 w-72 flex-col border-r border-white/90 bg-white/88 p-4 text-slate-900 shadow-[8px_0_32px_rgba(37,99,235,0.08)] backdrop-blur-2xl lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0`}
+          } fixed inset-y-0 left-0 z-50 w-72 flex-col border-r border-slate-400/15 bg-[#081222]/92 p-4 text-slate-100 shadow-[8px_0_36px_rgba(2,6,23,0.6)] backdrop-blur-2xl lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0`}
         >
-          <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-4">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-700/70 pb-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_20px_rgba(52,211,153,0.3)]">
                 <Landmark size={20} />
               </span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-extrabold tracking-tight text-slate-950">Portal Dinas</p>
-                <p className="truncate text-[10px] font-extrabold uppercase tracking-wider text-blue-700">
+                <p className="truncate text-sm font-extrabold tracking-tight text-slate-100">Portal Dinas</p>
+                <p className="truncate text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
                   VERVAL KESETARAAN
                 </p>
               </div>
@@ -1473,21 +1463,21 @@ export function DinasHome() {
               type="button"
               onClick={() => setMenuOpen(false)}
               aria-label="Tutup menu sidebar Dinas"
-              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-100 lg:hidden"
             >
               <X size={18} />
             </button>
           </div>
 
-          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2.5">
+          <div className="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-950/25 px-3 py-2.5 backdrop-blur-md">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600">Wilayah Aktif</span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Wilayah Aktif</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 Aktif
               </span>
             </div>
-            <p className="mt-1 truncate text-xs font-extrabold text-slate-950">
+            <p className="mt-1 truncate text-xs font-extrabold text-slate-100">
               {summary ? summary.wilayah : activeWilayahLabel}
             </p>
           </div>
@@ -1503,14 +1493,16 @@ export function DinasHome() {
               onClick={() => selectDinasMenu("verifikasi")}
               className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
                 activeMenu === "verifikasi"
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
-                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+                  ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.32)]"
+                  : "border border-transparent text-slate-300 hover:border-slate-700/80 hover:bg-slate-800/55 hover:text-slate-100"
               }`}
             >
               <span className="flex min-w-0 items-center gap-2.5">
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                    activeMenu === "verifikasi" ? "bg-white/20 text-white" : "bg-blue-50 text-blue-700"
+                    activeMenu === "verifikasi"
+                      ? "bg-slate-950/15 text-slate-950"
+                      : "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
                   }`}
                 >
                   <ShieldCheck size={16} />
@@ -1518,8 +1510,10 @@ export function DinasHome() {
                 <span className="truncate">Verifikasi &amp; Monitoring</span>
               </span>
               <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                  activeMenu === "verifikasi" ? "bg-amber-400 text-slate-950" : "bg-slate-100 text-slate-700"
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${
+                  activeMenu === "verifikasi"
+                    ? "bg-slate-950/20 text-slate-950"
+                    : "border border-slate-700 bg-slate-800/90 text-slate-300"
                 }`}
               >
                 {displayedView?.kpi.totalPkbm ?? 0}
@@ -1532,14 +1526,16 @@ export function DinasHome() {
               onClick={() => selectDinasMenu("buat-ba")}
               className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
                 activeMenu === "buat-ba"
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
-                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+                  ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.32)]"
+                  : "border border-transparent text-slate-300 hover:border-slate-700/80 hover:bg-slate-800/55 hover:text-slate-100"
               }`}
             >
               <span className="flex min-w-0 items-center gap-2.5">
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                    activeMenu === "buat-ba" ? "bg-white/20 text-white" : "bg-sky-50 text-sky-700"
+                    activeMenu === "buat-ba"
+                      ? "bg-slate-950/15 text-slate-950"
+                      : "border border-sky-400/20 bg-sky-500/10 text-sky-300"
                   }`}
                 >
                   <FilePlus2 size={16} />
@@ -1547,7 +1543,13 @@ export function DinasHome() {
                 <span className="truncate">Buat Berita Acara</span>
               </span>
               {editingBaId && (
-                <span className="shrink-0 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-slate-950">
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                    activeMenu === "buat-ba"
+                      ? "bg-slate-950/20 text-slate-950"
+                      : "border border-amber-400/40 bg-amber-500/20 text-amber-300"
+                  }`}
+                >
                   Edit
                 </span>
               )}
@@ -1559,14 +1561,16 @@ export function DinasHome() {
               onClick={() => selectDinasMenu("arsip-ba")}
               className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
                 activeMenu === "arsip-ba"
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
-                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+                  ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.32)]"
+                  : "border border-transparent text-slate-300 hover:border-slate-700/80 hover:bg-slate-800/55 hover:text-slate-100"
               }`}
             >
               <span className="flex min-w-0 items-center gap-2.5">
                 <span
                   className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                    activeMenu === "arsip-ba" ? "bg-white/20 text-white" : "bg-amber-50 text-amber-700"
+                    activeMenu === "arsip-ba"
+                      ? "bg-slate-950/15 text-slate-950"
+                      : "border border-amber-400/20 bg-amber-500/10 text-amber-300"
                   }`}
                 >
                   <Archive size={16} />
@@ -1574,8 +1578,10 @@ export function DinasHome() {
                 <span className="truncate">Arsip &amp; Status BA</span>
               </span>
               <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                  activeMenu === "arsip-ba" ? "bg-amber-400 text-slate-950" : "bg-sky-100 text-blue-900"
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${
+                  activeMenu === "arsip-ba"
+                    ? "bg-slate-950/20 text-slate-950"
+                    : "border border-slate-700 bg-slate-800/90 text-slate-300"
                 }`}
               >
                 {baArchive.length}/{baArchive.length + unsavedBaTargets.length}
@@ -1583,15 +1589,15 @@ export function DinasHome() {
             </button>
           </nav>
 
-          <div className="mt-4 space-y-2.5 border-t border-slate-200/80 pt-3.5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs">
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Petugas Login</p>
-              <p className="mt-0.5 truncate font-extrabold text-slate-950">{petugasNama}</p>
+          <div className="mt-4 space-y-2.5 border-t border-slate-700/70 pt-3.5">
+            <div className="rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2.5 text-xs">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Petugas Login</p>
+              <p className="mt-0.5 truncate font-extrabold text-slate-100">{petugasNama}</p>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2.5 text-xs font-extrabold text-rose-300 transition hover:border-rose-400/50 hover:bg-rose-500/20"
             >
               <LogOut size={14} /> Keluar Portal Dinas
             </button>
@@ -1603,13 +1609,13 @@ export function DinasHome() {
             type="button"
             aria-label="Tutup menu sidebar Dinas"
             onClick={() => setMenuOpen(false)}
-            className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-xs lg:hidden"
+            className="fixed inset-0 z-40 bg-slate-950/65 backdrop-blur-xs lg:hidden"
           />
         )}
 
         {/* Konten Utama per Menu */}
         <div className="min-w-0 flex-1 pb-10">
-          <header className="sticky top-0 z-30 border-b border-white/95 bg-white/85 px-4 py-3 shadow-[0_6px_24px_rgba(37,99,235,0.06)] backdrop-blur-xl sm:px-6">
+          <header className="sticky top-0 z-30 border-b border-slate-400/15 bg-gradient-to-r from-[#0a2c2a]/85 via-[#0d182c]/90 to-[#0f192d]/92 px-4 py-3 shadow-[0_12px_32px_rgba(2,6,23,0.45)] backdrop-blur-2xl sm:px-6">
             <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <button
@@ -1617,21 +1623,21 @@ export function DinasHome() {
                   onClick={() => setMenuOpen(true)}
                   aria-label="Buka menu sidebar Dinas"
                   aria-expanded={menuOpen}
-                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-800 hover:bg-sky-50 lg:hidden"
+                  className="rounded-xl border border-slate-700/80 bg-slate-900/80 p-2 text-slate-200 hover:border-amber-400/40 hover:bg-slate-800 lg:hidden"
                 >
                   <Menu size={20} />
                 </button>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="truncate text-sm font-extrabold tracking-tight text-slate-950 sm:text-base">
+                    <h1 className="truncate text-sm font-extrabold tracking-tight text-slate-100 sm:text-base">
                       {activeMenuTitle}
                     </h1>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                       {summary ? summary.wilayah : activeWilayahLabel}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-[11px] font-bold tracking-wide text-slate-600">
+                  <p className="mt-0.5 text-[11px] font-bold tracking-wide text-slate-400">
                     PORTAL VERVAL WILAYAH · DINAS PENDIDIKAN
                   </p>
                 </div>
@@ -1651,15 +1657,17 @@ export function DinasHome() {
                   }}
                   className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold transition ${
                     showDemoSimulation
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25 hover:brightness-110"
-                      : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
+                      ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.34)] hover:from-amber-300 hover:to-amber-400"
+                      : "border border-slate-600/75 bg-slate-900/75 text-slate-200 hover:border-amber-400/45 hover:bg-slate-800/80"
                   }`}
                 >
                   <Sparkles size={14} />
                   Simulasi Demo
                   <span
                     className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${
-                      showDemoSimulation ? "bg-amber-400 text-slate-950" : "bg-slate-100 text-slate-600"
+                      showDemoSimulation
+                        ? "bg-slate-950/20 text-slate-950"
+                        : "bg-slate-800 text-slate-400"
                     }`}
                   >
                     {showDemoSimulation ? "ON" : "OFF"}
@@ -1674,7 +1682,7 @@ export function DinasHome() {
                       setSelectedPkbm(null);
                       setWilayahFilter(e.target.value);
                     }}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 shadow-2xs focus:border-blue-600 focus:outline-none"
+                    className="rounded-xl border border-slate-700/80 bg-slate-900/85 px-3 py-2 text-xs font-bold text-slate-100 focus:border-amber-400 focus:outline-none"
                   >
                     <option value="">Semua Wilayah</option>
                     {summary.availableWilayah.map((w) => (
@@ -1689,35 +1697,30 @@ export function DinasHome() {
           </header>
 
       <div className="mx-auto max-w-7xl space-y-5 px-4 pt-5 sm:px-6">
-        {/* Hero Banner Ocean & Gold sesuai Menu Sidebar Aktif */}
+        {/* Hero Banner Dark Glassmorphism sesuai Menu Sidebar Aktif */}
         {activeMenu === "verifikasi" ? (
-          <section
-            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
-            style={{
-              background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
-            }}
-          >
-            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
-            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
+          <section className="relative overflow-hidden rounded-2xl border border-slate-400/20 bg-gradient-to-br from-[#101c33]/92 via-[#0b1528]/90 to-[#111f38]/88 p-6 text-slate-100 shadow-[0_22px_52px_rgba(2,6,23,0.55)] backdrop-blur-xl sm:p-7">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-amber-400/[0.06]" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-emerald-400/10 blur-3xl" />
             <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
               <div className="min-w-0 max-w-2xl">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-bold tracking-wide text-amber-300 backdrop-blur-md">
                   <ShieldCheck size={13} />
                   Verifikasi &amp; Validasi Kesetaraan Wilayah · Administratif
                 </span>
                 <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                   Verifikasi &amp; Monitoring PKBM
                 </h2>
-                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                <p className="mt-1.5 text-sm font-medium leading-6 text-slate-300">
                   Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), rekonsiliasi hasil tarik Dapodik vs bukti fisik, dan cut-off pendaftaran ({summary?.cutoffDate ?? "31 Agustus"}) tanpa mengakses nilai atau presensi KBM.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                    <Database size={12} className="text-amber-300" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/60 bg-slate-900/70 px-3 py-1 font-bold text-slate-200 backdrop-blur-sm">
+                    <Database size={12} className="text-amber-400" />
                     Wilayah: {summary ? summary.wilayah : "Memuat..."}
                   </span>
                   {summary && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 font-bold text-emerald-300 backdrop-blur-sm">
                       Data Riil DB: {summary.pkbm.length} PKBM · {summary.kpi.totalWargaBelajar} Siswa
                     </span>
                   )}
@@ -1729,7 +1732,7 @@ export function DinasHome() {
                   type="button"
                   disabled={!displayedView || displayedView.pkbm.length === 0 || exporting}
                   onClick={() => void handleExportRekap()}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.36)] transition hover:from-amber-300 hover:to-amber-400 disabled:opacity-50"
                 >
                   <FileSpreadsheet size={16} aria-hidden="true" />
                   {exporting ? "Menyiapkan..." : "Export Rekap Verval Kabupaten"}
@@ -1738,24 +1741,19 @@ export function DinasHome() {
             </div>
           </section>
         ) : activeMenu === "buat-ba" ? (
-          <section
-            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
-            style={{
-              background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
-            }}
-          >
-            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
-            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
+          <section className="relative overflow-hidden rounded-2xl border border-slate-400/20 bg-gradient-to-br from-[#101c33]/92 via-[#0b1528]/90 to-[#111f38]/88 p-6 text-slate-100 shadow-[0_22px_52px_rgba(2,6,23,0.55)] backdrop-blur-xl sm:p-7">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-amber-400/[0.06]" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl" />
             <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
               <div className="min-w-0 max-w-2xl">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-bold tracking-wide text-amber-300 backdrop-blur-md">
                   <FilePlus2 size={13} />
                   Penerbitan Dokumen Resmi · {activeWilayahLabel}
                 </span>
                 <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                   {editingBaId ? "Edit Berita Acara Verval" : "Buat Berita Acara Verval"}
                 </h2>
-                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                <p className="mt-1.5 text-sm font-medium leading-6 text-slate-300">
                   Susun Berita Acara resmi per Satuan Pendidikan (PKBM) maupun Rekapitulasi Kabupaten/Kota dengan data Dapodik &amp; kelengkapan berkas terisi otomatis.
                 </p>
               </div>
@@ -1764,7 +1762,7 @@ export function DinasHome() {
                 <button
                   type="button"
                   onClick={() => selectDinasMenu("arsip-ba")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-500/50 bg-slate-900/70 px-4 py-3 text-xs font-extrabold text-slate-100 backdrop-blur-md transition hover:border-amber-400/45 hover:bg-slate-800/80"
                 >
                   <Archive size={15} aria-hidden="true" />
                   Buka Arsip BA ({baArchive.length})
@@ -1772,7 +1770,7 @@ export function DinasHome() {
                 <button
                   type="button"
                   onClick={handlePrintFromForm}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.36)] transition hover:from-amber-300 hover:to-amber-400"
                 >
                   <Printer size={16} aria-hidden="true" />
                   Cetak / Simpan PDF Berita Acara
@@ -1781,31 +1779,26 @@ export function DinasHome() {
             </div>
           </section>
         ) : (
-          <section
-            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
-            style={{
-              background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
-            }}
-          >
-            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
-            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
+          <section className="relative overflow-hidden rounded-2xl border border-slate-400/20 bg-gradient-to-br from-[#101c33]/92 via-[#0b1528]/90 to-[#111f38]/88 p-6 text-slate-100 shadow-[0_22px_52px_rgba(2,6,23,0.55)] backdrop-blur-xl sm:p-7">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-amber-400/[0.06]" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-emerald-400/10 blur-3xl" />
             <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
               <div className="min-w-0 max-w-2xl">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-bold tracking-wide text-amber-300 backdrop-blur-md">
                   <Archive size={13} />
                   Manajemen Arsip &amp; Status Penerbitan · {activeWilayahLabel}
                 </span>
                 <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                   Arsip &amp; Monitoring Berita Acara
                 </h2>
-                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                <p className="mt-1.5 text-sm font-medium leading-6 text-slate-300">
                   Kelola seluruh Berita Acara Verval yang telah diterbitkan, cetak ulang PDF, perbarui data, atau pantau lembaga PKBM yang belum menerbitkan Berita Acara.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/15 px-3 py-1 font-bold text-emerald-300 backdrop-blur-sm">
                     Sudah Tersimpan: {baArchive.length}
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/35 bg-amber-500/15 px-3 py-1 font-bold text-amber-300 backdrop-blur-sm">
                     Belum Dibuat: {unsavedBaTargets.length}
                   </span>
                 </div>
@@ -1818,7 +1811,7 @@ export function DinasHome() {
                     setEditingBaId(null);
                     selectDinasMenu("buat-ba");
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.36)] transition hover:from-amber-300 hover:to-amber-400"
                 >
                   <FilePlus2 size={16} aria-hidden="true" />
                   Buat Berita Acara Baru
@@ -1829,11 +1822,11 @@ export function DinasHome() {
         )}
 
         {showDemoSimulation && summary && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-400/80 bg-amber-50/95 px-4 py-3 text-xs text-slate-900 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 backdrop-blur-md">
             <div className="flex items-start gap-2.5 sm:items-center">
-              <Sparkles size={16} className="mt-0.5 shrink-0 text-amber-600 sm:mt-0" />
-              <p className="font-medium leading-5">
-                <strong className="font-extrabold text-slate-950">Mode Paparan Aktif:</strong>{" "}
+              <Sparkles size={16} className="mt-0.5 shrink-0 text-amber-400 sm:mt-0" />
+              <p className="font-medium leading-5 text-slate-200">
+                <strong className="font-extrabold text-amber-300">Mode Paparan Aktif:</strong>{" "}
                 {hasZeroRealData
                   ? "Data riil PKBM/warga belajar di wilayah ini masih 0, sehingga simulasi contoh rekonsiliasi anti-WB fiktif ditampilkan otomatis."
                   : "Menampilkan simulasi contoh rekonsiliasi anti-WB fiktif berdampingan dengan data PKBM riil dari database PostgreSQL."}
@@ -1848,7 +1841,7 @@ export function DinasHome() {
                   setInspectStudent(null);
                 }
               }}
-              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-900 hover:bg-amber-100"
+              className="shrink-0 rounded-lg border border-amber-400/45 bg-slate-900/75 px-3 py-1.5 text-[11px] font-extrabold text-amber-300 transition hover:bg-amber-400/15"
             >
               Sembunyikan Simulasi
             </button>
@@ -1856,20 +1849,20 @@ export function DinasHome() {
         )}
 
         {toast && (
-          <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-950 shadow-sm">
+          <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 px-4 py-3 text-sm font-bold text-emerald-200 backdrop-blur-md">
             <span className="flex items-center gap-2">
-              <CheckCircle2 size={16} className="text-emerald-600" />
+              <CheckCircle2 size={16} className="text-emerald-400" />
               {toast}
             </span>
-            <button type="button" onClick={() => setToast("")} className="text-emerald-700 hover:text-emerald-950">
+            <button type="button" onClick={() => setToast("")} className="text-emerald-300 hover:text-white">
               <X size={16} />
             </button>
           </div>
         )}
 
         {error && (
-          <p role="alert" className="flex items-center gap-2 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm font-bold text-rose-900">
-            <AlertTriangle size={16} className="shrink-0 text-rose-600" />
+          <p role="alert" className="flex items-center gap-2 rounded-2xl border border-rose-400/40 bg-rose-500/15 p-4 text-sm font-bold text-rose-200 backdrop-blur-md">
+            <AlertTriangle size={16} className="shrink-0 text-rose-400" />
             {error}
           </p>
         )}
@@ -1877,64 +1870,64 @@ export function DinasHome() {
         {/* Halaman 1: Verifikasi & Monitoring PKBM */}
         {activeMenu === "verifikasi" && (
         <>
-        {/* Baris 2: 4 Kartu KPI Ocean & Gold Kontras Tinggi */}
+        {/* Baris 2: 4 Kartu KPI Dark Glassmorphism Multi-Aksen */}
         {!displayedView ? (
           error ? null : <DinasCardSkeleton count={4} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-600">
+            <article className="rounded-2xl border border-slate-400/15 bg-gradient-to-br from-[#0f1c32]/85 to-[#0a1324]/80 p-5 text-slate-100 shadow-[0_14px_36px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
                 <span>Total PKBM Terdaftar</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-sky-400/30 bg-sky-500/15 text-sky-300">
                   <Building2 size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{displayedView.kpi.totalPkbm}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-white">{displayedView.kpi.totalPkbm}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">
                 {summary?.pkbm.length ?? 0} lembaga riil DB
                 {showDemoSimulation ? ` + ${demoDataset.pkbm.length} simulasi` : ""}
               </p>
             </article>
 
-            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-600">
+            <article className="rounded-2xl border border-slate-400/15 bg-gradient-to-br from-[#0f1c32]/85 to-[#0a1324]/80 p-5 text-slate-100 shadow-[0_14px_36px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
                 <span>Total Warga Belajar</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-teal-400/30 bg-teal-500/15 text-teal-300">
                   <Users size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{displayedView.kpi.totalWargaBelajar}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-white">{displayedView.kpi.totalWargaBelajar}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">
                 Paket A: {displayedView.kpi.totalPaketA} · B: {displayedView.kpi.totalPaketB} · C: {displayedView.kpi.totalPaketC}
               </p>
             </article>
 
-            <article className="rounded-2xl border-2 border-amber-400 bg-white/95 p-5 text-slate-900 shadow-[0_10px_26px_rgba(245,158,11,0.14)] backdrop-blur-xl">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-700">
+            <article className="rounded-2xl border border-amber-400/45 bg-gradient-to-br from-[#171d2c]/90 to-[#0c1426]/85 p-5 text-slate-100 shadow-[0_14px_36px_rgba(245,158,11,0.12)] backdrop-blur-xl">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-amber-300">
                 <span>Dapodik vs Berkas Fisik</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 text-amber-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-400/35 bg-amber-500/15 text-amber-300">
                   <FileCheck2 size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{displayedView.kpi.totalDapodik}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-white">{displayedView.kpi.totalDapodik}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-300">
                 Lengkap:{" "}
-                <span className="font-extrabold text-emerald-700">{displayedView.kpi.totalBerkasLengkap}</span>
+                <span className="font-extrabold text-emerald-400">{displayedView.kpi.totalBerkasLengkap}</span>
                 {" · "}Selisih:{" "}
-                <span className="font-extrabold text-rose-700">{displayedView.kpi.totalSelisihTanpaBerkas}</span>
-                {" · "}Cut-Off: {displayedView.kpi.totalCutoff}
+                <span className="font-extrabold text-rose-400">{displayedView.kpi.totalSelisihTanpaBerkas}</span>
+                {" · "}Cut-Off: <span className="text-amber-300">{displayedView.kpi.totalCutoff}</span>
               </p>
             </article>
 
-            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-600">
+            <article className="rounded-2xl border border-slate-400/15 bg-gradient-to-br from-[#0f1c32]/85 to-[#0a1324]/80 p-5 text-slate-100 shadow-[0_14px_36px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-400">
                 <span>Lolos Verval Dinas</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/15 text-emerald-300">
                   <ShieldCheck size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-emerald-700">{displayedView.kpi.persentaseLolosVerval}%</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-emerald-400">{displayedView.kpi.persentaseLolosVerval}%</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">
                 {displayedView.kpi.totalLolosVervalDinas} dari {displayedView.kpi.totalWargaBelajar} warga belajar
               </p>
             </article>
@@ -1942,11 +1935,11 @@ export function DinasHome() {
         )}
 
         {/* Baris 3: Tabel Monitoring PKBM */}
-        <section className="space-y-4 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6">
+        <section className="space-y-4 rounded-2xl border border-slate-400/15 bg-gradient-to-br from-[#0f1c32]/82 to-[#0a1324]/78 p-5 text-slate-100 shadow-[0_18px_44px_rgba(2,6,23,0.48)] backdrop-blur-xl sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-extrabold tracking-tight text-slate-950">Monitoring Kesiapan Verval per PKBM</h2>
-              <p className="mt-0.5 text-xs font-medium text-slate-600">
+              <h2 className="text-lg font-extrabold tracking-tight text-slate-100">Monitoring Kesiapan Verval per PKBM</h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-400">
                 Klik &ldquo;Periksa Berkas&rdquo; pada lembaga untuk memeriksa biodata Dapodik &amp; 4 dokumen fisik (KK, Akta/KTP, Ijazah, Surat Pindah).
               </p>
             </div>
@@ -1967,9 +1960,9 @@ export function DinasHome() {
               description="Belum ada PKBM aktif dengan izin verval Dinas di kabupaten/kota ini, atau Anda dapat menekan 'Simulasi Demo' di pojok atas untuk melihat contoh paparan."
             />
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+            <div className="overflow-x-auto rounded-2xl border border-slate-700/60 bg-[#081222]/70">
               <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 bg-sky-50/90 text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                <thead className="border-b border-slate-700/70 bg-slate-900/80 text-xs font-extrabold uppercase tracking-wider text-slate-400">
                   <tr>
                     <th className="px-4 py-3.5">PKBM / NPSN</th>
                     <th className="px-4 py-3.5">Dapodik &amp; Paket (A/B/C)</th>
@@ -1979,59 +1972,59 @@ export function DinasHome() {
                     <th className="px-4 py-3.5 text-right">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200/80">
+                <tbody className="divide-y divide-slate-800/80">
                   {displayedView.pkbm.map((item) => (
                     <tr
                       key={item.id}
-                      className={selectedPkbm?.id === item.id ? "bg-blue-50/90" : "hover:bg-sky-50/60"}
+                      className={selectedPkbm?.id === item.id ? "bg-amber-500/10" : "transition hover:bg-slate-800/45"}
                     >
                       <td className="px-4 py-3.5">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-extrabold text-slate-950">{item.nama}</p>
+                          <p className="font-extrabold text-slate-100">{item.nama}</p>
                           {item.isDemoSimulation ? (
-                            <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-900">
+                            <span className="rounded-md border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-300">
                               Simulasi Demo
                             </span>
                           ) : (
-                            <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-blue-800">
+                            <span className="rounded-md border border-teal-400/35 bg-teal-500/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-teal-300">
                               Data Riil DB
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 text-xs font-medium text-slate-600">
-                          NPSN: {item.npsn ?? "—"} · {item.kabupatenKota ?? "—"}
+                        <p className="mt-0.5 text-xs font-medium text-slate-400">
+                          NPSN: <span className="font-mono text-slate-300">{item.npsn ?? "—"}</span> · {item.kabupatenKota ?? "—"}
                         </p>
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-800">
-                        <span className="font-extrabold text-slate-950">{item.totalDapodik} Dapodik</span>
-                        <span className="ml-1.5 font-medium text-slate-600">({item.totalSiswa} siswa LMS)</span>
-                        <p className="mt-0.5 font-medium text-slate-600">
+                      <td className="px-4 py-3.5 text-xs text-slate-300">
+                        <span className="font-extrabold text-slate-100 tabular-nums">{item.totalDapodik} Dapodik</span>
+                        <span className="ml-1.5 font-medium text-slate-400">({item.totalSiswa} siswa LMS)</span>
+                        <p className="mt-0.5 font-medium text-slate-400">
                           A: {item.paketA} · B: {item.paketB} · C: {item.paketC}
                         </p>
                       </td>
-                      <td className="px-4 py-3.5 text-xs font-extrabold text-amber-700">{item.siswaMemenuhiCutoff} siswa</td>
+                      <td className="px-4 py-3.5 text-xs font-extrabold text-amber-300 tabular-nums">{item.siswaMemenuhiCutoff} siswa</td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-200">
+                          <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-800">
                             <div
-                              className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500"
+                              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-emerald-400"
                               style={{ width: `${item.kelengkapanVervalPersen}%` }}
                             />
                           </div>
-                          <span className="text-xs font-extrabold text-slate-950">{item.kelengkapanVervalPersen}%</span>
+                          <span className="text-xs font-extrabold text-slate-100 tabular-nums">{item.kelengkapanVervalPersen}%</span>
                         </div>
-                        <p className="mt-1 text-[11px] font-medium text-slate-700">
+                        <p className="mt-1 text-[11px] font-medium text-slate-400">
                           Lengkap:{" "}
-                          <span className="font-extrabold text-emerald-700">{item.berkasLengkap}</span>
+                          <span className="font-extrabold text-emerald-400">{item.berkasLengkap}</span>
                           {" · "}Selisih:{" "}
-                          <span className={item.selisihTanpaBerkas > 0 ? "font-extrabold text-rose-700" : "font-semibold text-slate-600"}>
+                          <span className={item.selisihTanpaBerkas > 0 ? "font-extrabold text-rose-400" : "font-semibold text-slate-400"}>
                             {item.selisihTanpaBerkas}
                           </span>
                         </p>
                       </td>
                       <td className="px-4 py-3.5 text-xs">
-                        <span className="font-extrabold text-emerald-700">{item.persentaseLolosDinas}%</span>
-                        <p className="mt-0.5 font-medium text-slate-600">
+                        <span className="font-extrabold text-emerald-400 tabular-nums">{item.persentaseLolosDinas}%</span>
+                        <p className="mt-0.5 font-medium text-slate-400">
                           {item.lolosVervalDinas} lolos · {item.perluPerbaikanCount} perbaikan
                         </p>
                       </td>
@@ -2044,7 +2037,7 @@ export function DinasHome() {
                             setStudentStatusFilter("");
                             setTimeout(() => document.getElementById("panel-nominatif-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:brightness-110"
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 shadow-[0_0_16px_rgba(245,158,11,0.28)] transition hover:from-amber-300 hover:to-amber-400"
                         >
                           <Eye size={14} /> Periksa Berkas
                         </button>
@@ -2059,39 +2052,39 @@ export function DinasHome() {
 
         {/* Baris 4: Panel Pemeriksaan Nominatif PKBM Terpilih */}
         {selectedPkbm && (
-          <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-blue-500/45 bg-white/95 p-5 text-slate-900 shadow-[0_16px_40px_rgba(37,99,235,0.12)] backdrop-blur-xl sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+          <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border border-amber-400/35 bg-gradient-to-br from-[#101e36]/90 to-[#0a1324]/86 p-5 text-slate-100 shadow-[0_20px_48px_rgba(2,6,23,0.58)] backdrop-blur-xl sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/70 pb-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
                     PEMERIKSAAN NOMINATIF LEMBAGA (ADMINISTRATIF NON-KBM)
                   </p>
                   {selectedPkbm.isDemoSimulation && (
-                    <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold text-amber-900">
+                    <span className="rounded-md border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-extrabold text-amber-300">
                       CONTOH SIMULASI PAPARAN
                     </span>
                   )}
                 </div>
-                <h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-950">
+                <h2 className="mt-1 text-lg font-extrabold tracking-tight text-white">
                   {selectedPkbm.nama} (NPSN: {selectedPkbm.npsn ?? "—"})
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="search"
                     value={studentSearch}
                     onChange={(e) => setStudentSearch(e.target.value)}
                     placeholder="Cari nama/NISN/NIK..."
-                    className="rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                    className="rounded-xl border border-slate-700/80 bg-slate-950/75 py-2 pl-8 pr-3 text-xs font-medium text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
                   />
                 </div>
                 <select
                   aria-label="Filter Status Verval Dinas"
                   value={studentStatusFilter}
                   onChange={(e) => setStudentStatusFilter(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+                  className="rounded-xl border border-slate-700/80 bg-slate-950/75 px-3 py-2 text-xs font-bold text-slate-100 focus:border-amber-400 focus:outline-none"
                 >
                   <option value="">Semua Status Dinas</option>
                   <option value="MENUNGGU_DINAS">Menunggu Dinas</option>
@@ -2101,7 +2094,7 @@ export function DinasHome() {
                 <button
                   type="button"
                   onClick={() => setSelectedPkbm(null)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                  className="rounded-xl border border-slate-600/80 bg-slate-900/75 px-3 py-2 text-xs font-bold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
                 >
                   Tutup Panel
                 </button>
@@ -2116,9 +2109,9 @@ export function DinasHome() {
                 description="Belum ada siswa aktif di PKBM ini atau tidak ada yang cocok dengan filter status/pencarian."
               />
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto rounded-2xl border border-slate-700/60 bg-[#081222]/70">
                 <table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 bg-sky-50/90 text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                  <thead className="border-b border-slate-700/70 bg-slate-900/80 text-xs font-extrabold uppercase tracking-wider text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Warga Belajar</th>
                       <th className="px-4 py-3">NIK / KK / Ibu</th>
@@ -2128,38 +2121,42 @@ export function DinasHome() {
                       <th className="px-4 py-3 text-right">Verifikasi</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200/80">
+                  <tbody className="divide-y divide-slate-800/80">
                     {pkbmStudents.map((st) => {
                       const badge = statusDinasBadge(st.statusVervalDinas);
                       return (
-                        <tr key={st.id} className="hover:bg-sky-50/60">
+                        <tr key={st.id} className="transition hover:bg-slate-800/45">
                           <td className="px-4 py-3">
-                            <p className="font-extrabold text-slate-950">{st.nama}</p>
-                            <p className="text-xs font-medium text-slate-600">NISN {st.nisn} · {st.kelengkapanPersen}% lengkap</p>
+                            <p className="font-extrabold text-slate-100">{st.nama}</p>
+                            <p className="text-xs font-medium text-slate-400">
+                              NISN <span className="font-mono text-slate-300">{st.nisn}</span> · {st.kelengkapanPersen}% lengkap
+                            </p>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-800">
-                            <p className="font-mono font-semibold text-slate-900">NIK: {st.nik ?? "—"}</p>
-                            <p className="font-mono font-semibold text-slate-900">KK: {st.noKk ?? "—"}</p>
-                            <p className="font-medium text-slate-600">Ibu: {st.namaIbuKandung ?? "—"}</p>
+                          <td className="px-4 py-3 text-xs text-slate-300">
+                            <p className="font-mono font-semibold text-slate-200">NIK: {st.nik ?? "—"}</p>
+                            <p className="font-mono font-semibold text-slate-200">KK: {st.noKk ?? "—"}</p>
+                            <p className="font-medium text-slate-400">Ibu: {st.namaIbuKandung ?? "—"}</p>
                           </td>
                           <td className="px-4 py-3 text-xs">
-                            <p className="font-bold text-slate-950">{st.paketKategori} · {st.kelasNama}</p>
-                            <p className={st.memenuhiCutoff ? "font-bold text-emerald-700" : "font-medium text-slate-600"}>
+                            <span className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
+                              {st.paketKategori} · {st.kelasNama}
+                            </span>
+                            <p className={`mt-1 ${st.memenuhiCutoff ? "font-bold text-emerald-400" : "font-medium text-slate-400"}`}>
                               {st.memenuhiCutoff ? "Memenuhi Cut-Off" : "Di luar Cut-Off / Kosong"}
                             </p>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1 text-[10px] font-bold">
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlKk ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlKk ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-300" : "border-slate-700/80 bg-slate-800/70 text-slate-500"}`}>
                                 KK
                               </span>
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlAktaKtp ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlAktaKtp ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-300" : "border-slate-700/80 bg-slate-800/70 text-slate-500"}`}>
                                 Akta
                               </span>
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlIjazah ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlIjazah ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-300" : "border-slate-700/80 bg-slate-800/70 text-slate-500"}`}>
                                 Ijazah
                               </span>
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlSuratPindah ? "border-sky-200 bg-sky-50 text-sky-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlSuratPindah ? "border-teal-400/35 bg-teal-500/15 text-teal-300" : "border-slate-700/80 bg-slate-800/70 text-slate-500"}`}>
                                 Surat Pindah
                               </span>
                             </div>
@@ -2169,7 +2166,7 @@ export function DinasHome() {
                               {badge.label}
                             </span>
                             {st.catatanDinas && (
-                              <p className="mt-1 max-w-[180px] truncate text-[11px] font-semibold text-rose-700" title={st.catatanDinas}>
+                              <p className="mt-1 max-w-[180px] truncate text-[11px] font-semibold text-rose-300" title={st.catatanDinas}>
                                 {st.catatanDinas}
                               </p>
                             )}
@@ -2193,7 +2190,7 @@ export function DinasHome() {
                                           : "kk",
                                 );
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-400/25"
                             >
                               <FileText size={13} /> Cek &amp; Putuskan
                             </button>
@@ -2214,18 +2211,18 @@ export function DinasHome() {
         {activeMenu === "buat-ba" && (
         <section
           id="panel-berita-acara-dinas"
-          className="scroll-mt-6 space-y-6 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6"
+          className="scroll-mt-6 space-y-6 rounded-2xl border border-slate-400/15 bg-gradient-to-br from-[#0f1c32]/82 to-[#0a1324]/78 p-5 text-slate-100 shadow-[0_18px_44px_rgba(2,6,23,0.48)] backdrop-blur-xl sm:p-6"
         >
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-700/70 pb-4">
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/35 bg-amber-500/15 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
                 <FilePlus2 size={13} />
                 FORM PENERBITAN DOKUMEN · {activeWilayahLabel.toUpperCase()}
               </span>
-              <h2 className="mt-2 text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">
+              <h2 className="mt-2 text-lg font-extrabold tracking-tight text-white sm:text-xl">
                 {editingBaId ? "Perbarui Berita Acara Verval" : "Formulir Penerbitan Berita Acara Verval"}
               </h2>
-              <p className="mt-0.5 text-xs font-medium text-slate-600">
+              <p className="mt-0.5 text-xs font-medium text-slate-400">
                 Pilih mode Per PKBM atau Rekapitulasi Kabupaten, lengkapi nomor surat dan pejabat penandatangan, lalu simpan permanen ke arsip atau cetak PDF.
               </p>
             </div>
@@ -2233,7 +2230,7 @@ export function DinasHome() {
             <button
               type="button"
               onClick={() => selectDinasMenu("arsip-ba")}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-extrabold text-blue-800 hover:bg-blue-100"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-600/80 bg-slate-900/75 px-3.5 py-2 text-xs font-extrabold text-slate-200 transition hover:border-amber-400/45 hover:bg-slate-800"
             >
               <Archive size={14} /> Lihat Daftar Arsip ({baArchive.length})
             </button>
@@ -2243,22 +2240,22 @@ export function DinasHome() {
           <form
             id="form-berita-acara-dinas"
             onSubmit={handleSaveBeritaAcara}
-            className={`scroll-mt-6 space-y-5 rounded-2xl border p-5 transition ${
+            className={`scroll-mt-6 space-y-5 rounded-2xl border p-5 backdrop-blur-md transition ${
               editingBaId
-                ? "border-2 border-amber-400 bg-amber-50/40"
-                : "border-sky-200/90 bg-sky-50/45"
+                ? "border-amber-400/60 bg-amber-500/[0.07]"
+                : "border-slate-700/70 bg-[#081222]/70"
             }`}
           >
             {editingBaId && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs">
-                <div className="flex items-center gap-2 font-extrabold text-amber-950">
-                  <Pencil size={14} className="text-amber-700" />
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/45 bg-amber-500/15 px-4 py-2.5 text-xs">
+                <div className="flex items-center gap-2 font-extrabold text-amber-200">
+                  <Pencil size={14} className="text-amber-300" />
                   Mode Edit Arsip Aktif — Perubahan akan memperbarui data Berita Acara tanpa membuat duplikat.
                 </div>
                 <button
                   type="button"
                   onClick={handleCancelEditBa}
-                  className="rounded-lg border border-amber-300 bg-white px-3 py-1 font-extrabold text-slate-900 hover:bg-amber-100"
+                  className="rounded-lg border border-amber-400/45 bg-slate-900/80 px-3 py-1 font-extrabold text-amber-200 hover:bg-amber-400/20"
                 >
                   Batal Edit
                 </button>
@@ -2268,7 +2265,7 @@ export function DinasHome() {
             {/* Pilihan Jenis Berita Acara */}
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-2">
-                <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-300">
                   1. Pilih Jenis Berita Acara
                 </span>
                 <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -2282,8 +2279,8 @@ export function DinasHome() {
                     }}
                     className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left text-xs font-extrabold transition ${
                       baMode === "pkbm"
-                        ? "border-blue-600 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
-                        : "border-slate-300 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/60"
+                        ? "border-amber-400 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.3)]"
+                        : "border-slate-700/80 bg-slate-900/75 text-slate-200 hover:border-amber-400/45 hover:bg-slate-800/80"
                     }`}
                   >
                     <Building2 size={16} className="shrink-0" />
@@ -2300,8 +2297,8 @@ export function DinasHome() {
                     }}
                     className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left text-xs font-extrabold transition ${
                       baMode === "kabupaten"
-                        ? "border-blue-600 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
-                        : "border-slate-300 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/60"
+                        ? "border-amber-400 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.3)]"
+                        : "border-slate-700/80 bg-slate-900/75 text-slate-200 hover:border-amber-400/45 hover:bg-slate-800/80"
                     }`}
                   >
                     <Landmark size={16} className="shrink-0" />
@@ -2311,7 +2308,7 @@ export function DinasHome() {
               </div>
 
               {baMode === "pkbm" ? (
-                <label className="block space-y-2 text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                <label className="block space-y-2 text-xs font-extrabold uppercase tracking-wider text-slate-300">
                   <span>2. Pilih Satuan Pendidikan (PKBM)</span>
                   <select
                     value={selectedBaPkbmId}
@@ -2323,7 +2320,7 @@ export function DinasHome() {
                         setBaNomorSurat(buildDefaultBaNumber("pkbm", baTanggalIso, matched?.npsn));
                       }
                     }}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold normal-case tracking-normal text-slate-950 focus:border-blue-600 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-3.5 py-2.5 text-xs font-bold normal-case tracking-normal text-slate-100 focus:border-amber-400 focus:outline-none"
                   >
                     {(displayedView?.pkbm ?? []).length === 0 ? (
                       <option value="">Belum ada PKBM aktif di wilayah ini</option>
@@ -2340,17 +2337,17 @@ export function DinasHome() {
                 </label>
               ) : (
                 <div className="space-y-2">
-                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-300">
                     2. Cakupan Wilayah Rekapitulasi
                   </span>
-                  <div className="flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-2.5 text-xs">
+                  <div className="flex items-center justify-between rounded-xl border border-amber-400/40 bg-amber-500/10 px-4 py-2.5 text-xs">
                     <div>
-                      <p className="font-extrabold text-slate-950">{activeWilayahLabel}</p>
-                      <p className="text-[11px] font-semibold text-slate-700">
+                      <p className="font-extrabold text-slate-100">{activeWilayahLabel}</p>
+                      <p className="text-[11px] font-semibold text-slate-300">
                         Agregat otomatis seluruh {kabupatenSnapshot.totalPkbm} PKBM aktif (Cut-Off: {kabupatenSnapshot.cutoffDate})
                       </p>
                     </div>
-                    <span className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-extrabold text-amber-900">
+                    <span className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-extrabold text-amber-300">
                       Rekap Dinas
                     </span>
                   </div>
@@ -2360,47 +2357,47 @@ export function DinasHome() {
 
             {/* Ringkasan Otomatis Sasaran Terpilih */}
             {activeBaSnapshot && (
-              <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-white bg-white/90 p-3.5 shadow-2xs sm:grid-cols-3 lg:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-slate-700/70 bg-slate-900/75 p-3.5 sm:grid-cols-3 lg:grid-cols-6">
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                     {baMode === "kabupaten" ? "PKBM Tercakup" : "NPSN / Kepala"}
                   </p>
                   {baMode === "kabupaten" ? (
-                    <p className="mt-0.5 text-sm font-black text-slate-950">{activeBaSnapshot.totalPkbm} Lembaga</p>
+                    <p className="mt-0.5 text-sm font-black text-white tabular-nums">{activeBaSnapshot.totalPkbm} Lembaga</p>
                   ) : (
                     <>
-                      <p className="mt-0.5 font-mono text-xs font-extrabold text-slate-950">
+                      <p className="mt-0.5 font-mono text-xs font-extrabold text-white">
                         {selectedBaPkbm?.npsn ?? "—"}
                       </p>
-                      <p className="truncate text-[11px] font-semibold text-slate-600" title={selectedBaPkbm?.namaKepalaSekolah ?? undefined}>
+                      <p className="truncate text-[11px] font-semibold text-slate-400" title={selectedBaPkbm?.namaKepalaSekolah ?? undefined}>
                         {selectedBaPkbm?.namaKepalaSekolah ?? "Kepala PKBM —"}
                       </p>
                     </>
                   )}
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Dapodik / LMS</p>
-                  <p className="mt-0.5 text-sm font-black text-slate-950">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Dapodik / LMS</p>
+                  <p className="mt-0.5 text-sm font-black text-white tabular-nums">
                     {activeBaSnapshot.totalDapodik} / {activeBaSnapshot.totalSiswa}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Berkas Lengkap</p>
-                  <p className="mt-0.5 text-sm font-black text-emerald-700">{activeBaSnapshot.berkasLengkap} Siswa</p>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Berkas Lengkap</p>
+                  <p className="mt-0.5 text-sm font-black text-emerald-400 tabular-nums">{activeBaSnapshot.berkasLengkap} Siswa</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Selisih Berkas</p>
-                  <p className="mt-0.5 text-sm font-black text-rose-700">{activeBaSnapshot.selisihTanpaBerkas} Siswa</p>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Selisih Berkas</p>
+                  <p className="mt-0.5 text-sm font-black text-rose-400 tabular-nums">{activeBaSnapshot.selisihTanpaBerkas} Siswa</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Lolos Dinas</p>
-                  <p className="mt-0.5 text-sm font-black text-blue-700">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Lolos Dinas</p>
+                  <p className="mt-0.5 text-sm font-black text-amber-300 tabular-nums">
                     {activeBaSnapshot.lolosVervalDinas} ({activeBaSnapshot.persentaseLolosDinas}%)
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Paket A / B / C</p>
-                  <p className="mt-0.5 text-xs font-extrabold text-slate-900">
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Paket A / B / C</p>
+                  <p className="mt-0.5 text-xs font-extrabold text-slate-200 tabular-nums">
                     {activeBaSnapshot.paketA} / {activeBaSnapshot.paketB} / {activeBaSnapshot.paketC}
                   </p>
                 </div>
@@ -2409,7 +2406,7 @@ export function DinasHome() {
 
             {/* Metadata Surat, Pejabat Penandatangan & Kop Dinas */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <label className="block text-xs font-bold text-slate-900">
+              <label className="block text-xs font-bold text-slate-200">
                 Nomor Surat Berita Acara
                 <input
                   type="text"
@@ -2417,78 +2414,78 @@ export function DinasHome() {
                   value={baNomorSurat}
                   onChange={(e) => setBaNomorSurat(e.target.value)}
                   placeholder="421.9/BA-VERVAL/DIKMAS/2026"
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-950 focus:border-blue-600 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-3.5 py-2.5 text-xs font-bold text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
                 />
               </label>
 
-              <label className="block text-xs font-bold text-slate-900">
+              <label className="block text-xs font-bold text-slate-200">
                 Tanggal Penetapan
                 <div className="mt-1.5 flex items-center gap-2">
                   <div className="relative flex-1">
-                    <Calendar size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <Calendar size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="date"
                       required
                       value={baTanggalIso}
                       onChange={(e) => setBaTanggalIso(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-xs font-bold text-slate-950 focus:border-blue-600 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-700/80 bg-slate-950/75 py-2.5 pl-9 pr-3 text-xs font-bold text-slate-100 [color-scheme:dark] focus:border-amber-400 focus:outline-none"
                     />
                   </div>
-                  <span className="shrink-0 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] font-extrabold text-blue-900">
+                  <span className="shrink-0 rounded-xl border border-amber-400/35 bg-amber-500/15 px-2.5 py-2 text-[11px] font-extrabold text-amber-300">
                     {formatIndonesianDate(baTanggalIso)}
                   </span>
                 </div>
               </label>
 
-              <label className="block text-xs font-bold text-slate-900">
+              <label className="block text-xs font-bold text-slate-200">
                 Pejabat Penandatangan
                 <select
                   value={baJabatanTtd}
                   onChange={(e) => setBaJabatanTtd(e.target.value as PejabatJabatanTtd)}
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-950 focus:border-blue-600 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-3.5 py-2.5 text-xs font-bold text-slate-100 focus:border-amber-400 focus:outline-none"
                 >
                   <option value="Kepala Bidang PAUD & Dikmas">Kepala Bidang PAUD &amp; Dikmas</option>
                   <option value="Kepala Dinas Pendidikan dan Kebudayaan">Kepala Dinas Pendidikan dan Kebudayaan</option>
                 </select>
               </label>
 
-              <label className="block text-xs font-bold text-slate-900">
+              <label className="block text-xs font-bold text-slate-200">
                 Nama Pejabat (Tersimpan Otomatis)
                 <input
                   type="text"
                   value={baPejabatNama}
                   onChange={(e) => setBaPejabatNama(e.target.value)}
                   placeholder="Contoh: Drs. H. Suryana, M.Pd."
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-3.5 py-2.5 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
                 />
               </label>
 
-              <label className="block text-xs font-bold text-slate-900">
+              <label className="block text-xs font-bold text-slate-200">
                 NIP Pejabat (Tersimpan Otomatis)
                 <input
                   type="text"
                   value={baPejabatNip}
                   onChange={(e) => setBaPejabatNip(e.target.value)}
                   placeholder="Contoh: 19720514 199802 1 002"
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-xs font-semibold text-slate-950 placeholder:font-sans placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-3.5 py-2.5 font-mono text-xs font-semibold text-slate-100 placeholder:font-sans placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
                 />
               </label>
 
-              <div className="text-xs font-bold text-slate-900">
+              <div className="text-xs font-bold text-slate-200">
                 <span>Logo Kop Dinas (PNG / JPG)</span>
                 <div className="mt-1.5 flex items-center gap-2.5">
                   {baKopLogo ? (
                     <img
                       src={baKopLogo}
                       alt="Logo Kop Dinas"
-                      className="h-10 w-10 shrink-0 rounded-lg border border-slate-300 bg-white object-contain p-0.5"
+                      className="h-10 w-10 shrink-0 rounded-lg border border-slate-600 bg-white object-contain p-0.5"
                     />
                   ) : (
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900/80 text-slate-400">
                       <ImagePlus size={16} />
                     </span>
                   )}
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-extrabold text-blue-800 hover:bg-blue-50">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-xs font-extrabold text-amber-300 transition hover:bg-amber-400/25">
                     <ImagePlus size={14} />
                     <span>{baKopLogo ? "Ganti Logo" : "Upload Logo"}</span>
                     <input
@@ -2502,7 +2499,7 @@ export function DinasHome() {
                     <button
                       type="button"
                       onClick={handleRemoveKopLogo}
-                      className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                      className="inline-flex items-center gap-1 rounded-xl border border-rose-500/35 bg-rose-500/15 px-2.5 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/25"
                     >
                       <Trash2 size={13} /> Hapus
                     </button>
@@ -2511,7 +2508,7 @@ export function DinasHome() {
               </div>
             </div>
 
-            <label className="block text-xs font-bold text-slate-900">
+            <label className="block text-xs font-bold text-slate-200">
               Catatan Dinas / Rekomendasi Tindak Lanjut
               <textarea
                 rows={2}
@@ -2519,13 +2516,13 @@ export function DinasHome() {
                 value={baCatatan}
                 onChange={(e) => setBaCatatan(e.target.value)}
                 placeholder="Contoh: Selisih warga belajar tanpa berkas agar dilengkapi oleh operator PKBM paling lambat 7 hari kerja setelah verifikasi."
-                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                className="mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 p-3 text-xs font-medium text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
               />
             </label>
 
             {baFormError && (
-              <p role="alert" className="flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-800">
-                <AlertTriangle size={15} className="shrink-0 text-rose-600" />
+              <p role="alert" className="flex items-center gap-2 rounded-xl border border-rose-400/40 bg-rose-500/15 px-3.5 py-2.5 text-xs font-bold text-rose-200">
+                <AlertTriangle size={15} className="shrink-0 text-rose-400" />
                 {baFormError}
               </p>
             )}
@@ -2534,7 +2531,7 @@ export function DinasHome() {
               <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm shadow-blue-600/25 transition hover:brightness-110"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-2.5 text-xs font-extrabold text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.34)] transition hover:from-amber-300 hover:to-amber-400"
                 >
                   <Save size={15} />
                   {editingBaId ? "Simpan Perubahan BA" : "Simpan Berita Acara"}
@@ -2543,7 +2540,7 @@ export function DinasHome() {
                   <button
                     type="button"
                     onClick={handleCancelEditBa}
-                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                    className="rounded-xl border border-slate-600/80 bg-slate-900/80 px-4 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800"
                   >
                     Batal Edit
                   </button>
@@ -2553,7 +2550,7 @@ export function DinasHome() {
               <button
                 type="button"
                 onClick={handlePrintFromForm}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-2.5 text-xs font-extrabold text-slate-950 shadow-[0_6px_18px_rgba(245,158,11,0.32)] transition hover:from-amber-300 hover:to-amber-400"
+                className="inline-flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-5 py-2.5 text-xs font-extrabold text-emerald-300 transition hover:bg-emerald-500/25"
               >
                 <Printer size={15} />
                 Cetak / Simpan PDF Berita Acara
@@ -2565,26 +2562,26 @@ export function DinasHome() {
 
         {/* Halaman 3: Daftar Berita Acara Tersimpan & Target Belum Dibuat */}
         {activeMenu === "arsip-ba" && (
-        <section className="space-y-4 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6">
+        <section className="space-y-4 rounded-2xl border border-slate-400/15 bg-gradient-to-br from-[#0f1c32]/82 to-[#0a1324]/78 p-5 text-slate-100 shadow-[0_18px_44px_rgba(2,6,23,0.48)] backdrop-blur-xl sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-extrabold tracking-tight text-slate-950">
+                <h3 className="text-base font-extrabold tracking-tight text-slate-100">
                   Daftar Berita Acara Tersimpan &amp; Monitoring Penerbitan
                 </h3>
-                <p className="text-xs font-medium text-slate-600">
+                <p className="text-xs font-medium text-slate-400">
                   Saring arsip berdasarkan nomor surat, nama PKBM, NPSN, tanggal, pejabat, jenis BA, atau status Sudah vs Belum dibuat.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="search"
                     value={baSearch}
                     onChange={(e) => setBaSearch(e.target.value)}
                     placeholder="Cari nomor surat, PKBM, NPSN, tanggal, pejabat..."
-                    className="w-64 rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none sm:w-72"
+                    className="w-64 rounded-xl border border-slate-700/80 bg-slate-950/75 py-2 pl-8 pr-3 text-xs font-medium text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none sm:w-72"
                   />
                 </div>
 
@@ -2592,7 +2589,7 @@ export function DinasHome() {
                   aria-label="Filter Jenis Berita Acara"
                   value={baTypeFilter}
                   onChange={(e) => setBaTypeFilter(e.target.value as "ALL" | BeritaAcaraMode)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+                  className="rounded-xl border border-slate-700/80 bg-slate-950/75 px-3 py-2 text-xs font-bold text-slate-100 focus:border-amber-400 focus:outline-none"
                 >
                   <option value="ALL">Semua Jenis BA</option>
                   <option value="pkbm">Per Lembaga (PKBM)</option>
@@ -2603,7 +2600,7 @@ export function DinasHome() {
                   aria-label="Filter Status Berita Acara"
                   value={baStatusFilter}
                   onChange={(e) => setBaStatusFilter(e.target.value as "ALL" | BeritaAcaraStatus)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+                  className="rounded-xl border border-slate-700/80 bg-slate-950/75 px-3 py-2 text-xs font-bold text-slate-100 focus:border-amber-400 focus:outline-none"
                 >
                   <option value="ALL">Semua Status</option>
                   <option value="SUDAH">Sudah Dibuat / Tersimpan</option>
@@ -2628,9 +2625,9 @@ export function DinasHome() {
                 }
               />
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto rounded-2xl border border-slate-700/60 bg-[#081222]/70">
                 <table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 bg-sky-50/90 text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                  <thead className="border-b border-slate-700/70 bg-slate-900/80 text-xs font-extrabold uppercase tracking-wider text-slate-400">
                     <tr>
                       <th className="px-4 py-3.5">Jenis &amp; Status</th>
                       <th className="px-4 py-3.5">Nomor Surat &amp; Tanggal</th>
@@ -2640,60 +2637,60 @@ export function DinasHome() {
                       <th className="px-4 py-3.5 text-right">Aksi</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200/80">
+                  <tbody className="divide-y divide-slate-800/80">
                     {baStatusFilter !== "BELUM" &&
                       filteredSavedBa.map((item) => (
                         <tr
                           key={item.id}
-                          className={editingBaId === item.id ? "bg-amber-50/80" : "hover:bg-sky-50/55"}
+                          className={editingBaId === item.id ? "bg-amber-500/12" : "transition hover:bg-slate-800/45"}
                         >
                           <td className="px-4 py-3.5">
                             <div className="flex flex-col items-start gap-1.5">
                               <span
                                 className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
                                   item.mode === "kabupaten"
-                                    ? "border-amber-300 bg-amber-50 text-amber-900"
-                                    : "border-blue-200 bg-blue-50 text-blue-800"
+                                    ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+                                    : "border-sky-400/35 bg-sky-500/15 text-sky-300"
                                 }`}
                               >
                                 {item.mode === "kabupaten" ? "Rekap Kabupaten" : "Per PKBM"}
                               </span>
-                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
                                 <CheckCircle2 size={11} /> Sudah Tersimpan
                               </span>
                             </div>
                           </td>
 
                           <td className="px-4 py-3.5 text-xs">
-                            <p className="font-mono font-extrabold text-slate-950">{item.nomorSurat}</p>
-                            <p className="mt-0.5 font-semibold text-slate-600">{item.tanggalSurat}</p>
+                            <p className="font-mono font-extrabold text-slate-100">{item.nomorSurat}</p>
+                            <p className="mt-0.5 font-semibold text-slate-400">{item.tanggalSurat}</p>
                           </td>
 
                           <td className="px-4 py-3.5 text-xs">
-                            <p className="font-extrabold text-slate-950">{item.pkbmNama}</p>
-                            <p className="mt-0.5 font-medium text-slate-600">
+                            <p className="font-extrabold text-slate-100">{item.pkbmNama}</p>
+                            <p className="mt-0.5 font-medium text-slate-400">
                               {item.mode === "pkbm"
                                 ? `NPSN: ${item.pkbmNpsn ?? "—"} · ${item.wilayah}`
                                 : `Wilayah ${item.wilayah} (${item.ringkasan.totalPkbm} PKBM)`}
                             </p>
                           </td>
 
-                          <td className="px-4 py-3.5 text-xs text-slate-800">
-                            <p className="font-bold text-slate-950">
+                          <td className="px-4 py-3.5 text-xs text-slate-300">
+                            <p className="font-bold text-slate-100">
                               {item.ringkasan.totalDapodik} Dapodik ·{" "}
-                              <span className="text-emerald-700">{item.ringkasan.berkasLengkap} Lengkap</span>
+                              <span className="text-emerald-400">{item.ringkasan.berkasLengkap} Lengkap</span>
                             </p>
-                            <p className="mt-0.5 font-medium text-slate-600">
+                            <p className="mt-0.5 font-medium text-slate-400">
                               Selisih:{" "}
-                              <span className="font-bold text-rose-700">{item.ringkasan.selisihTanpaBerkas}</span>
+                              <span className="font-bold text-rose-400">{item.ringkasan.selisihTanpaBerkas}</span>
                               {" · "}Lolos Dinas:{" "}
-                              <span className="font-bold text-blue-700">{item.ringkasan.persentaseLolosDinas}%</span>
+                              <span className="font-bold text-amber-300">{item.ringkasan.persentaseLolosDinas}%</span>
                             </p>
                           </td>
 
                           <td className="px-4 py-3.5 text-xs">
-                            <p className="font-bold text-slate-950">{item.pejabatNama}</p>
-                            <p className="mt-0.5 font-medium text-slate-600">{item.jabatanTtd}</p>
+                            <p className="font-bold text-slate-100">{item.pejabatNama}</p>
+                            <p className="mt-0.5 font-medium text-slate-400">{item.jabatanTtd}</p>
                             <p className="font-mono text-[11px] text-slate-500">NIP. {item.pejabatNip}</p>
                           </td>
 
@@ -2702,19 +2699,19 @@ export function DinasHome() {
                               <button
                                 type="button"
                                 onClick={() => handleEditBa(item)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100"
+                                className="inline-flex items-center gap-1 rounded-lg border border-sky-400/35 bg-sky-500/15 px-2.5 py-1.5 text-xs font-bold text-sky-300 transition hover:bg-sky-500/25"
                               >
                                 <Pencil size={12} /> Edit
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setPrintBaDoc(item)}
-                                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/25"
                               >
                                 <Printer size={12} /> Cetak
                               </button>
                               {confirmDeleteBaId === item.id ? (
-                                <div className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-1.5 py-1">
+                                <div className="inline-flex items-center gap-1 rounded-lg border border-rose-400/40 bg-rose-500/15 px-1.5 py-1">
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteBa(item.id)}
@@ -2725,7 +2722,7 @@ export function DinasHome() {
                                   <button
                                     type="button"
                                     onClick={() => setConfirmDeleteBaId(null)}
-                                    className="rounded bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+                                    className="rounded bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-slate-200 hover:bg-slate-700"
                                   >
                                     Batal
                                   </button>
@@ -2734,7 +2731,7 @@ export function DinasHome() {
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteBaId(item.id)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-500/35 bg-rose-500/15 px-2.5 py-1.5 text-xs font-bold text-rose-300 transition hover:bg-rose-500/25"
                                 >
                                   <Trash2 size={12} /> Hapus
                                 </button>
@@ -2746,19 +2743,19 @@ export function DinasHome() {
 
                     {baStatusFilter !== "SUDAH" &&
                       filteredUnsavedBa.map((target) => (
-                        <tr key={target.key} className="bg-amber-50/20 hover:bg-amber-50/55">
+                        <tr key={target.key} className="bg-amber-500/[0.04] transition hover:bg-amber-500/10">
                           <td className="px-4 py-3.5">
                             <div className="flex flex-col items-start gap-1.5">
                               <span
                                 className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
                                   target.mode === "kabupaten"
-                                    ? "border-amber-300 bg-amber-50 text-amber-900"
-                                    : "border-blue-200 bg-blue-50 text-blue-800"
+                                    ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+                                    : "border-sky-400/35 bg-sky-500/15 text-sky-300"
                                 }`}
                               >
                                 {target.mode === "kabupaten" ? "Rekap Kabupaten" : "Per PKBM"}
                               </span>
-                              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
+                              <span className="inline-flex rounded-full border border-amber-400/40 bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
                                 Belum Dibuat
                               </span>
                             </div>
@@ -2769,28 +2766,28 @@ export function DinasHome() {
                           </td>
 
                           <td className="px-4 py-3.5 text-xs">
-                            <p className="font-extrabold text-slate-950">{target.pkbmNama}</p>
-                            <p className="mt-0.5 font-medium text-slate-600">
+                            <p className="font-extrabold text-slate-100">{target.pkbmNama}</p>
+                            <p className="mt-0.5 font-medium text-slate-400">
                               {target.mode === "pkbm"
                                 ? `NPSN: ${target.pkbmNpsn ?? "—"} · ${target.wilayah}`
                                 : `Wilayah ${target.wilayah} (${target.ringkasan.totalPkbm} PKBM)`}
                             </p>
                           </td>
 
-                          <td className="px-4 py-3.5 text-xs text-slate-800">
-                            <p className="font-bold text-slate-950">
+                          <td className="px-4 py-3.5 text-xs text-slate-300">
+                            <p className="font-bold text-slate-100">
                               {target.ringkasan.totalDapodik} Dapodik ·{" "}
-                              <span className="text-emerald-700">{target.ringkasan.berkasLengkap} Lengkap</span>
+                              <span className="text-emerald-400">{target.ringkasan.berkasLengkap} Lengkap</span>
                             </p>
-                            <p className="mt-0.5 font-medium text-slate-600">
+                            <p className="mt-0.5 font-medium text-slate-400">
                               Selisih:{" "}
-                              <span className="font-bold text-rose-700">{target.ringkasan.selisihTanpaBerkas}</span>
+                              <span className="font-bold text-rose-400">{target.ringkasan.selisihTanpaBerkas}</span>
                               {" · "}Lolos Dinas:{" "}
-                              <span className="font-bold text-blue-700">{target.ringkasan.persentaseLolosDinas}%</span>
+                              <span className="font-bold text-amber-300">{target.ringkasan.persentaseLolosDinas}%</span>
                             </p>
                           </td>
 
-                          <td className="px-4 py-3.5 text-xs font-medium text-slate-500">
+                          <td className="px-4 py-3.5 text-xs font-medium text-slate-400">
                             {target.pkbmKepala ? `Kepala: ${target.pkbmKepala}` : "Menunggu penerbitan Dinas"}
                           </td>
 
@@ -2798,7 +2795,7 @@ export function DinasHome() {
                             <button
                               type="button"
                               onClick={() => handleQuickCreateBa(target)}
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 shadow-xs transition hover:from-amber-300 hover:to-amber-400"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 shadow-[0_0_16px_rgba(245,158,11,0.28)] transition hover:from-amber-300 hover:to-amber-400"
                             >
                               <FilePlus2 size={14} /> Buat BA
                             </button>
@@ -2817,20 +2814,20 @@ export function DinasHome() {
       </div>
 
       {activeMenu === "verifikasi" && inspectStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white bg-white text-slate-900 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50/70 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md">
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-400/20 bg-[#0b1526]/96 text-slate-100 shadow-[0_28px_80px_rgba(2,6,23,0.8)] backdrop-blur-2xl">
+            <div className="flex items-center justify-between border-b border-slate-700/70 bg-gradient-to-r from-[#0a2c2a]/85 via-[#0e1c33]/90 to-[#111f38]/90 px-6 py-4">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
                   VERIFIKASI DINAS PENDIDIKAN {inspectStudent.isDemoSimulation ? "· SIMULASI PAPARAN" : ""}
                 </p>
-                <h3 className="text-lg font-extrabold tracking-tight text-slate-950">{inspectStudent.nama}</h3>
+                <h3 className="text-lg font-extrabold tracking-tight text-white">{inspectStudent.nama}</h3>
               </div>
               <button
                 type="button"
                 disabled={actionBusy}
                 onClick={() => setInspectStudent(null)}
-                className="rounded-lg p-1.5 text-slate-600 hover:bg-white hover:text-slate-950"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
               >
                 <X size={18} />
               </button>
@@ -2838,25 +2835,25 @@ export function DinasHome() {
 
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 text-xs">
               {inspectStudent.isDemoSimulation && (
-                <p className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-950">
+                <p className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-xs font-bold text-amber-200">
                   Contoh data simulasi paparan (hanya pratinjau dokumen administrasi — perubahan tidak disimpan ke database).
                 </p>
               )}
 
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-2">
-                <p><span className="font-semibold text-slate-600">NISN:</span> <strong className="font-mono text-slate-950">{inspectStudent.nisn}</strong></p>
-                <p><span className="font-semibold text-slate-600">NIK:</span> <strong className="font-mono text-slate-950">{inspectStudent.nik ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">No. KK:</span> <strong className="font-mono text-slate-950">{inspectStudent.noKk ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">Ibu Kandung:</span> <strong className="text-slate-950">{inspectStudent.namaIbuKandung ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">Sekolah Asal:</span> <strong className="text-slate-950">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">No. Ijazah:</span> <strong className="text-slate-950">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">Status PKBM:</span> <strong className="text-blue-700">{inspectStudent.statusVerval}</strong></p>
-                <p><span className="font-semibold text-slate-600">Tanggal Masuk:</span> <strong className="text-slate-950">{inspectStudent.tanggalMasuk ?? "—"}</strong></p>
+              <div className="grid gap-3 rounded-xl border border-slate-700/70 bg-slate-900/75 p-4 sm:grid-cols-2">
+                <p><span className="font-semibold text-slate-400">NISN:</span> <strong className="font-mono text-slate-100">{inspectStudent.nisn}</strong></p>
+                <p><span className="font-semibold text-slate-400">NIK:</span> <strong className="font-mono text-slate-100">{inspectStudent.nik ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-400">No. KK:</span> <strong className="font-mono text-slate-100">{inspectStudent.noKk ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-400">Ibu Kandung:</span> <strong className="text-slate-100">{inspectStudent.namaIbuKandung ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-400">Sekolah Asal:</span> <strong className="text-slate-100">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-400">No. Ijazah:</span> <strong className="text-slate-100">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-400">Status PKBM:</span> <strong className="text-emerald-300">{inspectStudent.statusVerval}</strong></p>
+                <p><span className="font-semibold text-slate-400">Tanggal Masuk:</span> <strong className="text-slate-100">{inspectStudent.tanggalMasuk ?? "—"}</strong></p>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                  <span className="font-extrabold uppercase tracking-wider text-slate-800">Pratinjau Berkas</span>
+              <div className="rounded-xl border border-slate-700/70 bg-slate-900/75 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/70 pb-3">
+                  <span className="font-extrabold uppercase tracking-wider text-slate-200">Pratinjau Berkas</span>
                   <div className="flex flex-wrap gap-1.5">
                     {([
                       { id: "kk", label: "KK", url: inspectStudent.urlKk },
@@ -2870,8 +2867,8 @@ export function DinasHome() {
                         onClick={() => setDocTab(tab.id)}
                         className={`rounded-lg px-3 py-1 font-bold transition ${
                           docTab === tab.id
-                            ? "bg-blue-600 text-white shadow-xs"
-                            : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                            ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.3)]"
+                            : "border border-slate-700 bg-slate-950/70 text-slate-300 hover:border-amber-400/40 hover:text-white"
                         }`}
                       >
                         {tab.label}
@@ -2888,18 +2885,18 @@ export function DinasHome() {
                         : docTab === "ijazah"
                           ? inspectStudent.urlIjazah
                           : inspectStudent.urlSuratPindah;
-                  if (!u) return <p className="py-6 text-center font-medium text-slate-600">Berkas belum diunggah.</p>;
+                  if (!u) return <p className="py-6 text-center font-medium text-slate-400">Berkas belum diunggah.</p>;
                   if (u.startsWith("data:application/pdf") || u.toLowerCase().endsWith(".pdf")) {
-                    return <iframe src={u} title="Pratinjau PDF" className="mt-3 h-64 w-full rounded-xl border border-slate-200 bg-white" />;
+                    return <iframe src={u} title="Pratinjau PDF" className="mt-3 h-64 w-full rounded-xl border border-slate-700 bg-white" />;
                   }
                   if (u.startsWith("data:image/") || /\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(u)) {
                     return <img src={u} alt="Pratinjau Berkas" className="mx-auto mt-3 max-h-64 rounded-xl object-contain" />;
                   }
                   return (
-                    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3">
-                      <span className="break-all font-mono text-blue-700">{u}</span>
+                    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-950/75 p-3">
+                      <span className="break-all font-mono text-amber-300">{u}</span>
                       {u.startsWith("http") && (
-                        <a href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-blue-700 underline">
+                        <a href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-emerald-300 underline hover:text-emerald-200">
                           Buka <ExternalLink size={12} />
                         </a>
                       )}
@@ -2908,7 +2905,7 @@ export function DinasHome() {
                 })()}
               </div>
 
-              <label className="block font-bold text-slate-900">
+              <label className="block font-bold text-slate-200">
                 Catatan Pemeriksaan Dinas (Wajib diisi jika Minta Perbaikan)
                 <textarea
                   rows={2}
@@ -2916,19 +2913,19 @@ export function DinasHome() {
                   value={catatanInput}
                   onChange={(e) => setCatatanInput(e.target.value)}
                   placeholder="Contoh: Scan KK buram, mohon unggah ulang yang lebih jelas."
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-950 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 p-3 text-xs font-medium text-slate-100 placeholder:text-slate-500 focus:border-amber-400 focus:outline-none"
                 />
               </label>
 
-              {actionError && <p role="alert" className="font-bold text-rose-700">{actionError}</p>}
+              {actionError && <p role="alert" className="font-bold text-rose-300">{actionError}</p>}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-700/70 bg-slate-950/60 px-6 py-4">
               <button
                 type="button"
                 disabled={actionBusy}
                 onClick={() => void submitDinasDecision("MENUNGGU_DINAS")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-600/80 bg-slate-900/80 px-3.5 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-800 disabled:opacity-50"
               >
                 <RotateCcw size={13} /> Reset Menunggu
               </button>
@@ -2937,7 +2934,7 @@ export function DinasHome() {
                   type="button"
                   disabled={actionBusy}
                   onClick={() => void submitDinasDecision("PERLU_PERBAIKAN")}
-                  className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 disabled:opacity-50"
+                  className="rounded-xl border border-rose-500/40 bg-rose-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
                 >
                   Minta Perbaikan
                 </button>
@@ -2945,7 +2942,7 @@ export function DinasHome() {
                   type="button"
                   disabled={actionBusy}
                   onClick={() => void submitDinasDecision("LOLOS_VERVAL")}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2 text-xs font-extrabold text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.3)] transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50"
                 >
                   Loloskan
                 </button>
@@ -2957,11 +2954,11 @@ export function DinasHome() {
 
       {/* Modal Pratinjau & Cetak PDF Berita Acara Resmi Dinas */}
       {printBaDoc && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm sm:p-8 print:static print:overflow-visible print:bg-white print:p-0">
-          <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-white bg-white/95 px-5 py-3.5 shadow-lg">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-md sm:p-8 print:static print:overflow-visible print:bg-white print:p-0">
+          <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-400/20 bg-[#0d192c]/95 px-5 py-3.5 text-slate-100 shadow-2xl backdrop-blur-xl">
             <div>
-              <p className="text-sm font-extrabold text-slate-950">Pratinjau Cetak Berita Acara Verval Dinas</p>
-              <p className="text-xs font-medium text-slate-600">
+              <p className="text-sm font-extrabold text-white">Pratinjau Cetak Berita Acara Verval Dinas</p>
+              <p className="text-xs font-medium text-slate-400">
                 Gunakan tombol Cetak / Simpan PDF untuk menyimpan dokumen resmi ke format PDF.
               </p>
             </div>
@@ -2969,14 +2966,14 @@ export function DinasHome() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-extrabold text-white shadow-sm hover:brightness-110"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-4 py-2 text-xs font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.32)] transition hover:from-amber-300 hover:to-amber-400"
               >
                 <Printer size={14} /> Cetak / Simpan PDF
               </button>
               <button
                 type="button"
                 onClick={() => setPrintBaDoc(null)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-600/80 bg-slate-900/80 px-4 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-800"
               >
                 <X size={14} /> Tutup
               </button>

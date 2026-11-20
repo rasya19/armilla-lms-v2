@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+﻿import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   Building2,
@@ -13,6 +13,8 @@ import {
   Inbox,
   Landmark,
   LogOut,
+  Pencil,
+  Printer,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -352,6 +354,160 @@ function statusDinasBadge(status: VervalDinasStatus): { label: string; cls: stri
   }
 }
 
+const BA_ARCHIVE_STORAGE_KEY = "dinas_saved_ba_archive_v1";
+const BA_SIGNER_PREFS_STORAGE_KEY = "dinas_ba_signer_prefs_v1";
+const BA_KOP_LOGO_STORAGE_KEY = "dinas_ba_kop_logo_v1";
+
+function todayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatIndonesianDate(isoDate: string): string {
+  if (!isoDate) return "—";
+  const parts = isoDate.split("-").map(Number);
+  if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+    const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(dt);
+  }
+  const parsed = new Date(isoDate);
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(parsed);
+  }
+  return isoDate;
+}
+
+function buildDefaultBaNumber(mode: BeritaAcaraMode, isoDate: string, npsn?: string | null): string {
+  const year = (isoDate || todayIsoDate()).slice(0, 4);
+  if (mode === "kabupaten") {
+    return `421.9/BA-VERVAL-KAB/DIKMAS/${year}`;
+  }
+  const cleanNpsn = npsn ? npsn.trim() : "PKBM";
+  return `421.9/BA-VERVAL-${cleanNpsn}/DIKMAS/${year}`;
+}
+
+function loadSavedBaArchive(): SavedBeritaAcara[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(BA_ARCHIVE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as SavedBeritaAcara[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedBaArchive(items: SavedBeritaAcara[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(BA_ARCHIVE_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage quota errors safely
+  }
+}
+
+function loadBaSignerPrefs(): {
+  jabatanTtd: PejabatJabatanTtd;
+  pejabatNama: string;
+  pejabatNip: string;
+} {
+  const fallback = {
+    jabatanTtd: "Kepala Bidang PAUD & Dikmas" as PejabatJabatanTtd,
+    pejabatNama: "",
+    pejabatNip: "",
+  };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(BA_SIGNER_PREFS_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<typeof fallback>;
+    return {
+      jabatanTtd:
+        parsed.jabatanTtd === "Kepala Dinas Pendidikan dan Kebudayaan"
+          ? "Kepala Dinas Pendidikan dan Kebudayaan"
+          : "Kepala Bidang PAUD & Dikmas",
+      pejabatNama: typeof parsed.pejabatNama === "string" ? parsed.pejabatNama : "",
+      pejabatNip: typeof parsed.pejabatNip === "string" ? parsed.pejabatNip : "",
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function persistBaSignerPrefs(prefs: {
+  jabatanTtd: PejabatJabatanTtd;
+  pejabatNama: string;
+  pejabatNip: string;
+}): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(BA_SIGNER_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Ignore storage quota errors safely
+  }
+}
+
+function loadBaKopLogo(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(BA_KOP_LOGO_STORAGE_KEY);
+    return raw && raw.startsWith("data:image/") ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistBaKopLogo(dataUrl: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (dataUrl) {
+      window.localStorage.setItem(BA_KOP_LOGO_STORAGE_KEY, dataUrl);
+    } else {
+      window.localStorage.removeItem(BA_KOP_LOGO_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage quota errors safely
+  }
+}
+
+async function syncBeritaAcaraToBackend(
+  action: "upsert" | "delete",
+  payload: SavedBeritaAcara | { id: string },
+): Promise<{ synced: boolean }> {
+  try {
+    const endpoint =
+      action === "delete"
+        ? `/api/dinas/berita-acara/${encodeURIComponent(payload.id)}`
+        : "/api/dinas/berita-acara";
+    const res = await fetchWithTimeout(
+      endpoint,
+      {
+        method: action === "delete" ? "DELETE" : "POST",
+        headers: action === "upsert" ? { "Content-Type": "application/json" } : undefined,
+        body: action === "upsert" ? JSON.stringify(payload) : undefined,
+      },
+      3500,
+    );
+    return { synced: res.ok };
+  } catch {
+    // Fallback aman ke localStorage apabila endpoint backend arsip BA belum tersedia
+    return { synced: false };
+  }
+}
+
 function DinasCardSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div role="status" aria-label="Menyiapkan ringkasan wilayah" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -405,6 +561,7 @@ function DinasEmptyState({ title, description }: { title: string; description: s
 }
 
 export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: string) => void } = {}) {
+  useLockDinasOceanTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -522,6 +679,16 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
 }
 
 export function DinasHome() {
+  useLockDinasOceanTheme();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const normalizedPath = location.pathname.replace(/\/+$/, "");
+  const activeMenu: "verifikasi" | "buat-ba" | "arsip-ba" = normalizedPath.endsWith("/arsip-berita-acara")
+    ? "arsip-ba"
+    : normalizedPath.endsWith("/berita-acara")
+      ? "buat-ba"
+      : "verifikasi";
+  const [menuOpen, setMenuOpen] = useState(false);
   const initialAuth = getAuthCache<DinasAuthCache>("dinas");
   const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() =>
     initialAuth ? "ready" : "loading",
@@ -796,6 +963,171 @@ export function DinasHome() {
     }
   }
 
+  function handleUploadKopLogo(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!/^image\/(png|jpeg|jpg)$/i.test(file.type)) {
+      setBaFormError("Format logo kop dinas harus PNG atau JPG.");
+      return;
+    }
+    if (file.size > 1_500_000) {
+      setBaFormError("Ukuran file logo kop dinas maksimal 1,5 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setBaKopLogo(reader.result);
+        persistBaKopLogo(reader.result);
+        setBaFormError("");
+        setToast("Logo kop dinas berhasil disimpan.");
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleRemoveKopLogo() {
+    setBaKopLogo(null);
+    persistBaKopLogo(null);
+    setToast("Logo kop dinas dihapus.");
+  }
+
+  function buildBeritaAcaraPayload(existingId?: string): SavedBeritaAcara | null {
+    const nomor = baNomorSurat.trim();
+    if (!nomor) {
+      setBaFormError("Nomor surat Berita Acara wajib diisi.");
+      return null;
+    }
+    if (!baTanggalIso) {
+      setBaFormError("Tanggal penetapan Berita Acara wajib diisi.");
+      return null;
+    }
+    if (!activeBaSnapshot) {
+      setBaFormError("Pilih satuan pendidikan (PKBM) terlebih dahulu.");
+      return null;
+    }
+
+    const editingItem = existingId ? baArchive.find((a) => a.id === existingId) : undefined;
+    const pkbmNama =
+      baMode === "kabupaten"
+        ? `Rekapitulasi Tingkat Kabupaten (${activeWilayahLabel})`
+        : selectedBaPkbm?.nama ?? editingItem?.pkbmNama ?? "Satuan Pendidikan PKBM";
+    const pkbmId = baMode === "kabupaten" ? null : selectedBaPkbm?.id ?? editingItem?.pkbmId ?? null;
+    const pkbmNpsn = baMode === "kabupaten" ? null : selectedBaPkbm?.npsn ?? editingItem?.pkbmNpsn ?? null;
+    const pkbmKepala =
+      baMode === "kabupaten"
+        ? null
+        : selectedBaPkbm?.namaKepalaSekolah ?? editingItem?.pkbmKepala ?? null;
+
+    if (baMode === "pkbm" && !pkbmId) {
+      setBaFormError("Pilih salah satu PKBM dari daftar lembaga aktif.");
+      return null;
+    }
+
+    return {
+      id:
+        existingId ??
+        (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `ba-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+      mode: baMode,
+      pkbmId,
+      pkbmNama,
+      pkbmNpsn,
+      pkbmKepala,
+      wilayah: selectedBaPkbm?.kabupatenKota ?? activeWilayahLabel,
+      nomorSurat: nomor,
+      tanggalSurat: formatIndonesianDate(baTanggalIso),
+      tanggalIso: baTanggalIso,
+      jabatanTtd: baJabatanTtd,
+      pejabatNama: baPejabatNama.trim() || "..............................................",
+      pejabatNip: baPejabatNip.trim() || "—",
+      catatan: baCatatan.trim(),
+      statusBeritaAcara: "SUDAH",
+      ringkasan: activeBaSnapshot,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function handleSaveBeritaAcara(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBaFormError("");
+    const record = buildBeritaAcaraPayload(editingBaId ?? undefined);
+    if (!record) return;
+
+    if (editingBaId) {
+      setBaArchive((prev) => prev.map((item) => (item.id === editingBaId ? record : item)));
+      setEditingBaId(null);
+      setBaCatatan("");
+      setToast(`Perubahan Berita Acara ${record.nomorSurat} berhasil disimpan.`);
+    } else {
+      setBaArchive((prev) => [record, ...prev]);
+      setBaCatatan("");
+      setToast(`Berita Acara ${record.nomorSurat} berhasil disimpan ke arsip permanen.`);
+    }
+    void syncBeritaAcaraToBackend("upsert", record);
+  }
+
+  function handleCancelEditBa() {
+    setEditingBaId(null);
+    setBaFormError("");
+    setBaCatatan("");
+    setBaNomorSurat(buildDefaultBaNumber(baMode, baTanggalIso, selectedBaPkbm?.npsn));
+  }
+
+  function handleEditBa(item: SavedBeritaAcara) {
+    setEditingBaId(item.id);
+    setBaMode(item.mode);
+    if (item.mode === "pkbm" && item.pkbmId) {
+      setSelectedBaPkbmId(item.pkbmId);
+    }
+    setBaNomorSurat(item.nomorSurat);
+    setBaTanggalIso(item.tanggalIso);
+    setBaJabatanTtd(item.jabatanTtd);
+    setBaPejabatNama(item.pejabatNama === ".............................................." ? "" : item.pejabatNama);
+    setBaPejabatNip(item.pejabatNip === "—" ? "" : item.pejabatNip);
+    setBaCatatan(item.catatan);
+    setBaFormError("");
+    setTimeout(
+      () => document.getElementById("form-berita-acara-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      60,
+    );
+  }
+
+  function handleDeleteBa(id: string) {
+    setBaArchive((prev) => prev.filter((item) => item.id !== id));
+    if (editingBaId === id) {
+      setEditingBaId(null);
+      setBaCatatan("");
+    }
+    setConfirmDeleteBaId(null);
+    setToast("Berita Acara dihapus dari arsip tersimpan.");
+    void syncBeritaAcaraToBackend("delete", { id });
+  }
+
+  function handleQuickCreateBa(target: UnsavedBeritaAcaraTarget) {
+    setEditingBaId(null);
+    setBaFormError("");
+    setBaMode(target.mode);
+    if (target.mode === "pkbm" && target.pkbmId) {
+      setSelectedBaPkbmId(target.pkbmId);
+    }
+    setBaNomorSurat(buildDefaultBaNumber(target.mode, baTanggalIso, target.pkbmNpsn));
+    setBaCatatan("");
+    setTimeout(
+      () => document.getElementById("form-berita-acara-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      60,
+    );
+  }
+
+  function handlePrintFromForm() {
+    setBaFormError("");
+    const record = buildBeritaAcaraPayload(editingBaId ?? undefined);
+    if (!record) return;
+    setPrintBaDoc(record);
+  }
+
   if (status === "unauthorized") {
     return (
       <DinasLogin
@@ -813,6 +1145,11 @@ export function DinasHome() {
       <main
         data-tenant-theme="ocean"
         className="dashboard-canvas flex min-h-screen items-center justify-center p-8 text-slate-900 antialiased"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(37, 99, 235, 0.14) 1px, transparent 1px), linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%)",
+          backgroundSize: "22px 22px, 100% 100%",
+        }}
       >
         <div className="max-w-md rounded-2xl border border-white/95 bg-white/90 p-6 shadow-xl backdrop-blur-xl">
           <p className="text-sm font-bold text-rose-700">{error || "Sesi Portal Dinas Pendidikan tidak tersedia."}</p>
@@ -821,16 +1158,24 @@ export function DinasHome() {
     );
   }
 
+  const activeMenuTitle =
+    activeMenu === "verifikasi"
+      ? "Verifikasi & Monitoring PKBM"
+      : activeMenu === "buat-ba"
+        ? "Buat Berita Acara Verval"
+        : "Arsip & Monitoring Berita Acara";
+
   return (
     <main
       data-tenant-theme="ocean"
-      className="dashboard-canvas min-h-screen pb-10 text-slate-900 antialiased"
+      className="dashboard-canvas min-h-screen text-slate-900 antialiased"
       style={{
         backgroundImage:
           "radial-gradient(rgba(37, 99, 235, 0.14) 1px, transparent 1px), linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%)",
         backgroundSize: "22px 22px, 100% 100%",
       }}
     >
+      <div className={printBaDoc ? "no-print" : undefined}>
       <div className="mx-auto max-w-7xl px-4 pt-3 sm:px-6 sm:pt-4">
         <header className="sticky top-3 z-30 rounded-2xl border border-white/95 bg-white/88 px-4 py-3 shadow-[0_8px_30px_rgba(37,99,235,0.08)] backdrop-blur-xl sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -839,119 +1184,294 @@ export function DinasHome() {
                 <Landmark size={20} />
               </span>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-sm font-extrabold tracking-tight text-slate-950 sm:text-base">
-                    {summary ? summary.wilayah : "Portal Dinas Pendidikan"}
-                  </h1>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Dinas Aktif
-                  </span>
-                </div>
-                <p className="mt-0.5 text-[11px] font-bold tracking-wide text-slate-600">
-                  PORTAL VERVAL WILAYAH · DINAS PENDIDIKAN
+                <p className="truncate text-sm font-extrabold tracking-tight text-slate-950">Portal Dinas</p>
+                <p className="truncate text-[10px] font-extrabold uppercase tracking-wider text-blue-700">
+                  VERVAL KESETARAAN
                 </p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(false)}
+              aria-label="Tutup menu sidebar Dinas"
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+            >
+              <X size={18} />
+            </button>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                aria-pressed={showDemoSimulation}
-                onClick={() => {
-                  const next = !showDemoSimulation;
-                  setDemoOverride(next);
-                  if (!next && selectedPkbm?.isDemoSimulation) {
-                    setSelectedPkbm(null);
-                    setInspectStudent(null);
-                  }
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold transition ${
-                  showDemoSimulation
-                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25 hover:brightness-110"
-                    : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
-                }`}
-              >
-                <Sparkles size={14} />
-                Simulasi Demo
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-700">Wilayah Aktif</span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Aktif
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs font-extrabold text-slate-900">
+              {summary ? summary.wilayah : activeWilayahLabel}
+            </p>
+          </div>
+
+          <nav aria-label="Sidebar Portal Dinas Pendidikan" className="mt-5 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+            <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+              MENU UTAMA DINAS
+            </p>
+
+            <button
+              type="button"
+              aria-current={activeMenu === "verifikasi" ? "page" : undefined}
+              onClick={() => selectDinasMenu("verifikasi")}
+              className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                activeMenu === "verifikasi"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
+                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
                 <span
-                  className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${
-                    showDemoSimulation ? "bg-amber-400 text-slate-950" : "bg-slate-100 text-slate-600"
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    activeMenu === "verifikasi"
+                      ? "bg-white/20 text-white"
+                      : "bg-blue-100/80 text-blue-700"
                   }`}
                 >
-                  {showDemoSimulation ? "ON" : "OFF"}
+                  <ShieldCheck size={16} />
                 </span>
-              </button>
-
-              {summary?.petugas.isSuperAdmin && summary.availableWilayah.length > 0 && (
-                <select
-                  aria-label="Pilih Wilayah Kabupaten/Kota"
-                  value={wilayahFilter}
-                  onChange={(e) => {
-                    setSelectedPkbm(null);
-                    setWilayahFilter(e.target.value);
-                  }}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 shadow-2xs focus:border-blue-600 focus:outline-none"
-                >
-                  <option value="">Semua Wilayah</option>
-                  {summary.availableWilayah.map((w) => (
-                    <option key={w} value={w}>
-                      {w}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <span className="hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-900 sm:inline-block">
-                {petugasNama}
+                <span className="truncate">Verifikasi &amp; Monitoring</span>
               </span>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${
+                  activeMenu === "verifikasi"
+                    ? "bg-amber-400 text-slate-950"
+                    : "border border-slate-200 bg-slate-100 text-slate-700"
+                }`}
               >
-                <LogOut size={14} /> Keluar
-              </button>
-            </div>
-          </div>
-        </header>
-      </div>
-
-      <div className="mx-auto max-w-7xl space-y-5 px-4 pt-5 sm:px-6">
-        {/* Baris 1: Hero Ocean & Gold Kontras Tinggi */}
-        <section
-          className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
-          style={{
-            background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
-          }}
-        >
-          <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
-          <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
-            <div className="min-w-0 max-w-2xl">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
-                <ShieldCheck size={13} />
-                Verifikasi &amp; Validasi Kesetaraan Wilayah · Administratif
+                {displayedView?.kpi.totalPkbm ?? 0}
               </span>
-              <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                Dashboard Dinas Pendidikan
-              </h2>
-              <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
-                Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), rekonsiliasi hasil tarik Dapodik vs bukti fisik, dan cut-off pendaftaran ({summary?.cutoffDate ?? "31 Agustus"}) tanpa mengakses nilai atau presensi KBM.
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                  <Database size={12} className="text-amber-300" />
-                  Wilayah: {summary ? summary.wilayah : "Memuat..."}
+            </button>
+
+            <button
+              type="button"
+              aria-current={activeMenu === "buat-ba" ? "page" : undefined}
+              onClick={() => selectDinasMenu("buat-ba")}
+              className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                activeMenu === "buat-ba"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
+                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    activeMenu === "buat-ba"
+                      ? "bg-white/20 text-white"
+                      : "bg-sky-100/90 text-sky-700"
+                  }`}
+                >
+                  <FilePlus2 size={16} />
                 </span>
-                {summary && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                    Data Riil DB: {summary.pkbm.length} PKBM · {summary.kpi.totalWargaBelajar} Siswa
+                <span className="truncate">Buat Berita Acara</span>
+              </span>
+              {editingBaId && (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                    activeMenu === "buat-ba"
+                      ? "bg-amber-400 text-slate-950"
+                      : "border border-amber-300 bg-amber-100 text-amber-900"
+                  }`}
+                >
+                  Edit
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              aria-current={activeMenu === "arsip-ba" ? "page" : undefined}
+              onClick={() => selectDinasMenu("arsip-ba")}
+              className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                activeMenu === "arsip-ba"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25"
+                  : "border border-transparent text-slate-800 hover:border-blue-200 hover:bg-blue-50/80"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    activeMenu === "arsip-ba"
+                      ? "bg-white/20 text-white"
+                      : "bg-amber-100/90 text-amber-800"
+                  }`}
+                >
+                  <Archive size={16} />
+                </span>
+                <span className="truncate">Arsip &amp; Status BA</span>
+              </span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums ${
+                  activeMenu === "arsip-ba"
+                    ? "bg-amber-400 text-slate-950"
+                    : "border border-slate-200 bg-slate-100 text-slate-700"
+                }`}
+              >
+                {baArchive.length}/{baArchive.length + unsavedBaTargets.length}
+              </span>
+            </button>
+          </nav>
+
+          <div className="mt-4 space-y-2.5 border-t border-slate-200/80 pt-3.5">
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2.5 text-xs">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Petugas Login</p>
+              <p className="mt-0.5 truncate font-extrabold text-slate-900">{petugasNama}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-extrabold text-rose-700 transition hover:bg-rose-100"
+            >
+              <LogOut size={14} /> Keluar Portal Dinas
+            </button>
+          </div>
+        </aside>
+
+        {menuOpen && (
+          <button
+            type="button"
+            aria-label="Tutup menu sidebar Dinas"
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0 z-40 bg-slate-900/45 backdrop-blur-xs lg:hidden"
+          />
+        )}
+
+        {/* Konten Utama per Menu */}
+        <div className="min-w-0 flex-1 pb-10">
+          <header className="sticky top-0 z-30 border-b border-white/95 bg-white/85 px-4 py-3 shadow-[0_6px_24px_rgba(37,99,235,0.06)] backdrop-blur-xl sm:px-6">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(true)}
+                  aria-label="Buka menu sidebar Dinas"
+                  aria-expanded={menuOpen}
+                  className="rounded-xl border border-slate-200 bg-white p-2 text-slate-700 hover:border-blue-300 hover:bg-blue-50 lg:hidden"
+                >
+                  <Menu size={20} />
+                </button>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="truncate text-sm font-extrabold tracking-tight text-slate-950 sm:text-base">
+                      {activeMenuTitle}
+                    </h1>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {summary ? summary.wilayah : activeWilayahLabel}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] font-bold tracking-wide text-slate-500">
+                    PORTAL VERVAL WILAYAH · DINAS PENDIDIKAN
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-pressed={showDemoSimulation}
+                  onClick={() => {
+                    const next = !showDemoSimulation;
+                    setDemoOverride(next);
+                    if (!next && selectedPkbm?.isDemoSimulation) {
+                      setSelectedPkbm(null);
+                      setInspectStudent(null);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold transition ${
+                    showDemoSimulation
+                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25 hover:from-blue-700 hover:to-indigo-700"
+                      : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
+                  }`}
+                >
+                  <Sparkles size={14} />
+                  Simulasi Demo
+                  <span
+                    className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${
+                      showDemoSimulation
+                        ? "bg-amber-400 text-slate-950"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {showDemoSimulation ? "ON" : "OFF"}
                   </span>
+                </button>
+
+                {summary?.petugas.isSuperAdmin && summary.availableWilayah.length > 0 && (
+                  <select
+                    aria-label="Pilih Wilayah Kabupaten/Kota"
+                    value={wilayahFilter}
+                    onChange={(e) => {
+                      setSelectedPkbm(null);
+                      setWilayahFilter(e.target.value);
+                    }}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+                  >
+                    <option value="">Semua Wilayah</option>
+                    {summary.availableWilayah.map((w) => (
+                      <option key={w} value={w}>
+                        {w}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
             </div>
+          </header>
 
-            <div className="shrink-0">
+      <div className="mx-auto max-w-7xl space-y-5 px-4 pt-5 sm:px-6">
+        {/* Hero Banner Ocean Blue & Gold sesuai Menu Sidebar Aktif */}
+        {activeMenu === "verifikasi" ? (
+          <section
+            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
+            style={{ background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)" }}
+          >
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-amber-300/15 blur-3xl" />
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
+              <div className="min-w-0 max-w-2xl">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                  <ShieldCheck size={13} />
+                  Verifikasi &amp; Validasi Kesetaraan Wilayah · Administratif
+                </span>
+                <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                  Verifikasi &amp; Monitoring PKBM
+                </h2>
+                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                  Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), rekonsiliasi hasil tarik Dapodik vs bukti fisik, dan cut-off pendaftaran ({summary?.cutoffDate ?? "31 Agustus"}) tanpa mengakses nilai atau presensi KBM.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                    <Database size={12} className="text-amber-300" />
+                    Wilayah: {summary ? summary.wilayah : "Memuat..."}
+                  </span>
+                  {summary && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                      Data Riil DB: {summary.pkbm.length} PKBM · {summary.kpi.totalWargaBelajar} Siswa
+                    </span>
+                  )}
+                </div>
+              </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  document.getElementById("panel-berita-acara-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+                className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
+              >
+                <Archive size={15} aria-hidden="true" />
+                Berita Acara ({baArchive.length})
+              </button>
               <button
                 type="button"
                 disabled={!displayedView || displayedView.pkbm.length === 0 || exporting}
@@ -966,11 +1486,11 @@ export function DinasHome() {
         </section>
 
         {showDemoSimulation && summary && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-400/80 bg-amber-50/95 px-4 py-3 text-xs text-slate-900 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-400/80 bg-amber-50/95 px-4 py-3 text-xs text-slate-900 shadow-sm backdrop-blur-md">
             <div className="flex items-start gap-2.5 sm:items-center">
               <Sparkles size={16} className="mt-0.5 shrink-0 text-amber-600 sm:mt-0" />
-              <p className="font-medium leading-5">
-                <strong className="font-extrabold text-slate-950">Mode Paparan Aktif:</strong>{" "}
+              <p className="font-medium leading-5 text-slate-800">
+                <strong className="font-extrabold text-amber-900">Mode Paparan Aktif:</strong>{" "}
                 {hasZeroRealData
                   ? "Data riil PKBM/warga belajar di wilayah ini masih 0, sehingga simulasi contoh rekonsiliasi anti-WB fiktif ditampilkan otomatis."
                   : "Menampilkan simulasi contoh rekonsiliasi anti-WB fiktif berdampingan dengan data PKBM riil dari database PostgreSQL."}
@@ -985,7 +1505,7 @@ export function DinasHome() {
                   setInspectStudent(null);
                 }
               }}
-              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-900 hover:bg-amber-100"
+              className="shrink-0 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-[11px] font-extrabold text-amber-900 transition hover:bg-amber-100"
             >
               Sembunyikan Simulasi
             </button>
@@ -1005,70 +1525,73 @@ export function DinasHome() {
         )}
 
         {error && (
-          <p role="alert" className="flex items-center gap-2 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm font-bold text-rose-900">
+          <p role="alert" className="flex items-center gap-2 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm font-bold text-rose-900 shadow-sm">
             <AlertTriangle size={16} className="shrink-0 text-rose-600" />
             {error}
           </p>
         )}
 
-        {/* Baris 2: 4 Kartu KPI Ocean & Gold Kontras Tinggi */}
+        {/* Halaman 1: Verifikasi & Monitoring PKBM */}
+        {activeMenu === "verifikasi" && (
+        <>
+        {/* Baris 2: 4 Kartu KPI Ocean Blue & Gold */}
         {!displayedView ? (
           error ? null : <DinasCardSkeleton count={4} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_10px_28px_rgba(37,99,235,0.08)] backdrop-blur-xl">
               <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-600">
                 <span>Total PKBM Terdaftar</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
                   <Building2 size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{displayedView.kpi.totalPkbm}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-slate-950">{displayedView.kpi.totalPkbm}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
                 {summary?.pkbm.length ?? 0} lembaga riil DB
                 {showDemoSimulation ? ` + ${demoDataset.pkbm.length} simulasi` : ""}
               </p>
             </article>
 
-            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_10px_28px_rgba(37,99,235,0.08)] backdrop-blur-xl">
               <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-600">
                 <span>Total Warga Belajar</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-sky-200 bg-sky-50 text-sky-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
                   <Users size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{displayedView.kpi.totalWargaBelajar}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-slate-950">{displayedView.kpi.totalWargaBelajar}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
                 Paket A: {displayedView.kpi.totalPaketA} · B: {displayedView.kpi.totalPaketB} · C: {displayedView.kpi.totalPaketC}
               </p>
             </article>
 
-            <article className="rounded-2xl border-2 border-amber-400 bg-white/95 p-5 text-slate-900 shadow-[0_10px_26px_rgba(245,158,11,0.14)] backdrop-blur-xl">
-              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-700">
+            <article className="rounded-2xl border-2 border-amber-400 bg-white/95 p-5 text-slate-900 shadow-[0_10px_28px_rgba(245,158,11,0.14)] backdrop-blur-xl">
+              <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-amber-800">
                 <span>Dapodik vs Berkas Fisik</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 text-amber-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
                   <FileCheck2 size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-950">{displayedView.kpi.totalDapodik}</p>
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-slate-950">{displayedView.kpi.totalDapodik}</p>
               <p className="mt-1 text-xs font-semibold text-slate-700">
                 Lengkap:{" "}
                 <span className="font-extrabold text-emerald-700">{displayedView.kpi.totalBerkasLengkap}</span>
                 {" · "}Selisih:{" "}
                 <span className="font-extrabold text-rose-700">{displayedView.kpi.totalSelisihTanpaBerkas}</span>
-                {" · "}Cut-Off: {displayedView.kpi.totalCutoff}
+                {" · "}Cut-Off: <span className="font-bold text-blue-700">{displayedView.kpi.totalCutoff}</span>
               </p>
             </article>
 
-            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+            <article className="rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_10px_28px_rgba(37,99,235,0.08)] backdrop-blur-xl">
               <div className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-600">
                 <span>Lolos Verval Dinas</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
                   <ShieldCheck size={16} />
                 </span>
               </div>
-              <p className="mt-3 text-3xl font-black tracking-tight text-emerald-700">{displayedView.kpi.persentaseLolosVerval}%</p>
-              <p className="mt-1 text-xs font-semibold text-slate-700">
+              <p className="mt-3 text-3xl font-black tracking-tight tabular-nums text-emerald-700">{displayedView.kpi.persentaseLolosVerval}%</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
                 {displayedView.kpi.totalLolosVervalDinas} dari {displayedView.kpi.totalWargaBelajar} warga belajar
               </p>
             </article>
@@ -1076,7 +1599,7 @@ export function DinasHome() {
         )}
 
         {/* Baris 3: Tabel Monitoring PKBM */}
-        <section className="space-y-4 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6">
+        <section className="space-y-4 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(37,99,235,0.08)] backdrop-blur-xl sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-extrabold tracking-tight text-slate-950">Monitoring Kesiapan Verval per PKBM</h2>
@@ -1117,54 +1640,54 @@ export function DinasHome() {
                   {displayedView.pkbm.map((item) => (
                     <tr
                       key={item.id}
-                      className={selectedPkbm?.id === item.id ? "bg-blue-50/90" : "hover:bg-sky-50/60"}
+                      className={selectedPkbm?.id === item.id ? "bg-blue-50/80" : "transition hover:bg-sky-50/60"}
                     >
                       <td className="px-4 py-3.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-extrabold text-slate-950">{item.nama}</p>
                           {item.isDemoSimulation ? (
-                            <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-900">
+                            <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-amber-800">
                               Simulasi Demo
                             </span>
                           ) : (
-                            <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-blue-800">
+                            <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-blue-700">
                               Data Riil DB
                             </span>
                           )}
                         </div>
                         <p className="mt-0.5 text-xs font-medium text-slate-600">
-                          NPSN: {item.npsn ?? "—"} · {item.kabupatenKota ?? "—"}
+                          NPSN: <span className="font-mono text-slate-800">{item.npsn ?? "—"}</span> · {item.kabupatenKota ?? "—"}
                         </p>
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-800">
-                        <span className="font-extrabold text-slate-950">{item.totalDapodik} Dapodik</span>
-                        <span className="ml-1.5 font-medium text-slate-600">({item.totalSiswa} siswa LMS)</span>
+                      <td className="px-4 py-3.5 text-xs text-slate-700">
+                        <span className="font-extrabold text-slate-950 tabular-nums">{item.totalDapodik} Dapodik</span>
+                        <span className="ml-1.5 font-medium text-slate-500">({item.totalSiswa} siswa LMS)</span>
                         <p className="mt-0.5 font-medium text-slate-600">
                           A: {item.paketA} · B: {item.paketB} · C: {item.paketC}
                         </p>
                       </td>
-                      <td className="px-4 py-3.5 text-xs font-extrabold text-amber-700">{item.siswaMemenuhiCutoff} siswa</td>
+                      <td className="px-4 py-3.5 text-xs font-extrabold text-blue-700 tabular-nums">{item.siswaMemenuhiCutoff} siswa</td>
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
                           <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-200">
                             <div
-                              className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500"
+                              className="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500"
                               style={{ width: `${item.kelengkapanVervalPersen}%` }}
                             />
                           </div>
-                          <span className="text-xs font-extrabold text-slate-950">{item.kelengkapanVervalPersen}%</span>
+                          <span className="text-xs font-extrabold text-slate-900 tabular-nums">{item.kelengkapanVervalPersen}%</span>
                         </div>
-                        <p className="mt-1 text-[11px] font-medium text-slate-700">
+                        <p className="mt-1 text-[11px] font-medium text-slate-600">
                           Lengkap:{" "}
                           <span className="font-extrabold text-emerald-700">{item.berkasLengkap}</span>
                           {" · "}Selisih:{" "}
-                          <span className={item.selisihTanpaBerkas > 0 ? "font-extrabold text-rose-700" : "font-semibold text-slate-600"}>
+                          <span className={item.selisihTanpaBerkas > 0 ? "font-extrabold text-rose-700" : "font-semibold text-slate-500"}>
                             {item.selisihTanpaBerkas}
                           </span>
                         </p>
                       </td>
                       <td className="px-4 py-3.5 text-xs">
-                        <span className="font-extrabold text-emerald-700">{item.persentaseLolosDinas}%</span>
+                        <span className="font-extrabold text-emerald-700 tabular-nums">{item.persentaseLolosDinas}%</span>
                         <p className="mt-0.5 font-medium text-slate-600">
                           {item.lolosVervalDinas} lolos · {item.perluPerbaikanCount} perbaikan
                         </p>
@@ -1178,7 +1701,7 @@ export function DinasHome() {
                             setStudentStatusFilter("");
                             setTimeout(() => document.getElementById("panel-nominatif-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:brightness-110"
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-2 text-xs font-extrabold text-white shadow-sm shadow-blue-600/25 transition hover:from-blue-700 hover:to-indigo-700"
                         >
                           <Eye size={14} /> Periksa Berkas
                         </button>
@@ -1193,7 +1716,7 @@ export function DinasHome() {
 
         {/* Baris 4: Panel Pemeriksaan Nominatif PKBM Terpilih */}
         {selectedPkbm && (
-          <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-blue-500/45 bg-white/95 p-5 text-slate-900 shadow-[0_16px_40px_rgba(37,99,235,0.12)] backdrop-blur-xl sm:p-6">
+          <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-blue-500/45 bg-white/95 p-5 text-slate-900 shadow-[0_14px_36px_rgba(37,99,235,0.12)] backdrop-blur-xl sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1201,7 +1724,7 @@ export function DinasHome() {
                     PEMERIKSAAN NOMINATIF LEMBAGA (ADMINISTRATIF NON-KBM)
                   </p>
                   {selectedPkbm.isDemoSimulation && (
-                    <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold text-amber-900">
+                    <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold text-amber-800">
                       CONTOH SIMULASI PAPARAN
                     </span>
                   )}
@@ -1212,13 +1735,13 @@ export function DinasHome() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="search"
                     value={studentSearch}
                     onChange={(e) => setStudentSearch(e.target.value)}
                     placeholder="Cari nama/NISN/NIK..."
-                    className="rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                    className="rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
                   />
                 </div>
                 <select
@@ -1235,7 +1758,7 @@ export function DinasHome() {
                 <button
                   type="button"
                   onClick={() => setSelectedPkbm(null)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
                 >
                   Tutup Panel
                 </button>
@@ -1266,34 +1789,38 @@ export function DinasHome() {
                     {pkbmStudents.map((st) => {
                       const badge = statusDinasBadge(st.statusVervalDinas);
                       return (
-                        <tr key={st.id} className="hover:bg-sky-50/60">
+                        <tr key={st.id} className="transition hover:bg-sky-50/60">
                           <td className="px-4 py-3">
                             <p className="font-extrabold text-slate-950">{st.nama}</p>
-                            <p className="text-xs font-medium text-slate-600">NISN {st.nisn} · {st.kelengkapanPersen}% lengkap</p>
+                            <p className="text-xs font-medium text-slate-600">
+                              NISN <span className="font-mono text-slate-800">{st.nisn}</span> · {st.kelengkapanPersen}% lengkap
+                            </p>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-800">
+                          <td className="px-4 py-3 text-xs text-slate-700">
                             <p className="font-mono font-semibold text-slate-900">NIK: {st.nik ?? "—"}</p>
                             <p className="font-mono font-semibold text-slate-900">KK: {st.noKk ?? "—"}</p>
                             <p className="font-medium text-slate-600">Ibu: {st.namaIbuKandung ?? "—"}</p>
                           </td>
                           <td className="px-4 py-3 text-xs">
-                            <p className="font-bold text-slate-950">{st.paketKategori} · {st.kelasNama}</p>
-                            <p className={st.memenuhiCutoff ? "font-bold text-emerald-700" : "font-medium text-slate-600"}>
+                            <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
+                              {st.paketKategori} · {st.kelasNama}
+                            </span>
+                            <p className={`mt-1 ${st.memenuhiCutoff ? "font-bold text-emerald-700" : "font-medium text-slate-500"}`}>
                               {st.memenuhiCutoff ? "Memenuhi Cut-Off" : "Di luar Cut-Off / Kosong"}
                             </p>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap gap-1 text-[10px] font-bold">
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlKk ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlKk ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-400"}`}>
                                 KK
                               </span>
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlAktaKtp ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlAktaKtp ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-400"}`}>
                                 Akta
                               </span>
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlIjazah ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlIjazah ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-400"}`}>
                                 Ijazah
                               </span>
-                              <span className={`rounded border px-1.5 py-0.5 ${st.urlSuratPindah ? "border-sky-200 bg-sky-50 text-sky-800" : "border-slate-200 bg-slate-100 text-slate-500"}`}>
+                              <span className={`rounded border px-1.5 py-0.5 ${st.urlSuratPindah ? "border-sky-300 bg-sky-50 text-sky-800" : "border-slate-200 bg-slate-100 text-slate-400"}`}>
                                 Surat Pindah
                               </span>
                             </div>
@@ -1327,7 +1854,7 @@ export function DinasHome() {
                                           : "kk",
                                 );
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
                             >
                               <FileText size={13} /> Cek &amp; Putuskan
                             </button>
@@ -1341,10 +1868,610 @@ export function DinasHome() {
             )}
           </section>
         )}
+
+        {/* Baris 5: Penerbitan & Manajemen Arsip Berita Acara Verval */}
+        <section
+          id="panel-berita-acara-dinas"
+          className="scroll-mt-6 space-y-6 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800">
+                <FileText size={13} />
+                PENERBITAN DOKUMEN RESMI · {activeWilayahLabel.toUpperCase()}
+              </span>
+              <h2 className="mt-2 text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">
+                Penerbitan &amp; Manajemen Arsip Berita Acara Verval
+              </h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-600">
+                Terbitkan, simpan permanen, edit, cetak PDF, serta pantau PKBM atau rekap kabupaten yang sudah maupun belum memiliki Berita Acara Verval.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 font-extrabold text-emerald-800">
+                Sudah Tersimpan: {baArchive.length}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 font-extrabold text-amber-900">
+                Belum Dibuat: {unsavedBaTargets.length}
+              </span>
+            </div>
+          </div>
+
+          {/* Form Penerbitan / Edit Berita Acara */}
+          <form
+            id="form-berita-acara-dinas"
+            onSubmit={handleSaveBeritaAcara}
+            className={`scroll-mt-6 space-y-5 rounded-2xl border p-5 transition ${
+              editingBaId
+                ? "border-2 border-amber-400 bg-amber-50/40"
+                : "border-sky-200/90 bg-sky-50/45"
+            }`}
+          >
+            {editingBaId && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs">
+                <div className="flex items-center gap-2 font-extrabold text-amber-950">
+                  <Pencil size={14} className="text-amber-700" />
+                  Mode Edit Arsip Aktif — Perubahan akan memperbarui data Berita Acara tanpa membuat duplikat.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelEditBa}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1 font-extrabold text-slate-900 hover:bg-amber-100"
+                >
+                  Batal Edit
+                </button>
+              </div>
+            )}
+
+            {/* Pilihan Jenis Berita Acara */}
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-2">
+                <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                  1. Pilih Jenis Berita Acara
+                </span>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBaMode("pkbm");
+                      if (!editingBaId) {
+                        setBaNomorSurat(buildDefaultBaNumber("pkbm", baTanggalIso, selectedBaPkbm?.npsn));
+                      }
+                    }}
+                    className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                      baMode === "pkbm"
+                        ? "border-blue-600 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
+                        : "border-slate-300 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/60"
+                    }`}
+                  >
+                    <Building2 size={16} className="shrink-0" />
+                    <span>Per Satuan Pendidikan (PKBM)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBaMode("kabupaten");
+                      if (!editingBaId) {
+                        setBaNomorSurat(buildDefaultBaNumber("kabupaten", baTanggalIso));
+                      }
+                    }}
+                    className={`flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left text-xs font-extrabold transition ${
+                      baMode === "kabupaten"
+                        ? "border-blue-600 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
+                        : "border-slate-300 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/60"
+                    }`}
+                  >
+                    <Landmark size={16} className="shrink-0" />
+                    <span>Rekapitulasi Kabupaten/Kota</span>
+                  </button>
+                </div>
+              </div>
+
+              {baMode === "pkbm" ? (
+                <label className="block space-y-2 text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                  <span>2. Pilih Satuan Pendidikan (PKBM)</span>
+                  <select
+                    value={selectedBaPkbmId}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setSelectedBaPkbmId(nextId);
+                      const matched = (displayedView?.pkbm ?? []).find((p) => p.id === nextId);
+                      if (!editingBaId) {
+                        setBaNomorSurat(buildDefaultBaNumber("pkbm", baTanggalIso, matched?.npsn));
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold normal-case tracking-normal text-slate-950 focus:border-blue-600 focus:outline-none"
+                  >
+                    {(displayedView?.pkbm ?? []).length === 0 ? (
+                      <option value="">Belum ada PKBM aktif di wilayah ini</option>
+                    ) : (
+                      (displayedView?.pkbm ?? []).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.nama} — NPSN: {item.npsn ?? "-"}
+                          {item.namaKepalaSekolah ? ` · Kepala: ${item.namaKepalaSekolah}` : ""}
+                          {item.isDemoSimulation ? " [Simulasi]" : ""}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              ) : (
+                <div className="space-y-2">
+                  <span className="block text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                    2. Cakupan Wilayah Rekapitulasi
+                  </span>
+                  <div className="flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-2.5 text-xs">
+                    <div>
+                      <p className="font-extrabold text-slate-950">{activeWilayahLabel}</p>
+                      <p className="text-[11px] font-semibold text-slate-700">
+                        Agregat otomatis seluruh {kabupatenSnapshot.totalPkbm} PKBM aktif (Cut-Off: {kabupatenSnapshot.cutoffDate})
+                      </p>
+                    </div>
+                    <span className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-extrabold text-amber-900">
+                      Rekap Dinas
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ringkasan Otomatis Sasaran Terpilih */}
+            {activeBaSnapshot && (
+              <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-white bg-white/90 p-3.5 shadow-2xs sm:grid-cols-3 lg:grid-cols-6">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                    {baMode === "kabupaten" ? "PKBM Tercakup" : "NPSN / Kepala"}
+                  </p>
+                  {baMode === "kabupaten" ? (
+                    <p className="mt-0.5 text-sm font-black text-slate-950">{activeBaSnapshot.totalPkbm} Lembaga</p>
+                  ) : (
+                    <>
+                      <p className="mt-0.5 font-mono text-xs font-extrabold text-slate-950">
+                        {selectedBaPkbm?.npsn ?? "—"}
+                      </p>
+                      <p className="truncate text-[11px] font-semibold text-slate-600" title={selectedBaPkbm?.namaKepalaSekolah ?? undefined}>
+                        {selectedBaPkbm?.namaKepalaSekolah ?? "Kepala PKBM —"}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Dapodik / LMS</p>
+                  <p className="mt-0.5 text-sm font-black text-slate-950">
+                    {activeBaSnapshot.totalDapodik} / {activeBaSnapshot.totalSiswa}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Berkas Lengkap</p>
+                  <p className="mt-0.5 text-sm font-black text-emerald-700">{activeBaSnapshot.berkasLengkap} Siswa</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Selisih Berkas</p>
+                  <p className="mt-0.5 text-sm font-black text-rose-700">{activeBaSnapshot.selisihTanpaBerkas} Siswa</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Lolos Dinas</p>
+                  <p className="mt-0.5 text-sm font-black text-blue-700">
+                    {activeBaSnapshot.lolosVervalDinas} ({activeBaSnapshot.persentaseLolosDinas}%)
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Paket A / B / C</p>
+                  <p className="mt-0.5 text-xs font-extrabold text-slate-900">
+                    {activeBaSnapshot.paketA} / {activeBaSnapshot.paketB} / {activeBaSnapshot.paketC}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Metadata Surat, Pejabat Penandatangan & Kop Dinas */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <label className="block text-xs font-bold text-slate-900">
+                Nomor Surat Berita Acara
+                <input
+                  type="text"
+                  required
+                  value={baNomorSurat}
+                  onChange={(e) => setBaNomorSurat(e.target.value)}
+                  placeholder="421.9/BA-VERVAL/DIKMAS/2026"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-950 focus:border-blue-600 focus:outline-none"
+                />
+              </label>
+
+              <label className="block text-xs font-bold text-slate-900">
+                Tanggal Penetapan
+                <div className="mt-1.5 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Calendar size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="date"
+                      required
+                      value={baTanggalIso}
+                      onChange={(e) => setBaTanggalIso(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-3 text-xs font-bold text-slate-950 focus:border-blue-600 focus:outline-none"
+                    />
+                  </div>
+                  <span className="shrink-0 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] font-extrabold text-blue-900">
+                    {formatIndonesianDate(baTanggalIso)}
+                  </span>
+                </div>
+              </label>
+
+              <label className="block text-xs font-bold text-slate-900">
+                Pejabat Penandatangan
+                <select
+                  value={baJabatanTtd}
+                  onChange={(e) => setBaJabatanTtd(e.target.value as PejabatJabatanTtd)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-950 focus:border-blue-600 focus:outline-none"
+                >
+                  <option value="Kepala Bidang PAUD & Dikmas">Kepala Bidang PAUD &amp; Dikmas</option>
+                  <option value="Kepala Dinas Pendidikan dan Kebudayaan">Kepala Dinas Pendidikan dan Kebudayaan</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-bold text-slate-900">
+                Nama Pejabat (Tersimpan Otomatis)
+                <input
+                  type="text"
+                  value={baPejabatNama}
+                  onChange={(e) => setBaPejabatNama(e.target.value)}
+                  placeholder="Contoh: Drs. H. Suryana, M.Pd."
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                />
+              </label>
+
+              <label className="block text-xs font-bold text-slate-900">
+                NIP Pejabat (Tersimpan Otomatis)
+                <input
+                  type="text"
+                  value={baPejabatNip}
+                  onChange={(e) => setBaPejabatNip(e.target.value)}
+                  placeholder="Contoh: 19720514 199802 1 002"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-xs font-semibold text-slate-950 placeholder:font-sans placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                />
+              </label>
+
+              <div className="text-xs font-bold text-slate-900">
+                <span>Logo Kop Dinas (PNG / JPG)</span>
+                <div className="mt-1.5 flex items-center gap-2.5">
+                  {baKopLogo ? (
+                    <img
+                      src={baKopLogo}
+                      alt="Logo Kop Dinas"
+                      className="h-10 w-10 shrink-0 rounded-lg border border-slate-300 bg-white object-contain p-0.5"
+                    />
+                  ) : (
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-slate-400">
+                      <ImagePlus size={16} />
+                    </span>
+                  )}
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-blue-300 bg-white px-3 py-2 text-xs font-extrabold text-blue-800 hover:bg-blue-50">
+                    <ImagePlus size={14} />
+                    <span>{baKopLogo ? "Ganti Logo" : "Upload Logo"}</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      onChange={handleUploadKopLogo}
+                      className="sr-only"
+                    />
+                  </label>
+                  {baKopLogo && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveKopLogo}
+                      className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                    >
+                      <Trash2 size={13} /> Hapus
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <label className="block text-xs font-bold text-slate-900">
+              Catatan Dinas / Rekomendasi Tindak Lanjut
+              <textarea
+                rows={2}
+                maxLength={800}
+                value={baCatatan}
+                onChange={(e) => setBaCatatan(e.target.value)}
+                placeholder="Contoh: Selisih warga belajar tanpa berkas agar dilengkapi oleh operator PKBM paling lambat 7 hari kerja setelah verifikasi."
+                className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+              />
+            </label>
+
+            {baFormError && (
+              <p role="alert" className="flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-800">
+                <AlertTriangle size={15} className="shrink-0 text-rose-600" />
+                {baFormError}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-sm shadow-blue-600/25 transition hover:brightness-110"
+                >
+                  <Save size={15} />
+                  {editingBaId ? "Simpan Perubahan BA" : "Simpan Berita Acara"}
+                </button>
+                {editingBaId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEditBa}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-100"
+                  >
+                    Batal Edit
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handlePrintFromForm}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-2.5 text-xs font-extrabold text-slate-950 shadow-[0_6px_18px_rgba(245,158,11,0.32)] transition hover:from-amber-300 hover:to-amber-400"
+              >
+                <Printer size={15} />
+                Cetak / Simpan PDF Berita Acara
+              </button>
+            </div>
+          </form>
+
+          {/* Daftar Berita Acara Tersimpan & Target Belum Dibuat */}
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-extrabold tracking-tight text-slate-950">
+                  Daftar Berita Acara Tersimpan &amp; Monitoring Penerbitan
+                </h3>
+                <p className="text-xs font-medium text-slate-600">
+                  Saring arsip berdasarkan nomor surat, nama PKBM, NPSN, tanggal, pejabat, jenis BA, atau status Sudah vs Belum dibuat.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="search"
+                    value={baSearch}
+                    onChange={(e) => setBaSearch(e.target.value)}
+                    placeholder="Cari nomor surat, PKBM, NPSN, tanggal, pejabat..."
+                    className="w-64 rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none sm:w-72"
+                  />
+                </div>
+
+                <select
+                  aria-label="Filter Jenis Berita Acara"
+                  value={baTypeFilter}
+                  onChange={(e) => setBaTypeFilter(e.target.value as "ALL" | BeritaAcaraMode)}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+                >
+                  <option value="ALL">Semua Jenis BA</option>
+                  <option value="pkbm">Per Lembaga (PKBM)</option>
+                  <option value="kabupaten">Rekap Dinas (Kabupaten)</option>
+                </select>
+
+                <select
+                  aria-label="Filter Status Berita Acara"
+                  value={baStatusFilter}
+                  onChange={(e) => setBaStatusFilter(e.target.value as "ALL" | BeritaAcaraStatus)}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+                >
+                  <option value="ALL">Semua Status</option>
+                  <option value="SUDAH">Sudah Dibuat / Tersimpan</option>
+                  <option value="BELUM">Belum Dibuat</option>
+                </select>
+              </div>
+            </div>
+
+            {((baStatusFilter === "SUDAH" && filteredSavedBa.length === 0) ||
+              (baStatusFilter === "BELUM" && filteredUnsavedBa.length === 0) ||
+              (baStatusFilter === "ALL" && filteredSavedBa.length === 0 && filteredUnsavedBa.length === 0)) ? (
+              <DinasEmptyState
+                title={
+                  baStatusFilter === "BELUM"
+                    ? "Semua sasaran pada filter ini sudah memiliki Berita Acara tersimpan"
+                    : "Belum ada Berita Acara yang cocok dengan pencarian/filter"
+                }
+                description={
+                  baStatusFilter === "BELUM"
+                    ? "Seluruh PKBM dan rekap kabupaten yang sesuai filter telah memiliki arsip Berita Acara Verval."
+                    : "Gunakan form di atas untuk menerbitkan dan menyimpan Berita Acara Verval, atau ubah kata kunci filter Anda."
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-slate-200 bg-sky-50/90 text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                    <tr>
+                      <th className="px-4 py-3.5">Jenis &amp; Status</th>
+                      <th className="px-4 py-3.5">Nomor Surat &amp; Tanggal</th>
+                      <th className="px-4 py-3.5">Satuan Pendidikan / Wilayah</th>
+                      <th className="px-4 py-3.5">Ringkasan Data Verval</th>
+                      <th className="px-4 py-3.5">Pejabat Penandatangan</th>
+                      <th className="px-4 py-3.5 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/80">
+                    {baStatusFilter !== "BELUM" &&
+                      filteredSavedBa.map((item) => (
+                        <tr
+                          key={item.id}
+                          className={editingBaId === item.id ? "bg-amber-50/80" : "hover:bg-sky-50/55"}
+                        >
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <span
+                                className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
+                                  item.mode === "kabupaten"
+                                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                                    : "border-blue-200 bg-blue-50 text-blue-800"
+                                }`}
+                              >
+                                {item.mode === "kabupaten" ? "Rekap Kabupaten" : "Per PKBM"}
+                              </span>
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                                <CheckCircle2 size={11} /> Sudah Tersimpan
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs">
+                            <p className="font-mono font-extrabold text-slate-950">{item.nomorSurat}</p>
+                            <p className="mt-0.5 font-semibold text-slate-600">{item.tanggalSurat}</p>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs">
+                            <p className="font-extrabold text-slate-950">{item.pkbmNama}</p>
+                            <p className="mt-0.5 font-medium text-slate-600">
+                              {item.mode === "pkbm"
+                                ? `NPSN: ${item.pkbmNpsn ?? "—"} · ${item.wilayah}`
+                                : `Wilayah ${item.wilayah} (${item.ringkasan.totalPkbm} PKBM)`}
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs text-slate-800">
+                            <p className="font-bold text-slate-950">
+                              {item.ringkasan.totalDapodik} Dapodik ·{" "}
+                              <span className="text-emerald-700">{item.ringkasan.berkasLengkap} Lengkap</span>
+                            </p>
+                            <p className="mt-0.5 font-medium text-slate-600">
+                              Selisih:{" "}
+                              <span className="font-bold text-rose-700">{item.ringkasan.selisihTanpaBerkas}</span>
+                              {" · "}Lolos Dinas:{" "}
+                              <span className="font-bold text-blue-700">{item.ringkasan.persentaseLolosDinas}%</span>
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs">
+                            <p className="font-bold text-slate-950">{item.pejabatNama}</p>
+                            <p className="mt-0.5 font-medium text-slate-600">{item.jabatanTtd}</p>
+                            <p className="font-mono text-[11px] text-slate-500">NIP. {item.pejabatNip}</p>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-right">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleEditBa(item)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100"
+                              >
+                                <Pencil size={12} /> Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrintBaDoc(item)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+                              >
+                                <Printer size={12} /> Cetak
+                              </button>
+                              {confirmDeleteBaId === item.id ? (
+                                <div className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-1.5 py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteBa(item.id)}
+                                    className="rounded bg-rose-600 px-2 py-0.5 text-[11px] font-extrabold text-white hover:bg-rose-500"
+                                  >
+                                    Ya, Hapus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteBaId(null)}
+                                    className="rounded bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-100"
+                                  >
+                                    Batal
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteBaId(item.id)}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
+                                >
+                                  <Trash2 size={12} /> Hapus
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                    {baStatusFilter !== "SUDAH" &&
+                      filteredUnsavedBa.map((target) => (
+                        <tr key={target.key} className="bg-amber-50/20 hover:bg-amber-50/55">
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <span
+                                className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${
+                                  target.mode === "kabupaten"
+                                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                                    : "border-blue-200 bg-blue-50 text-blue-800"
+                                }`}
+                              >
+                                {target.mode === "kabupaten" ? "Rekap Kabupaten" : "Per PKBM"}
+                              </span>
+                              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
+                                Belum Dibuat
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs font-semibold italic text-slate-500">
+                            Belum diterbitkan
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs">
+                            <p className="font-extrabold text-slate-950">{target.pkbmNama}</p>
+                            <p className="mt-0.5 font-medium text-slate-600">
+                              {target.mode === "pkbm"
+                                ? `NPSN: ${target.pkbmNpsn ?? "—"} · ${target.wilayah}`
+                                : `Wilayah ${target.wilayah} (${target.ringkasan.totalPkbm} PKBM)`}
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs text-slate-800">
+                            <p className="font-bold text-slate-950">
+                              {target.ringkasan.totalDapodik} Dapodik ·{" "}
+                              <span className="text-emerald-700">{target.ringkasan.berkasLengkap} Lengkap</span>
+                            </p>
+                            <p className="mt-0.5 font-medium text-slate-600">
+                              Selisih:{" "}
+                              <span className="font-bold text-rose-700">{target.ringkasan.selisihTanpaBerkas}</span>
+                              {" · "}Lolos Dinas:{" "}
+                              <span className="font-bold text-blue-700">{target.ringkasan.persentaseLolosDinas}%</span>
+                            </p>
+                          </td>
+
+                          <td className="px-4 py-3.5 text-xs font-medium text-slate-500">
+                            {target.pkbmKepala ? `Kepala: ${target.pkbmKepala}` : "Menunggu penerbitan Dinas"}
+                          </td>
+
+                          <td className="px-4 py-3.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleQuickCreateBa(target)}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 shadow-xs transition hover:from-amber-300 hover:to-amber-400"
+                            >
+                              <FilePlus2 size={14} /> Buat BA
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
       </div>
 
-      {inspectStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+      {activeMenu === "verifikasi" && inspectStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm">
           <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white bg-white text-slate-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50/70 px-6 py-4">
               <div>
@@ -1357,7 +2484,7 @@ export function DinasHome() {
                 type="button"
                 disabled={actionBusy}
                 onClick={() => setInspectStudent(null)}
-                className="rounded-lg p-1.5 text-slate-600 hover:bg-white hover:text-slate-950"
+                className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white hover:text-slate-900"
               >
                 <X size={18} />
               </button>
@@ -1365,20 +2492,20 @@ export function DinasHome() {
 
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 text-xs">
               {inspectStudent.isDemoSimulation && (
-                <p className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-950">
+                <p className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-900">
                   Contoh data simulasi paparan (hanya pratinjau dokumen administrasi — perubahan tidak disimpan ke database).
                 </p>
               )}
 
               <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-2">
-                <p><span className="font-semibold text-slate-600">NISN:</span> <strong className="font-mono text-slate-950">{inspectStudent.nisn}</strong></p>
-                <p><span className="font-semibold text-slate-600">NIK:</span> <strong className="font-mono text-slate-950">{inspectStudent.nik ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">No. KK:</span> <strong className="font-mono text-slate-950">{inspectStudent.noKk ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">Ibu Kandung:</span> <strong className="text-slate-950">{inspectStudent.namaIbuKandung ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">Sekolah Asal:</span> <strong className="text-slate-950">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">No. Ijazah:</span> <strong className="text-slate-950">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-600">Status PKBM:</span> <strong className="text-blue-700">{inspectStudent.statusVerval}</strong></p>
-                <p><span className="font-semibold text-slate-600">Tanggal Masuk:</span> <strong className="text-slate-950">{inspectStudent.tanggalMasuk ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-500">NISN:</span> <strong className="font-mono text-slate-950">{inspectStudent.nisn}</strong></p>
+                <p><span className="font-semibold text-slate-500">NIK:</span> <strong className="font-mono text-slate-950">{inspectStudent.nik ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-500">No. KK:</span> <strong className="font-mono text-slate-950">{inspectStudent.noKk ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-500">Ibu Kandung:</span> <strong className="text-slate-950">{inspectStudent.namaIbuKandung ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-500">Sekolah Asal:</span> <strong className="text-slate-950">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-500">No. Ijazah:</span> <strong className="text-slate-950">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
+                <p><span className="font-semibold text-slate-500">Status PKBM:</span> <strong className="text-blue-700">{inspectStudent.statusVerval}</strong></p>
+                <p><span className="font-semibold text-slate-500">Tanggal Masuk:</span> <strong className="text-slate-950">{inspectStudent.tanggalMasuk ?? "—"}</strong></p>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
@@ -1397,8 +2524,8 @@ export function DinasHome() {
                         onClick={() => setDocTab(tab.id)}
                         className={`rounded-lg px-3 py-1 font-bold transition ${
                           docTab === tab.id
-                            ? "bg-blue-600 text-white shadow-xs"
-                            : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "border border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"
                         }`}
                       >
                         {tab.label}
@@ -1415,7 +2542,7 @@ export function DinasHome() {
                         : docTab === "ijazah"
                           ? inspectStudent.urlIjazah
                           : inspectStudent.urlSuratPindah;
-                  if (!u) return <p className="py-6 text-center font-medium text-slate-600">Berkas belum diunggah.</p>;
+                  if (!u) return <p className="py-6 text-center font-medium text-slate-500">Berkas belum diunggah.</p>;
                   if (u.startsWith("data:application/pdf") || u.toLowerCase().endsWith(".pdf")) {
                     return <iframe src={u} title="Pratinjau PDF" className="mt-3 h-64 w-full rounded-xl border border-slate-200 bg-white" />;
                   }
@@ -1424,9 +2551,9 @@ export function DinasHome() {
                   }
                   return (
                     <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3">
-                      <span className="break-all font-mono text-blue-700">{u}</span>
+                      <span className="break-all font-mono text-slate-800">{u}</span>
                       {u.startsWith("http") && (
-                        <a href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-blue-700 underline">
+                        <a href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-blue-700 underline hover:text-blue-900">
                           Buka <ExternalLink size={12} />
                         </a>
                       )}
@@ -1435,7 +2562,7 @@ export function DinasHome() {
                 })()}
               </div>
 
-              <label className="block font-bold text-slate-900">
+              <label className="block font-bold text-slate-800">
                 Catatan Pemeriksaan Dinas (Wajib diisi jika Minta Perbaikan)
                 <textarea
                   rows={2}
@@ -1443,7 +2570,7 @@ export function DinasHome() {
                   value={catatanInput}
                   onChange={(e) => setCatatanInput(e.target.value)}
                   placeholder="Contoh: Scan KK buram, mohon unggah ulang yang lebih jelas."
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-950 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
                 />
               </label>
 
@@ -1455,7 +2582,7 @@ export function DinasHome() {
                 type="button"
                 disabled={actionBusy}
                 onClick={() => void submitDinasDecision("MENUNGGU_DINAS")}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
               >
                 <RotateCcw size={13} /> Reset Menunggu
               </button>
@@ -1464,7 +2591,7 @@ export function DinasHome() {
                   type="button"
                   disabled={actionBusy}
                   onClick={() => void submitDinasDecision("PERLU_PERBAIKAN")}
-                  className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 disabled:opacity-50"
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
                 >
                   Minta Perbaikan
                 </button>
@@ -1472,13 +2599,253 @@ export function DinasHome() {
                   type="button"
                   disabled={actionBusy}
                   onClick={() => void submitDinasDecision("LOLOS_VERVAL")}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-emerald-700 disabled:opacity-50"
                 >
                   Loloskan
                 </button>
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal Pratinjau & Cetak PDF Berita Acara Resmi Dinas */}
+      {printBaDoc && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm sm:p-8 print:static print:overflow-visible print:bg-white print:p-0">
+          <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-white bg-white/95 px-5 py-3.5 shadow-lg">
+            <div>
+              <p className="text-sm font-extrabold text-slate-950">Pratinjau Cetak Berita Acara Verval Dinas</p>
+              <p className="text-xs font-medium text-slate-600">
+                Gunakan tombol Cetak / Simpan PDF untuk menyimpan dokumen resmi ke format PDF.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-extrabold text-white shadow-sm hover:brightness-110"
+              >
+                <Printer size={14} /> Cetak / Simpan PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintBaDoc(null)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100"
+              >
+                <X size={14} /> Tutup
+              </button>
+            </div>
+          </div>
+
+          <article className="mx-auto max-w-4xl rounded-2xl bg-white p-8 text-slate-950 shadow-2xl sm:p-12 print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+            {/* Kop Surat Dinas */}
+            <header className="flex items-center gap-4 border-b-4 border-double border-slate-900 pb-4">
+              {baKopLogo && (
+                <img
+                  src={baKopLogo}
+                  alt="Logo Kop Dinas Pendidikan"
+                  className="h-20 w-20 shrink-0 object-contain"
+                />
+              )}
+              <div className="flex-1 text-center">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-800">
+                  PEMERINTAH {printBaDoc.wilayah.toUpperCase()}
+                </p>
+                <h1 className="mt-0.5 text-lg font-black uppercase tracking-wide text-slate-950 sm:text-xl">
+                  DINAS PENDIDIKAN DAN KEBUDAYAAN
+                </h1>
+                <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-slate-700">
+                  BIDANG PEMBINAAN PAUD DAN PENDIDIKAN MASYARAKAT (DIKMAS)
+                </p>
+                <p className="mt-1 text-[11px] font-medium text-slate-600">
+                  Portal Verifikasi &amp; Validasi Administrasi Kesetaraan Wilayah · {printBaDoc.wilayah}
+                </p>
+              </div>
+              {baKopLogo && <div className="hidden h-20 w-20 shrink-0 sm:block" aria-hidden="true" />}
+            </header>
+
+            <section className="mt-6 text-center">
+              <h2 className="text-base font-black uppercase tracking-wide underline underline-offset-4">
+                BERITA ACARA VERIFIKASI DAN VALIDASI DATA WARGA BELAJAR
+              </h2>
+              <p className="mt-1 text-xs font-bold uppercase text-slate-700">
+                {printBaDoc.mode === "kabupaten"
+                  ? `REKAPITULASI TINGKAT ${printBaDoc.wilayah.toUpperCase()}`
+                  : `SATUAN PENDIDIKAN KESETARAAN — ${printBaDoc.pkbmNama.toUpperCase()}`}
+              </p>
+              <p className="mt-1.5 font-mono text-xs font-bold text-slate-900">
+                Nomor: {printBaDoc.nomorSurat}
+              </p>
+            </section>
+
+            <section className="mt-6 space-y-4 text-justify text-xs leading-6 text-slate-900">
+              <p>
+                Pada hari ini, tanggal <strong>{printBaDoc.tanggalSurat}</strong>, bertempat di{" "}
+                <strong>Dinas Pendidikan dan Kebudayaan {printBaDoc.wilayah}</strong>, telah dilaksanakan verifikasi dan
+                validasi administratif data warga belajar pendidikan kesetaraan (kelengkapan biodata Dapodik, tanggal
+                cut-off pendaftaran <strong>{printBaDoc.ringkasan.cutoffDate}</strong>, serta pemeriksaan 4 dokumen fisik:
+                KK, Akta Kelahiran/KTP, Ijazah Terakhir, dan Surat Pindah) untuk sasaran berikut:
+              </p>
+
+              <table className="w-full text-xs">
+                <tbody>
+                  <tr>
+                    <td className="w-52 py-0.5 font-bold">Jenis Berita Acara</td>
+                    <td className="w-4">:</td>
+                    <td>
+                      {printBaDoc.mode === "kabupaten"
+                        ? "Rekapitulasi Tingkat Kabupaten/Kota"
+                        : "Per Satuan Pendidikan (PKBM)"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-0.5 font-bold">
+                      {printBaDoc.mode === "kabupaten" ? "Wilayah Kabupaten/Kota" : "Nama Lembaga / PKBM"}
+                    </td>
+                    <td>:</td>
+                    <td className="font-bold">{printBaDoc.pkbmNama}</td>
+                  </tr>
+                  {printBaDoc.mode === "pkbm" && (
+                    <>
+                      <tr>
+                        <td className="py-0.5 font-bold">NPSN / Kabupaten</td>
+                        <td>:</td>
+                        <td>
+                          {printBaDoc.pkbmNpsn ?? "—"} / {printBaDoc.wilayah}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="py-0.5 font-bold">Kepala PKBM</td>
+                        <td>:</td>
+                        <td>{printBaDoc.pkbmKepala ?? "—"}</td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
+              </table>
+
+              <table className="w-full border-collapse border border-slate-900 text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-extrabold text-slate-950">
+                    <th className="border border-slate-900 px-3 py-2 text-left">Indikator Rekapitulasi Verval</th>
+                    <th className="w-40 border border-slate-900 px-3 py-2 text-right">Jumlah / Capaian</th>
+                    <th className="w-36 border border-slate-900 px-3 py-2 text-center">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printBaDoc.mode === "kabupaten" && (
+                    <tr>
+                      <td className="border border-slate-900 px-3 py-2">Jumlah PKBM Aktif Terpantau</td>
+                      <td className="border border-slate-900 px-3 py-2 text-right font-bold">
+                        {printBaDoc.ringkasan.totalPkbm} Lembaga
+                      </td>
+                      <td className="border border-slate-900 px-3 py-2 text-center">Terdaftar</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td className="border border-slate-900 px-3 py-2">Total Warga Belajar Tarikan Dapodik</td>
+                    <td className="border border-slate-900 px-3 py-2 text-right font-bold">
+                      {printBaDoc.ringkasan.totalDapodik} Siswa
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-center">Basis Dapodik</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-900 px-3 py-2">Total Warga Belajar Aktif Terdaftar di LMS</td>
+                    <td className="border border-slate-900 px-3 py-2 text-right font-bold">
+                      {printBaDoc.ringkasan.totalSiswa} Siswa
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-center">
+                      A:{printBaDoc.ringkasan.paketA} · B:{printBaDoc.ringkasan.paketB} · C:{printBaDoc.ringkasan.paketC}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-900 px-3 py-2">
+                      Warga Belajar Memenuhi Cut-Off ({printBaDoc.ringkasan.cutoffDate})
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-right font-bold">
+                      {printBaDoc.ringkasan.siswaMemenuhiCutoff} Siswa
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-center">Sesuai Cut-Off</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-900 px-3 py-2">
+                      Berkas Fisik Lengkap &amp; Valid (KK, Akta/KTP, Ijazah)
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-right font-bold">
+                      {printBaDoc.ringkasan.berkasLengkap} Siswa
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-center">
+                      {printBaDoc.ringkasan.kelengkapanVervalPersen}% Kelengkapan
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-900 px-3 py-2">
+                      Selisih Warga Belajar Belum Lengkap / Tanpa Berkas Fisik
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-right font-bold">
+                      {printBaDoc.ringkasan.selisihTanpaBerkas} Siswa
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-center">Wajib Tindak Lanjut</td>
+                  </tr>
+                  <tr>
+                    <td className="border border-slate-900 px-3 py-2 font-bold">
+                      Warga Belajar Lolos Verval Dinas Pendidikan
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-right font-extrabold">
+                      {printBaDoc.ringkasan.lolosVervalDinas} Siswa ({printBaDoc.ringkasan.persentaseLolosDinas}%)
+                    </td>
+                    <td className="border border-slate-900 px-3 py-2 text-center">
+                      {printBaDoc.ringkasan.perluPerbaikanCount} Perbaikan / {printBaDoc.ringkasan.menungguDinasCount} Menunggu
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {printBaDoc.catatan && (
+                <div className="rounded-lg border border-slate-400 bg-slate-50 px-4 py-3 text-xs">
+                  <p className="font-extrabold uppercase tracking-wide text-slate-900">Catatan Dinas Pendidikan:</p>
+                  <p className="mt-1 whitespace-pre-line text-slate-800">{printBaDoc.catatan}</p>
+                </div>
+              )}
+
+              <p>
+                Demikian Berita Acara Verifikasi dan Validasi Data Warga Belajar ini dibuat dengan sebenarnya untuk
+                digunakan sebagai dasar pembinaan administrasi dan pelaporan pendidikan kesetaraan di{" "}
+                {printBaDoc.wilayah}.
+              </p>
+            </section>
+
+            <div className="mt-10 grid grid-cols-2 gap-8 text-center text-xs">
+              <div>
+                {printBaDoc.mode === "pkbm" ? (
+                  <>
+                    <p>Mengetahui,</p>
+                    <p className="font-bold">Kepala {printBaDoc.pkbmNama}</p>
+                    <div className="h-20" />
+                    <p className="font-bold underline">
+                      {printBaDoc.pkbmKepala || "( ............................................. )"}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>Petugas Verifikator Portal Dinas,</p>
+                    <p className="font-bold">Operator Verval Dikmas</p>
+                    <div className="h-20" />
+                    <p className="font-bold underline">{petugasNama}</p>
+                  </>
+                )}
+              </div>
+              <div>
+                <p>
+                  {printBaDoc.wilayah}, {printBaDoc.tanggalSurat}
+                </p>
+                <p className="font-bold">{printBaDoc.jabatanTtd}</p>
+                <div className="h-20" />
+                <p className="font-bold underline">{printBaDoc.pejabatNama}</p>
+                <p className="mt-0.5 font-mono text-[11px]">NIP. {printBaDoc.pejabatNip}</p>
+              </div>
+            </div>
+          </article>
         </div>
       )}
     </main>

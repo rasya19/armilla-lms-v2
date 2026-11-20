@@ -32,6 +32,7 @@ import {
   Package,
   Palette,
   QrCode,
+  RefreshCw,
   Server,
   Settings,
   Settings2,
@@ -48,7 +49,7 @@ import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { CardGridSkeleton, DashboardHero, PortalSpinner } from "./DashboardUI";
 import { Classroom } from "./Classroom";
-import { isThemeKey, TenantThemeProvider, type ThemeKey } from "./TenantThemeProvider";
+import { isThemeKey, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
 import { getCached, invalidateCache, prefetchCoreSchoolData, prefetchForView, setCached, setCacheScope } from "./schoolCache";
 import { resetStandardClassesCache } from "./standardClasses";
 import {
@@ -190,6 +191,220 @@ const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string;
     label: "PAKET PRO",
     sidebarClass: "border-amber-400/60 bg-amber-500/25 text-amber-100",
     headerClass: "border-amber-300 bg-amber-100 text-amber-950",
+  },
+};
+
+type SidebarThemePalette = {
+  aside: string;
+  headerDivider: string;
+  identityCard: string;
+  avatar: string;
+  schoolName: string;
+  roleText: string;
+  closeBtn: string;
+  dashboardActive: string;
+  dashboardActiveIcon: string;
+  dashboardInactive: string;
+  dashboardInactiveIcon: string;
+  sectionLabel: string;
+  groupButton: string;
+  groupIcon: string;
+  groupBorder: string;
+  itemActive: string;
+  itemActiveIcon: string;
+  itemInactive: string;
+  itemLocked: string;
+  itemIcon: string;
+  devBadge: string;
+  proBadgeActive: string;
+  proBadgeLocked: string;
+  regBadgeActive: string;
+  regBadgeLocked: string;
+  standaloneDivider: string;
+  footerDivider: string;
+  tierCard: string;
+  tierLabel: string;
+  refreshBtn: string;
+  logoutBtn: string;
+  useLightBadges: boolean;
+  headerSchoolPill: string;
+  headerAvatar: string;
+  headerMenuBtn: string;
+  mobileAccentText: string;
+  mobileAccentBg: string;
+  mobileFab: string;
+};
+
+const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
+  ocean: {
+    aside:
+      "border-sky-200/90 bg-gradient-to-b from-white/90 via-sky-50/90 to-cyan-100/80 text-slate-800 shadow-[4px_0_24px_rgba(3,105,161,0.08)] backdrop-blur-xl",
+    headerDivider: "border-sky-200/80",
+    identityCard: "border-sky-200/90 bg-white/85 shadow-xs",
+    avatar: "bg-gradient-to-tr from-sky-700 to-cyan-500 text-white shadow-sm",
+    schoolName: "text-sky-950",
+    roleText: "text-sky-700",
+    closeBtn: "text-slate-600 hover:bg-sky-100 hover:text-sky-950",
+    dashboardActive: "bg-gradient-to-r from-sky-700 via-cyan-700 to-teal-700 text-white shadow-md shadow-sky-900/15",
+    dashboardActiveIcon: "bg-white/20 text-white",
+    dashboardInactive: "text-slate-700 hover:bg-sky-100/80 hover:text-sky-950",
+    dashboardInactiveIcon: "bg-sky-100 text-sky-700",
+    sectionLabel: "text-sky-900/65",
+    groupButton: "text-slate-800 hover:bg-sky-100/80 hover:text-sky-950",
+    groupIcon: "bg-sky-100 text-sky-700",
+    groupBorder: "border-sky-200/90",
+    itemActive: "border border-sky-300/90 bg-white/95 text-sky-950 shadow-xs",
+    itemActiveIcon: "bg-gradient-to-br from-sky-600 to-cyan-500 text-white shadow-xs",
+    itemInactive: "text-slate-700 hover:bg-sky-100/75 hover:text-sky-950",
+    itemLocked: "text-slate-500 hover:bg-sky-100/50 hover:text-slate-800",
+    itemIcon: "bg-sky-100/80 text-sky-700",
+    devBadge: "border-sky-300 bg-sky-100 text-sky-900",
+    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
+    regBadgeActive: "bg-cyan-100 text-cyan-900 ring-1 ring-cyan-300",
+    regBadgeLocked: "bg-cyan-50 text-cyan-800 ring-1 ring-cyan-300",
+    standaloneDivider: "border-sky-200/80",
+    footerDivider: "border-sky-200/80",
+    tierCard: "border-sky-200/90 bg-white/85 shadow-xs",
+    tierLabel: "text-slate-700",
+    refreshBtn: "text-sky-700 hover:bg-sky-100 hover:text-sky-950",
+    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
+    useLightBadges: true,
+    headerSchoolPill: "bg-sky-100/90 text-sky-950",
+    headerAvatar: "bg-gradient-to-br from-sky-600 to-cyan-500",
+    headerMenuBtn: "hover:bg-sky-100 text-sky-900",
+    mobileAccentText: "text-sky-700",
+    mobileAccentBg: "bg-sky-100/90",
+    mobileFab: "bg-gradient-to-br from-sky-600 to-cyan-500",
+  },
+  emerald: {
+    aside:
+      "border-emerald-200/90 bg-gradient-to-b from-white/90 via-emerald-50/90 to-teal-100/80 text-slate-800 shadow-[4px_0_24px_rgba(4,120,87,0.08)] backdrop-blur-xl",
+    headerDivider: "border-emerald-200/80",
+    identityCard: "border-emerald-200/90 bg-white/85 shadow-xs",
+    avatar: "bg-gradient-to-tr from-emerald-700 to-teal-500 text-white shadow-sm",
+    schoolName: "text-emerald-950",
+    roleText: "text-emerald-700",
+    closeBtn: "text-slate-600 hover:bg-emerald-100 hover:text-emerald-950",
+    dashboardActive: "bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-700 text-white shadow-md shadow-emerald-900/15",
+    dashboardActiveIcon: "bg-white/20 text-white",
+    dashboardInactive: "text-slate-700 hover:bg-emerald-100/80 hover:text-emerald-950",
+    dashboardInactiveIcon: "bg-emerald-100 text-emerald-700",
+    sectionLabel: "text-emerald-900/65",
+    groupButton: "text-slate-800 hover:bg-emerald-100/80 hover:text-emerald-950",
+    groupIcon: "bg-emerald-100 text-emerald-700",
+    groupBorder: "border-emerald-200/90",
+    itemActive: "border border-emerald-300/90 bg-white/95 text-emerald-950 shadow-xs",
+    itemActiveIcon: "bg-gradient-to-br from-emerald-600 to-teal-500 text-white shadow-xs",
+    itemInactive: "text-slate-700 hover:bg-emerald-100/75 hover:text-emerald-950",
+    itemLocked: "text-slate-500 hover:bg-emerald-100/50 hover:text-slate-800",
+    itemIcon: "bg-emerald-100/80 text-emerald-700",
+    devBadge: "border-sky-300 bg-sky-100 text-sky-900",
+    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
+    regBadgeActive: "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300",
+    regBadgeLocked: "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300",
+    standaloneDivider: "border-emerald-200/80",
+    footerDivider: "border-emerald-200/80",
+    tierCard: "border-emerald-200/90 bg-white/85 shadow-xs",
+    tierLabel: "text-slate-700",
+    refreshBtn: "text-emerald-700 hover:bg-emerald-100 hover:text-emerald-950",
+    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
+    useLightBadges: true,
+    headerSchoolPill: "bg-emerald-100/90 text-emerald-950",
+    headerAvatar: "bg-gradient-to-br from-emerald-600 to-teal-500",
+    headerMenuBtn: "hover:bg-emerald-100 text-emerald-900",
+    mobileAccentText: "text-emerald-700",
+    mobileAccentBg: "bg-emerald-100/90",
+    mobileFab: "bg-gradient-to-br from-emerald-600 to-teal-500",
+  },
+  sunset: {
+    aside:
+      "border-fuchsia-200/90 bg-gradient-to-b from-white/90 via-fuchsia-50/85 to-rose-100/80 text-slate-800 shadow-[4px_0_24px_rgba(162,28,175,0.08)] backdrop-blur-xl",
+    headerDivider: "border-fuchsia-200/80",
+    identityCard: "border-fuchsia-200/90 bg-white/85 shadow-xs",
+    avatar: "bg-gradient-to-tr from-violet-600 to-fuchsia-500 text-white shadow-sm",
+    schoolName: "text-violet-950",
+    roleText: "text-violet-700",
+    closeBtn: "text-slate-600 hover:bg-fuchsia-100 hover:text-violet-950",
+    dashboardActive: "bg-gradient-to-r from-violet-700 via-fuchsia-700 to-rose-600 text-white shadow-md shadow-violet-900/15",
+    dashboardActiveIcon: "bg-white/20 text-white",
+    dashboardInactive: "text-slate-700 hover:bg-fuchsia-100/80 hover:text-violet-950",
+    dashboardInactiveIcon: "bg-fuchsia-100 text-violet-700",
+    sectionLabel: "text-violet-900/65",
+    groupButton: "text-slate-800 hover:bg-fuchsia-100/80 hover:text-violet-950",
+    groupIcon: "bg-fuchsia-100 text-violet-700",
+    groupBorder: "border-fuchsia-200/90",
+    itemActive: "border border-fuchsia-300/90 bg-white/95 text-violet-950 shadow-xs",
+    itemActiveIcon: "bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-xs",
+    itemInactive: "text-slate-700 hover:bg-fuchsia-100/75 hover:text-violet-950",
+    itemLocked: "text-slate-500 hover:bg-fuchsia-100/50 hover:text-slate-800",
+    itemIcon: "bg-fuchsia-100/80 text-violet-700",
+    devBadge: "border-violet-300 bg-violet-100 text-violet-900",
+    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
+    regBadgeActive: "bg-fuchsia-100 text-fuchsia-900 ring-1 ring-fuchsia-300",
+    regBadgeLocked: "bg-fuchsia-50 text-fuchsia-800 ring-1 ring-fuchsia-300",
+    standaloneDivider: "border-fuchsia-200/80",
+    footerDivider: "border-fuchsia-200/80",
+    tierCard: "border-fuchsia-200/90 bg-white/85 shadow-xs",
+    tierLabel: "text-slate-700",
+    refreshBtn: "text-violet-700 hover:bg-fuchsia-100 hover:text-violet-950",
+    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
+    useLightBadges: true,
+    headerSchoolPill: "bg-fuchsia-100/90 text-violet-950",
+    headerAvatar: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
+    headerMenuBtn: "hover:bg-fuchsia-100 text-violet-900",
+    mobileAccentText: "text-violet-700",
+    mobileAccentBg: "bg-fuchsia-100/90",
+    mobileFab: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
+  },
+  dark: {
+    aside:
+      "border-slate-800/80 bg-[#080f1e]/92 text-slate-200 shadow-[4px_0_32px_rgba(2,6,23,0.6)] backdrop-blur-2xl",
+    headerDivider: "border-slate-800/80",
+    identityCard: "border-slate-700/50 bg-slate-900/75 shadow-inner",
+    avatar:
+      "bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)]",
+    schoolName: "text-white",
+    roleText: "text-amber-400",
+    closeBtn: "text-slate-300 hover:bg-slate-800",
+    dashboardActive:
+      "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.34)]",
+    dashboardActiveIcon: "bg-slate-950/15 text-slate-950",
+    dashboardInactive: "text-slate-300 hover:bg-slate-800/75 hover:text-white",
+    dashboardInactiveIcon: "bg-slate-800/85 text-slate-400",
+    sectionLabel: "text-slate-400 opacity-75",
+    groupButton: "text-slate-200 hover:bg-slate-800/80 hover:text-white",
+    groupIcon: "bg-slate-800/85 text-amber-400",
+    groupBorder: "border-slate-800/90",
+    itemActive:
+      "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.32)]",
+    itemActiveIcon: "bg-slate-950/15 text-slate-950",
+    itemInactive: "text-slate-300 hover:bg-slate-800/70 hover:text-white",
+    itemLocked: "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
+    itemIcon: "bg-slate-800/80 text-slate-400",
+    devBadge: "border-sky-400/30 bg-sky-500/15 text-sky-200",
+    proBadgeActive: "bg-amber-400/20 text-amber-200",
+    proBadgeLocked: "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30",
+    regBadgeActive: "bg-cyan-400/20 text-cyan-200",
+    regBadgeLocked: "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/30",
+    standaloneDivider: "border-slate-800/80",
+    footerDivider: "border-slate-800/80",
+    tierCard: "border-slate-700/50 bg-slate-900/75",
+    tierLabel: "text-slate-300",
+    refreshBtn: "text-amber-300 hover:bg-slate-800 hover:text-amber-200",
+    logoutBtn: "border-rose-500/25 bg-rose-950/30 text-rose-300 hover:bg-rose-950/55",
+    useLightBadges: false,
+    headerSchoolPill: "bg-transparent px-0 text-white",
+    headerAvatar:
+      "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]",
+    headerMenuBtn: "hover:bg-slate-800/80 text-slate-200",
+    mobileAccentText: "text-slate-950",
+    mobileAccentBg:
+      "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]",
+    mobileFab:
+      "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.4)]",
   },
 };
 
@@ -370,76 +585,118 @@ export function SchoolHome() {
   const [academicOpen, setAcademicOpen] = useState(false);
   const [cbtOpen, setCbtOpen] = useState(false);
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
+  const [refreshingPlan, setRefreshingPlan] = useState(false);
   const navigate = useNavigate();
+
+  async function refreshSessionProfile(options?: { signal?: AbortSignal; manual?: boolean }) {
+    if (options?.manual) setRefreshingPlan(true);
+    try {
+      const response = await fetchWithTimeout("/api/auth/sekolah/session", {
+        cache: "no-store",
+        signal: options?.signal,
+      });
+      if (response.status === 401) {
+        clearAuthCache("sekolah");
+        invalidateCache();
+        setStatus("unauthorized");
+        return;
+      }
+      if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
+      const data: unknown = await response.json();
+      if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") {
+        throw new Error("Respons sesi tidak valid.");
+      }
+      const rawOrNormalized =
+        ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
+        ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
+      const resolvedPlan = resolvePlanSlug(rawOrNormalized);
+      const devFlag =
+        ("isDeveloper" in data && data.isDeveloper === true) ||
+        ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
+      const themeKeyValue = "themeKey" in data && typeof data.themeKey === "string" ? data.themeKey : undefined;
+
+      setSchool(data.sekolah);
+      setSlug(data.slug);
+      setCacheScope(data.slug);
+      setPlan((prevPlan) => {
+        if (prevPlan !== resolvedPlan) {
+          invalidateCache([
+            "/api/sekolah/ringkasan",
+            "/api/sekolah/rekap-akademik",
+            "/api/sekolah/identitas",
+            "/api/sekolah/pengaturan",
+          ]);
+        }
+        return resolvedPlan;
+      });
+      if (themeKeyValue && isThemeKey(themeKeyValue)) {
+        setCachedTheme(themeKeyValue);
+      }
+      setIsDeveloper(devFlag);
+      if (!devFlag) {
+        setSandboxMode("client");
+        setSandboxRole("ADMIN");
+      }
+      saveAuthCache<SchoolAuthCache>("sekolah", {
+        token: initialAuth?.token,
+        nama: "nama" in data && typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
+        email: "email" in data && typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
+        isDeveloper: devFlag,
+        sekolah: data.sekolah,
+        slug: data.slug,
+        plan: resolvedPlan,
+        rawPlan: "rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null,
+        themeKey: themeKeyValue,
+        updatedAt: Date.now(),
+      });
+      saveCachedTenantProfile(data.slug, {
+        nama: data.sekolah,
+        slug: data.slug,
+        themeKey: themeKeyValue,
+        plan: resolvedPlan,
+      });
+      if (upgradePrompt && hasPlanAccess(resolvedPlan, upgradePrompt.requiredPlan)) {
+        setUpgradePrompt(null);
+      }
+      setError("");
+      setStatus("ready");
+    } catch (failure: unknown) {
+      if (!isCallerAborted(failure, options?.signal)) {
+        const message = describeFetchError(failure, "Sesi sekolah belum dapat diverifikasi.");
+        if (!initialAuth && status !== "ready") {
+          setError(message);
+          setStatus("error");
+        } else if (options?.manual) {
+          setError(message);
+        }
+      }
+    } finally {
+      if (options?.manual && !options?.signal?.aborted) {
+        setRefreshingPlan(false);
+      }
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchWithTimeout("/api/auth/sekolah/session", { signal: controller.signal })
-      .then(async (response) => {
-        if (response.status === 401) {
-          clearAuthCache("sekolah");
-          invalidateCache();
-          setStatus("unauthorized");
-          return;
-        }
-        if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
-        const data: unknown = await response.json();
-        if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") {
-          throw new Error("Respons sesi tidak valid.");
-        }
-        const rawOrNormalized =
-          ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
-          ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
-        const resolvedPlan = resolvePlanSlug(rawOrNormalized);
-        const devFlag =
-          ("isDeveloper" in data && data.isDeveloper === true) ||
-          ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
-        const themeKeyValue = "themeKey" in data && typeof data.themeKey === "string" ? data.themeKey : undefined;
+    let lastCheckedAt = Date.now();
+    void refreshSessionProfile({ signal: controller.signal });
 
-        setSchool(data.sekolah);
-        setSlug(data.slug);
-        setCacheScope(data.slug);
-        setPlan(resolvedPlan);
-        if (themeKeyValue && isThemeKey(themeKeyValue)) {
-          setCachedTheme(themeKeyValue);
-        }
-        setIsDeveloper(devFlag);
-        if (!devFlag) {
-          setSandboxMode("client");
-          setSandboxRole("ADMIN");
-        }
-        saveAuthCache<SchoolAuthCache>("sekolah", {
-          token: initialAuth?.token,
-          nama: "nama" in data && typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
-          email: "email" in data && typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
-          isDeveloper: devFlag,
-          sekolah: data.sekolah,
-          slug: data.slug,
-          plan: resolvedPlan,
-          rawPlan: "rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null,
-          themeKey: themeKeyValue,
-          updatedAt: Date.now(),
-        });
-        saveCachedTenantProfile(data.slug, {
-          nama: data.sekolah,
-          slug: data.slug,
-          themeKey: themeKeyValue,
-          plan: resolvedPlan,
-        });
-        setStatus("ready");
-      })
-      .catch((failure: unknown) => {
-        if (!isCallerAborted(failure, controller.signal)) {
-          const message = describeFetchError(failure, "Sesi sekolah belum dapat diverifikasi.");
-          if (!initialAuth) {
-            setError(message);
-            setStatus("error");
-          } else {
-            setError(message);
-          }
-        }
-      });
-    return () => controller.abort();
+    const maybeRevalidate = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastCheckedAt < 10_000) return;
+      lastCheckedAt = now;
+      void refreshSessionProfile({ signal: controller.signal });
+    };
+
+    window.addEventListener("focus", maybeRevalidate);
+    document.addEventListener("visibilitychange", maybeRevalidate);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", maybeRevalidate);
+      document.removeEventListener("visibilitychange", maybeRevalidate);
+    };
   }, []);
 
   useEffect(() => {
@@ -506,72 +763,6 @@ export function SchoolHome() {
     setMenuOpen(false);
   }
 
-  function renderMenuItem(item: SchoolMenuItem, standalone = false) {
-    const Icon = item.icon;
-    const active = view === item.target;
-    const locked = item.requiredPlan ? !hasPlanAccess(plan, item.requiredPlan) : false;
-    return (
-      <button
-        key={item.target}
-        type="button"
-        title={item.label}
-        aria-current={active ? "page" : undefined}
-        onMouseEnter={() => {
-          if (!locked && !item.inDevelopment) prefetchForView(item.target);
-        }}
-        onClick={() => selectView(item.target, item.requiredPlan, item.label)}
-        className={`flex w-full items-center justify-between gap-1.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
-          active
-            ? "border border-white/15 bg-white/10 text-white shadow-inner backdrop-blur-md"
-            : locked
-              ? "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              : standalone
-                ? "text-slate-300 hover:bg-white/10 hover:text-white"
-                : "text-slate-300 hover:bg-white/10 hover:text-white"
-        }`}
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-              active ? "bg-gradient-to-br from-indigo-500 to-cyan-500 text-white" : "bg-slate-800/70 text-slate-300"
-            }`}
-          >
-            <Icon size={14} />
-          </span>
-          <span className="truncate">{item.label}</span>
-        </span>
-        {(item.inDevelopment || item.requiredPlan) && (
-          <span className="flex shrink-0 items-center gap-1">
-            {item.inDevelopment && (
-              <span
-                title="Modul dalam tahap pengembangan"
-                className="inline-flex items-center rounded border border-sky-400/30 bg-sky-500/15 px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider text-sky-200"
-              >
-                DEV
-              </span>
-            )}
-            {item.requiredPlan && (
-              <span
-                className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${
-                  item.requiredPlan === "pro"
-                    ? locked
-                      ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30"
-                      : "bg-amber-400/20 text-amber-200"
-                    : locked
-                      ? "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/30"
-                      : "bg-cyan-400/20 text-cyan-200"
-                }`}
-              >
-                {locked && <Lock size={8} aria-hidden="true" />}
-                {item.requiredPlan === "pro" ? "PRO" : "REG"}
-              </span>
-            )}
-          </span>
-        )}
-      </button>
-    );
-  }
-
   const planStyle = PLAN_BADGE_STYLES[plan];
   const effectiveMode: SandboxMode = isDeveloper ? sandboxMode : "client";
   const effectiveRole: SandboxRole = isDeveloper ? sandboxRole : "ADMIN";
@@ -597,152 +788,36 @@ export function SchoolHome() {
       />
     ) : (
     <div className="mx-auto flex min-h-screen max-w-[1600px]">
-      <aside className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r border-slate-800/80 bg-gradient-to-b from-slate-900 via-indigo-950 to-slate-900 p-3.5 text-slate-200 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0`}>
-        <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-3.5">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-slate-700/50 bg-slate-800/40 p-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 font-black text-white shadow-sm">
-              {school.charAt(0).toUpperCase()}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-black uppercase tracking-wide text-white">{school}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-1">
-                <span className="text-[10px] font-bold uppercase text-indigo-300">ADMIN</span>
-                <span className={`inline-flex rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${planStyle.sidebarClass}`}>
-                  {planStyle.label}
-                </span>
-              </div>
-            </div>
-          </div>
-          <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className="rounded-lg p-1.5 text-slate-300 lg:hidden"><X size={18} /></button>
-        </div>
-
-        <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
-          <button
-            type="button"
-            aria-current={view === "dashboard" ? "page" : undefined}
-            onMouseEnter={() => prefetchForView("dashboard")}
-            onClick={() => selectView("dashboard")}
-            className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition ${
-              view === "dashboard"
-                ? "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md"
-                : "text-slate-300 hover:bg-slate-800/70 hover:text-white"
-            }`}
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-              <LayoutDashboard size={15} />
-            </span>
-            <span className="truncate">Dashboard Utama</span>
-          </button>
-
-          <p className="mb-2 mt-4 px-3 text-[10px] font-black uppercase tracking-wider text-slate-400 opacity-60">MENU NAVIGASI</p>
-
-          <div className="space-y-1.5">
-            <div>
-              <button
-                type="button"
-                aria-expanded={masterOpen}
-                onClick={() => setMasterOpen(!masterOpen)}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800/80"
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-                    <Database size={14} />
-                  </span>
-                  <span>Master Data</span>
-                </span>
-                {masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {masterOpen && (
-                <div className="ml-3 mt-1.5 space-y-1.5 border-l border-slate-700/70 pl-2.5">
-                  {visibleMasterItems.map((item) => renderMenuItem(item))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <button
-                type="button"
-                aria-expanded={academicOpen}
-                onClick={() => setAcademicOpen(!academicOpen)}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800/80"
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-                    <GraduationCap size={14} />
-                  </span>
-                  <span>Akademik &amp; Rapor</span>
-                </span>
-                {academicOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {academicOpen && (
-                <div className="ml-3 mt-1.5 space-y-1.5 border-l border-slate-700/70 pl-2.5">
-                  {visibleAcademicItems.map((item) => renderMenuItem(item))}
-                </div>
-              )}
-            </div>
-
-            {visibleCbtItems.length > 0 && (
-              <div>
-                <button
-                  type="button"
-                  aria-expanded={cbtOpen}
-                  onClick={() => setCbtOpen(!cbtOpen)}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800/80"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-                      <MonitorCheck size={14} />
-                    </span>
-                    <span>Ujian Online (CBT)</span>
-                  </span>
-                  {cbtOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-                {cbtOpen && (
-                  <div className="ml-3 mt-1.5 space-y-1.5 border-l border-slate-700/70 pl-2.5">
-                    {visibleCbtItems.map((item) => renderMenuItem(item))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-2 space-y-1.5 border-t border-slate-800/70 pt-2">
-            {visibleStandaloneItems.map((item) => renderMenuItem(item, true))}
-          </div>
-        </nav>
-
-        <div className="mt-3 shrink-0 space-y-2.5 border-t border-slate-800/80 pt-3">
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/60 bg-slate-800/50 px-3 py-2">
-            <span className="text-[11px] font-bold text-slate-300">Tier Akses</span>
-            <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${planStyle.sidebarClass}`}>
-              {planStyle.label}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={logout}
-            className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-rose-900/60 bg-rose-950/25 px-3.5 py-2.5 text-xs font-bold text-rose-300 transition hover:bg-rose-950/50"
-          >
-            <LogOut size={15} />
-            Keluar
-          </button>
-        </div>
-      </aside>
+      <SchoolSidebar
+        school={school}
+        plan={plan}
+        planStyle={planStyle}
+        view={view}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        masterOpen={masterOpen}
+        setMasterOpen={setMasterOpen}
+        academicOpen={academicOpen}
+        setAcademicOpen={setAcademicOpen}
+        cbtOpen={cbtOpen}
+        setCbtOpen={setCbtOpen}
+        visibleMasterItems={visibleMasterItems}
+        visibleAcademicItems={visibleAcademicItems}
+        visibleCbtItems={visibleCbtItems}
+        visibleStandaloneItems={visibleStandaloneItems}
+        refreshingPlan={refreshingPlan}
+        onRefreshPlan={() => void refreshSessionProfile({ manual: true })}
+        onSelectView={selectView}
+        onLogout={logout}
+      />
       {menuOpen && <button type="button" aria-label="Tutup menu sekolah" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" />}
       <div className="min-w-0 flex-1">
-        <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Buka menu sekolah" aria-expanded={menuOpen} className="rounded-lg p-2 hover:bg-indigo-100 lg:hidden"><Menu size={21} /></button>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="inline-block max-w-full truncate rounded-lg bg-indigo-50 px-3 py-1 text-sm font-extrabold text-indigo-900">{school}</h1>
-              <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${planStyle.headerClass}`}>
-                {planStyle.label}
-              </span>
-            </div>
-            <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Sekolah aktif</p>
-          </div>
-          <span className="hidden text-xs font-bold text-slate-700 sm:block">Admin</span><span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white shadow-md">AD</span>
-        </header>
+        <SchoolPortalHeader
+          school={school}
+          planStyle={planStyle}
+          menuOpen={menuOpen}
+          onOpenMenu={() => setMenuOpen(true)}
+        />
         {error && <p role="alert" className="glass-panel m-4 rounded-xl p-4 text-rose-700">{error}</p>}
         <div className={`animate-page-enter ${transitionAlternate ? "page-enter-alternate" : ""} mx-auto max-w-7xl space-y-6 p-6 pb-28 md:pb-6`}>
           {view === "dashboard" && (
@@ -766,7 +841,7 @@ export function SchoolHome() {
                 endpoint="/api/auth/sekolah/ganti-password"
                 onChanged={() => navigate("/login", { state: { passwordChanged: true }, replace: true })}
                 description="Gunakan kombinasi huruf dan angka yang kuat agar akses sekolah tetap aman."
-                className="rounded-2xl border border-white bg-white/90 p-6 text-slate-900"
+                className="dashboard-glass rounded-2xl p-6"
                 inputClassName="glass-input mt-2 w-full rounded-xl px-4 py-3"
                 buttonClassName="master-primary py-3 disabled:opacity-50"
               />
@@ -830,21 +905,426 @@ export function SchoolHome() {
         featureName={upgradePrompt.featureName}
         requiredPlan={upgradePrompt.requiredPlan}
         currentPlan={plan}
+        refreshing={refreshingPlan}
+        onRefreshPlan={() => void refreshSessionProfile({ manual: true })}
         onClose={() => setUpgradePrompt(null)}
       />
     )}
     {effectiveRole === "ADMIN" && (
-    <nav aria-label="Navigasi bawah sekolah" className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
-      {([
-        { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => selectView("dashboard") },
-        { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => selectView("siswa") },
-        { label: "Jadwal", icon: CalendarDays, active: !menuOpen && view === "akademik", click: () => selectView("akademik") },
-        { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => selectView("ppdb") },
-        { label: "Menu Lainnya", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: () => setMenuOpen(true) },
-      ] as const).map(({ label, icon: Icon, active, click }) => <button key={label} type="button" aria-current={active ? "page" : undefined} onClick={click} className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${active ? "font-semibold text-indigo-600" : "font-medium text-slate-600"}`}><span className={label === "Jadwal" ? "-mt-6 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-lg" : `rounded-xl p-1.5 ${active ? "bg-indigo-50/80" : ""}`}><Icon size={20} /></span>{label}</button>)}
-    </nav>
+      <SchoolMobileNav
+        menuOpen={menuOpen}
+        view={view}
+        onOpenMenu={() => setMenuOpen(true)}
+        onSelectView={(next) => selectView(next)}
+      />
     )}
   </main></TenantThemeProvider>;
+}
+
+function SchoolSidebar({
+  school,
+  plan,
+  planStyle,
+  view,
+  menuOpen,
+  setMenuOpen,
+  masterOpen,
+  setMasterOpen,
+  academicOpen,
+  setAcademicOpen,
+  cbtOpen,
+  setCbtOpen,
+  visibleMasterItems,
+  visibleAcademicItems,
+  visibleCbtItems,
+  visibleStandaloneItems,
+  refreshingPlan,
+  onRefreshPlan,
+  onSelectView,
+  onLogout,
+}: {
+  school: string;
+  plan: PlanSlug;
+  planStyle: { label: string; sidebarClass: string; headerClass: string };
+  view: SchoolView;
+  menuOpen: boolean;
+  setMenuOpen: (open: boolean) => void;
+  masterOpen: boolean;
+  setMasterOpen: (open: boolean) => void;
+  academicOpen: boolean;
+  setAcademicOpen: (open: boolean) => void;
+  cbtOpen: boolean;
+  setCbtOpen: (open: boolean) => void;
+  visibleMasterItems: SchoolMenuItem[];
+  visibleAcademicItems: SchoolMenuItem[];
+  visibleCbtItems: SchoolMenuItem[];
+  visibleStandaloneItems: SchoolMenuItem[];
+  refreshingPlan: boolean;
+  onRefreshPlan: () => void;
+  onSelectView: (next: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
+  onLogout: () => void;
+}) {
+  const theme = useTenantTheme();
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  const badgeClass = palette.useLightBadges ? planStyle.headerClass : planStyle.sidebarClass;
+
+  function renderMenuItem(item: SchoolMenuItem) {
+    const Icon = item.icon;
+    const active = view === item.target;
+    const locked = item.requiredPlan ? !hasPlanAccess(plan, item.requiredPlan) : false;
+    return (
+      <button
+        key={item.target}
+        type="button"
+        title={item.label}
+        aria-current={active ? "page" : undefined}
+        onMouseEnter={() => {
+          if (!locked && !item.inDevelopment) prefetchForView(item.target);
+        }}
+        onClick={() => onSelectView(item.target, item.requiredPlan, item.label)}
+        className={`flex w-full items-center justify-between gap-1.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
+          active ? palette.itemActive : locked ? palette.itemLocked : palette.itemInactive
+        }`}
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              active ? palette.itemActiveIcon : palette.itemIcon
+            }`}
+          >
+            <Icon size={14} />
+          </span>
+          <span className="truncate">{item.label}</span>
+        </span>
+        {(item.inDevelopment || item.requiredPlan) && (
+          <span className="flex shrink-0 items-center gap-1">
+            {item.inDevelopment && (
+              <span
+                title="Modul dalam tahap pengembangan"
+                className={`inline-flex items-center rounded border px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${palette.devBadge}`}
+              >
+                DEV
+              </span>
+            )}
+            {item.requiredPlan && (
+              <span
+                className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${
+                  item.requiredPlan === "pro"
+                    ? locked
+                      ? palette.proBadgeLocked
+                      : palette.proBadgeActive
+                    : locked
+                      ? palette.regBadgeLocked
+                      : palette.regBadgeActive
+                }`}
+              >
+                {locked && <Lock size={8} aria-hidden="true" />}
+                {item.requiredPlan === "pro" ? "PRO" : "REG"}
+              </span>
+            )}
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <aside
+      className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r p-3.5 transition-colors duration-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 ${palette.aside}`}
+    >
+      <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
+        <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black ${palette.avatar}`}>
+            {school.charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={`truncate text-xs font-black uppercase tracking-wide ${palette.schoolName}`}>{school}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className={`text-[10px] font-bold uppercase ${palette.roleText}`}>ADMIN</span>
+              <span className={`inline-flex rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${badgeClass}`}>
+                {planStyle.label}
+              </span>
+            </div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
+        <button
+          type="button"
+          aria-current={view === "dashboard" ? "page" : undefined}
+          onMouseEnter={() => prefetchForView("dashboard")}
+          onClick={() => onSelectView("dashboard")}
+          className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition ${
+            view === "dashboard" ? palette.dashboardActive : palette.dashboardInactive
+          }`}
+        >
+          <span
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              view === "dashboard" ? palette.dashboardActiveIcon : palette.dashboardInactiveIcon
+            }`}
+          >
+            <LayoutDashboard size={15} />
+          </span>
+          <span className="truncate">Dashboard Utama</span>
+        </button>
+
+        <p className={`mb-2 mt-4 px-3 text-[10px] font-black uppercase tracking-wider ${palette.sectionLabel}`}>MENU NAVIGASI</p>
+
+        <div className="space-y-1.5">
+          <div>
+            <button
+              type="button"
+              aria-expanded={masterOpen}
+              onClick={() => setMasterOpen(!masterOpen)}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
+            >
+              <span className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                  <Database size={14} />
+                </span>
+                <span>Master Data</span>
+              </span>
+              {masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {masterOpen && (
+              <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
+                {visibleMasterItems.map((item) => renderMenuItem(item))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <button
+              type="button"
+              aria-expanded={academicOpen}
+              onClick={() => setAcademicOpen(!academicOpen)}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
+            >
+              <span className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                  <GraduationCap size={14} />
+                </span>
+                <span>Akademik &amp; Rapor</span>
+              </span>
+              {academicOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {academicOpen && (
+              <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
+                {visibleAcademicItems.map((item) => renderMenuItem(item))}
+              </div>
+            )}
+          </div>
+
+          {visibleCbtItems.length > 0 && (
+            <div>
+              <button
+                type="button"
+                aria-expanded={cbtOpen}
+                onClick={() => setCbtOpen(!cbtOpen)}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                    <MonitorCheck size={14} />
+                  </span>
+                  <span>Ujian Online (CBT)</span>
+                </span>
+                {cbtOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {cbtOpen && (
+                <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
+                  {visibleCbtItems.map((item) => renderMenuItem(item))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={`mt-2 space-y-1.5 border-t pt-2 ${palette.standaloneDivider}`}>
+          {visibleStandaloneItems.map((item) => renderMenuItem(item))}
+        </div>
+      </nav>
+
+      <div className={`mt-3 shrink-0 space-y-2.5 border-t pt-3 ${palette.footerDivider}`}>
+        <div className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${palette.tierCard}`}>
+          <span className={`text-[11px] font-bold ${palette.tierLabel}`}>Tier Akses</span>
+          <div className="flex items-center gap-1.5">
+            <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${badgeClass}`}>
+              {planStyle.label}
+            </span>
+            <button
+              type="button"
+              disabled={refreshingPlan}
+              onClick={onRefreshPlan}
+              title="Segarkan status paket"
+              aria-label="Segarkan status paket"
+              className={`rounded p-1 transition disabled:opacity-50 ${palette.refreshBtn}`}
+            >
+              <RefreshCw size={12} className={refreshingPlan ? "animate-spin" : ""} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          className={`flex w-full items-center justify-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold transition ${palette.logoutBtn}`}
+        >
+          <LogOut size={15} />
+          Keluar
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function SchoolPortalHeader({
+  school,
+  planStyle,
+  menuOpen,
+  onOpenMenu,
+}: {
+  school: string;
+  planStyle: { label: string; sidebarClass: string; headerClass: string };
+  menuOpen: boolean;
+  onOpenMenu: () => void;
+}) {
+  const theme = useTenantTheme();
+  const isDark = theme === "dark";
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  const headerBadgeClass = palette.useLightBadges ? planStyle.headerClass : planStyle.sidebarClass;
+  return (
+    <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
+      <button
+        type="button"
+        onClick={onOpenMenu}
+        aria-label="Buka menu sekolah"
+        aria-expanded={menuOpen}
+        className={`rounded-lg p-2 lg:hidden ${palette.headerMenuBtn}`}
+      >
+        <Menu size={21} />
+      </button>
+      {isDark && (
+        <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-sm font-black text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)] sm:flex">
+          {school.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className={`inline-block max-w-full truncate rounded-lg text-sm font-extrabold ${isDark ? "px-0 py-0.5 text-white sm:text-base" : `px-3 py-1 ${palette.headerSchoolPill}`}`}>
+            {school}
+          </h1>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+              isDark
+                ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-300"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Sekolah Aktif
+          </span>
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${headerBadgeClass}`}>
+            {planStyle.label}
+          </span>
+        </div>
+      </div>
+      {isDark ? (
+        <div className="flex items-center gap-2.5">
+          <span className="hidden items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)] sm:inline-flex">
+            <ShieldCheck size={14} aria-hidden="true" />
+            Mode Admin
+          </span>
+          <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black ${palette.headerAvatar}`}>
+            AD
+          </span>
+        </div>
+      ) : (
+        <>
+          <span className="hidden text-xs font-bold text-slate-700 sm:block">Admin</span>
+          <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white shadow-md ${palette.headerAvatar}`}>
+            AD
+          </span>
+        </>
+      )}
+    </header>
+  );
+}
+
+function SchoolMobileNav({
+  menuOpen,
+  view,
+  onOpenMenu,
+  onSelectView,
+}: {
+  menuOpen: boolean;
+  view: SchoolView;
+  onOpenMenu: () => void;
+  onSelectView: (next: SchoolView) => void;
+}) {
+  const theme = useTenantTheme();
+  const isDark = theme === "dark";
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  return (
+    <nav
+      aria-label="Navigasi bawah sekolah"
+      className={
+        isDark
+          ? "fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md items-center justify-around gap-1 rounded-full border border-slate-700/60 bg-slate-900/90 px-2 py-1.5 shadow-[0_14px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl md:hidden"
+          : "fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
+      }
+      style={isDark ? undefined : { paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+    >
+      {([
+        { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => onSelectView("dashboard") },
+        { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => onSelectView("siswa") },
+        { label: "Jadwal", icon: CalendarDays, active: !menuOpen && view === "akademik", click: () => onSelectView("akademik") },
+        { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => onSelectView("ppdb") },
+        { label: "Menu", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: onOpenMenu },
+      ] as const).map(({ label, icon: Icon, active, click }) =>
+        isDark ? (
+          <button
+            key={label}
+            type="button"
+            aria-current={active ? "page" : undefined}
+            onClick={click}
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-2 py-1.5 text-[10px] transition ${
+              active
+                ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                : "font-medium text-slate-400 hover:text-white"
+            }`}
+          >
+            <Icon size={17} />
+            <span className="truncate">{label}</span>
+          </button>
+        ) : (
+          <button
+            key={label}
+            type="button"
+            aria-current={active ? "page" : undefined}
+            onClick={click}
+            className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${
+              active ? `font-semibold ${palette.mobileAccentText}` : "font-medium text-slate-600"
+            }`}
+          >
+            <span
+              className={
+                label === "Jadwal"
+                  ? `-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ${palette.mobileFab}`
+                  : `rounded-xl p-1.5 ${active ? palette.mobileAccentBg : ""}`
+              }
+            >
+              <Icon size={20} />
+            </span>
+            {label}
+          </button>
+        ),
+      )}
+    </nav>
+  );
 }
 
 type Summary = { siswa: number; guru: number; kelas: number; ppdb: number; ppdbDiterima: number; ppdbDitolak: number };
@@ -875,6 +1355,8 @@ function SchoolOverview({
   onOpenView: (view: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
   onRequireUpgrade: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
 }) {
+  const theme = useTenantTheme();
+  const isDark = theme === "dark";
   const [summary, setSummary] = useState<Summary | null>(() => getCached<Summary>("/api/sekolah/ringkasan"));
   const [recap, setRecap] = useState<OverviewRecap | null>(() => getCached<OverviewRecap>("/api/sekolah/rekap-akademik"));
   const [error, setError] = useState("");
@@ -962,7 +1444,7 @@ function SchoolOverview({
       sub: "Warga belajar terdaftar",
       icon: Users,
       tint: "from-blue-50 to-indigo-100",
-      iconClass: "bg-indigo-600/10 text-indigo-700",
+      iconClass: isDark ? "border border-amber-400/25 bg-amber-500/15 text-amber-400" : "bg-indigo-600/10 text-indigo-700",
     },
     {
       id: "guru" as const,
@@ -971,7 +1453,7 @@ function SchoolOverview({
       sub: "Tutor & pengampu mapel",
       icon: GraduationCap,
       tint: "from-violet-50 to-purple-100",
-      iconClass: "bg-violet-600/10 text-violet-700",
+      iconClass: isDark ? "border border-violet-400/25 bg-violet-500/15 text-violet-300" : "bg-violet-600/10 text-violet-700",
     },
     {
       id: "kelas" as const,
@@ -980,7 +1462,7 @@ function SchoolOverview({
       sub: avgDisplay !== null ? `${summary?.kelas ?? 0} kelas aktif` : "Rombel Kesetaraan",
       icon: avgDisplay !== null ? Award : Building2,
       tint: "from-cyan-50 to-sky-100",
-      iconClass: "bg-cyan-600/10 text-cyan-700",
+      iconClass: isDark ? "border border-sky-400/25 bg-sky-500/15 text-sky-300" : "bg-cyan-600/10 text-cyan-700",
     },
     {
       id: "ppdb" as const,
@@ -989,7 +1471,7 @@ function SchoolOverview({
       sub: `${totalPpdb} total pendaftar PPDB`,
       icon: ClipboardList,
       tint: "from-emerald-50 to-teal-100",
-      iconClass: "bg-emerald-600/10 text-emerald-700",
+      iconClass: isDark ? "border border-emerald-400/25 bg-emerald-500/15 text-emerald-300" : "bg-emerald-600/10 text-emerald-700",
     },
   ];
 
@@ -1020,12 +1502,16 @@ function SchoolOverview({
                   key={card.id}
                   type="button"
                   onClick={() => onSelect(card.id)}
-                  className={`flex items-center justify-between gap-4 rounded-2xl border border-white bg-gradient-to-br ${card.tint} p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md`}
+                  className={
+                    isDark
+                      ? "flex items-center justify-between gap-4 rounded-2xl border border-slate-700/50 bg-[#0d1628]/85 p-5 text-left shadow-lg backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-amber-400/40"
+                      : `flex items-center justify-between gap-4 rounded-2xl border border-white bg-gradient-to-br ${card.tint} p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md`
+                  }
                 >
                   <div className="min-w-0">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{card.label}</p>
-                    <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">{card.value}</p>
-                    <p className="mt-1 truncate text-xs font-medium text-slate-600">{card.sub}</p>
+                    <p className={`text-[11px] font-extrabold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>{card.label}</p>
+                    <p className={`mt-2 text-3xl font-black tracking-tight tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>{card.value}</p>
+                    <p className={`mt-1 truncate text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>{card.sub}</p>
                   </div>
                   <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${card.iconClass}`}>
                     <Icon size={21} />
@@ -1040,12 +1526,16 @@ function SchoolOverview({
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        isDark ? "border border-amber-400/25 bg-amber-500/15 text-amber-400" : "bg-indigo-50 text-indigo-700"
+                      }`}
+                    >
                       <BarChart3 size={18} />
                     </span>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Statistik Nilai Rata-rata Mapel</h3>
-                      <p className="text-xs text-slate-600">Capaian nilai evaluasi warga belajar terhadap batas ketuntasan minimal</p>
+                      <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Statistik Nilai Rata-rata Mapel</h3>
+                      <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Capaian nilai evaluasi warga belajar terhadap batas ketuntasan minimal</p>
                     </div>
                   </div>
                   <button
@@ -1055,35 +1545,47 @@ function SchoolOverview({
                         ? onOpenView("rekap-akademik", "reguler", "Analitik & Rekap Nilai")
                         : onRequireUpgrade("Analitik & Rekap Nilai", "reguler")
                     }
-                    className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    className={
+                      isDark
+                        ? "rounded-full border border-amber-400/35 bg-amber-500/12 px-3.5 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20"
+                        : "rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    }
                   >
                     {canUseRecap ? "Buka Analitik Lengkap" : "Paket Reguler+"}
                   </button>
                 </div>
 
                 {!canUseRecap ? (
-                  <div className="mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300/80 bg-white/50 p-6 text-center">
-                    <p className="max-w-md text-sm text-slate-700">
+                  <div
+                    className={`mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center ${
+                      isDark ? "border-slate-700/70 bg-slate-950/60" : "border-slate-300/80 bg-white/50"
+                    }`}
+                  >
+                    <p className={`max-w-md text-sm ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       Grafik perbandingan rata-rata nilai per mata pelajaran dan rekap presensi tersedia mulai{" "}
-                      <strong>Paket Reguler</strong>.
+                      <strong className={isDark ? "text-amber-300" : undefined}>Paket Reguler</strong>.
                     </p>
                     <button
                       type="button"
                       onClick={() => onRequireUpgrade("Analitik & Rekap Nilai", "reguler")}
-                      className="master-primary mt-4 px-4 py-2"
+                      className="master-primary mt-4 rounded-xl px-4 py-2"
                     >
                       Lihat Paket Reguler
                     </button>
                   </div>
                 ) : subjectStats.length === 0 ? (
-                  <div className="mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300/80 bg-white/50 p-6 text-center">
-                    <p className="max-w-md text-sm text-slate-700">
+                  <div
+                    className={`mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center ${
+                      isDark ? "border-slate-700/70 bg-slate-950/60" : "border-slate-300/80 bg-white/50"
+                    }`}
+                  >
+                    <p className={`max-w-md text-sm ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       Belum ada entri nilai simulasi atau nilai akhir yang tercatat. Mulai kelola materi, tugas, dan penilaian melalui Ruang KBM.
                     </p>
                     <button
                       type="button"
                       onClick={() => onOpenView("ruang-kbm")}
-                      className="master-primary mt-4 px-4 py-2"
+                      className="master-primary mt-4 rounded-xl px-4 py-2"
                     >
                       Buka Ruang KBM &amp; Materi
                     </button>
@@ -1094,16 +1596,20 @@ function SchoolOverview({
                       const passed = item.avg >= 75;
                       return (
                         <div key={item.nama} className="space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                          <div className={`flex items-center justify-between text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                             <span className="truncate pr-3">{item.nama}</span>
-                            <span className={passed ? "text-emerald-700" : "text-amber-700"}>{item.avg}</span>
+                            <span className={`tabular-nums ${passed ? (isDark ? "text-emerald-400" : "text-emerald-700") : (isDark ? "text-amber-400" : "text-amber-700")}`}>
+                              {item.avg}
+                            </span>
                           </div>
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200/80">
+                          <div className={`h-2.5 w-full overflow-hidden rounded-full ${isDark ? "bg-slate-800/90" : "bg-slate-200/80"}`}>
                             <div
                               className={`h-full rounded-full ${
                                 passed
-                                  ? "bg-gradient-to-r from-indigo-500 to-emerald-500"
-                                  : "bg-gradient-to-r from-amber-500 to-orange-500"
+                                  ? isDark
+                                    ? "bg-gradient-to-r from-emerald-400 to-teal-400"
+                                    : "bg-gradient-to-r from-indigo-500 to-emerald-500"
+                                  : "bg-gradient-to-r from-amber-400 to-orange-500"
                               }`}
                               style={{ width: `${Math.min(100, Math.max(0, item.avg))}%` }}
                             />
@@ -1115,59 +1621,69 @@ function SchoolOverview({
                 )}
               </div>
 
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 text-xs">
+              <div
+                className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${
+                  isDark ? "border-slate-700/60 bg-slate-950/55" : "border-slate-200/80 bg-white/75"
+                }`}
+              >
                 <div className="flex flex-wrap items-center gap-4">
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <span className={`inline-flex items-center gap-1.5 font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                     Tuntas (&ge; 75 KKM)
                   </span>
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  <span className={`inline-flex items-center gap-1.5 font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                     Perlu Pendampingan (&lt; 75)
                   </span>
                 </div>
-                <span className="font-bold text-indigo-900">Target KKM Lembaga: 75</span>
+                <span className={`font-bold ${isDark ? "text-amber-300" : "text-indigo-900"}`}>Target KKM Lembaga: 75</span>
               </div>
             </div>
 
             <div className="dashboard-glass flex flex-col justify-between rounded-2xl p-6 lg:col-span-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Aliran Pendaftar PPDB</h3>
-                <p className="mt-0.5 text-xs text-slate-600">Ringkasan status verifikasi calon warga belajar</p>
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Aliran Pendaftar PPDB</h3>
+                <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Ringkasan status verifikasi calon warga belajar</p>
                 <div
                   className="mx-auto mt-5 flex h-36 w-36 items-center justify-center rounded-full shadow-inner"
                   style={{
                     background: totalPpdb
                       ? `conic-gradient(#f59e0b 0 ${(summary.ppdb / totalPpdb) * 100}%, #10b981 0 ${((summary.ppdb + summary.ppdbDiterima) / totalPpdb) * 100}%, #f43f5e 0)`
-                      : "#e2e8f0",
+                      : isDark
+                        ? "#1e293b"
+                        : "#e2e8f0",
                   }}
                 >
-                  <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-slate-900 shadow-xs">
-                    <span className="text-2xl font-black">{totalPpdb}</span>
-                    <span className="text-[11px] font-semibold text-slate-500">Pendaftar</span>
+                  <div
+                    className={`flex h-24 w-24 flex-col items-center justify-center rounded-full shadow-xs ${
+                      isDark ? "border border-slate-700/70 bg-[#0b1324] text-white" : "bg-white text-slate-900"
+                    }`}
+                  >
+                    <span className="text-2xl font-black tabular-nums">{totalPpdb}</span>
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-slate-400" : "text-slate-500"}`}>Pendaftar</span>
                   </div>
                 </div>
-                <div className="mt-5 space-y-2 text-xs text-slate-700">
+                <div className={`mt-5 space-y-2 text-xs ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                       Menunggu Verifikasi
                     </span>
-                    <strong>{summary.ppdb}</strong>
+                    <strong className="tabular-nums">{summary.ppdb}</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                       Diterima
                     </span>
-                    <strong>{summary.ppdbDiterima}</strong>
+                    <strong className="tabular-nums">{summary.ppdbDiterima}</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
                       Ditolak
                     </span>
-                    <strong>{summary.ppdbDitolak}</strong>
+                    <strong className="tabular-nums">{summary.ppdbDitolak}</strong>
                   </div>
                 </div>
               </div>
@@ -1175,7 +1691,7 @@ function SchoolOverview({
               <button
                 type="button"
                 onClick={() => onSelect("ppdb")}
-                className="master-primary mt-5 w-full py-2.5"
+                className="master-primary mt-5 w-full rounded-xl py-2.5"
               >
                 Selesaikan Seleksi PPDB
               </button>
@@ -1187,12 +1703,16 @@ function SchoolOverview({
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        isDark ? "border border-sky-400/25 bg-sky-500/15 text-sky-300" : "bg-cyan-50 text-cyan-700"
+                      }`}
+                    >
                       <Activity size={18} />
                     </span>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Aktivitas Sistem Terkini</h3>
-                      <p className="text-xs text-slate-600">Pantauan operasional akademik dan pendaftaran lembaga</p>
+                      <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Aktivitas Sistem Terkini</h3>
+                      <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Pantauan operasional akademik dan pendaftaran lembaga</p>
                     </div>
                   </div>
                   <button
@@ -1202,28 +1722,44 @@ function SchoolOverview({
                         ? onOpenView("rekap-akademik", "reguler", "Analitik & Rekap Nilai")
                         : onOpenView("ruang-kbm")
                     }
-                    className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    className={
+                      isDark
+                        ? "rounded-full border border-slate-700/80 bg-slate-800/80 px-3.5 py-1.5 text-xs font-bold text-slate-200 transition hover:border-amber-400/40 hover:text-amber-300"
+                        : "rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    }
                   >
                     Lihat Semua Aktivitas
                   </button>
                 </div>
 
                 <ul className="mt-5 space-y-2.5 text-xs">
-                  <li className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-4 py-3 text-slate-800">
+                  <li
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                    }`}
+                  >
                     <span>Total warga belajar aktif &amp; rombel berjalan</span>
-                    <strong className="text-indigo-900">
+                    <strong className={`tabular-nums ${isDark ? "text-amber-300" : "text-indigo-900"}`}>
                       {summary.siswa} siswa · {summary.kelas} kelas
                     </strong>
                   </li>
-                  <li className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-4 py-3 text-slate-800">
+                  <li
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                    }`}
+                  >
                     <span>Antrean seleksi PPDB menunggu tinjauan</span>
-                    <strong className={summary.ppdb > 0 ? "text-amber-700" : "text-emerald-700"}>
+                    <strong className={`tabular-nums ${summary.ppdb > 0 ? (isDark ? "text-amber-300" : "text-amber-700") : (isDark ? "text-emerald-300" : "text-emerald-700")}`}>
                       {summary.ppdb} pendaftar
                     </strong>
                   </li>
-                  <li className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-4 py-3 text-slate-800">
+                  <li
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                    }`}
+                  >
                     <span>Aktivitas materi ajar, tugas KBM, &amp; presensi</span>
-                    <strong className="text-slate-900">
+                    <strong className={isDark ? "text-white" : "text-slate-900"}>
                       {canUseRecap && recap
                         ? `${recap.summary.totalMateri} materi · ${recap.summary.totalTugas} tugas · ${recap.summary.presensi.total} presensi`
                         : "Aktif di Ruang KBM"}
@@ -1237,32 +1773,46 @@ function SchoolOverview({
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        isDark ? "border border-emerald-400/25 bg-emerald-500/15 text-emerald-300" : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
                       <Server size={18} />
                     </span>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Status Sistem &amp; Kapasitas Layanan</h3>
-                      <p className="text-xs text-slate-600">Konfigurasi tenant dan paket langganan</p>
+                      <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Status Sistem &amp; Kapasitas Layanan</h3>
+                      <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Konfigurasi tenant dan paket langganan</p>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold ${
+                      isDark
+                        ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300"
+                        : "border-emerald-200 bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                     ONLINE
                   </span>
                 </div>
 
-                <dl className="mt-5 space-y-2.5 rounded-xl border border-white bg-white/80 p-4 text-xs">
+                <dl
+                  className={`mt-5 space-y-2.5 rounded-xl border p-4 text-xs ${
+                    isDark ? "border-slate-700/50 bg-slate-950/55" : "border-white bg-white/80"
+                  }`}
+                >
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-600">Paket Langganan</dt>
-                    <dd className="font-extrabold text-indigo-900">{activePlan.name}</dd>
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Paket Langganan</dt>
+                    <dd className={`font-extrabold ${isDark ? "text-amber-300" : "text-indigo-900"}`}>{activePlan.name}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-600">Subdomain Portal</dt>
-                    <dd className="truncate font-mono font-bold text-slate-900">{slug}.pkbm.siput.id</dd>
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Subdomain Portal</dt>
+                    <dd className={`truncate font-mono font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{slug}.pkbm.siput.id</dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-600">Kapasitas Guru &amp; Kelas</dt>
-                    <dd className="font-bold text-slate-900">
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Kapasitas Guru &amp; Kelas</dt>
+                    <dd className={`font-bold tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                       {summary.guru} guru · {summary.kelas} kelas
                     </dd>
                   </div>
@@ -1274,7 +1824,7 @@ function SchoolOverview({
                   <button
                     type="button"
                     onClick={() => onOpenView("pengaturan-lanjutan", "pro", "Pengaturan Lanjutan")}
-                    className="master-primary flex-1 py-2.5"
+                    className="master-primary flex-1 rounded-xl py-2.5"
                   >
                     Pengaturan Lanjutan Tenant
                   </button>
@@ -1282,7 +1832,7 @@ function SchoolOverview({
                   <button
                     type="button"
                     onClick={() => onRequireUpgrade("Tema & Identitas Sekolah", "pro")}
-                    className="master-primary flex-1 py-2.5"
+                    className="master-primary flex-1 rounded-xl py-2.5"
                   >
                     Lihat Fitur Paket Pro
                   </button>

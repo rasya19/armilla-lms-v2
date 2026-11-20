@@ -159,6 +159,7 @@ app.post("/api/public/stats", async (_req, res) => {
 });
 
 async function handlePublicSchoolLookup(req: express.Request, res: express.Response, explicitSlug?: string) {
+  res.setHeader("Cache-Control", "no-store");
   const querySlug = typeof req.query.slug === "string" ? req.query.slug.trim().toLowerCase() : "";
   const slug = (explicitSlug ?? (querySlug || (req.tenant?.kind === "school" ? req.tenant.slug : ""))).trim().toLowerCase();
   if (!slug || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) {
@@ -493,6 +494,7 @@ async function buildSchoolProfilePayload(req: express.Request) {
 }
 
 app.get("/api/auth/sekolah/session", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   try {
     const profile = await buildSchoolProfilePayload(req);
     if (!profile) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -504,6 +506,7 @@ app.get("/api/auth/sekolah/session", async (req, res) => {
 });
 
 app.get("/api/sekolah/me", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   try {
     const profile = await buildSchoolProfilePayload(req);
     if (!profile) return res.status(401).json({ error: "Sesi tidak valid." });
@@ -1632,22 +1635,46 @@ app.post("/api/master/sekolah/:id/paket", async (req, res) => {
     if (!school) {
       return res.status(404).json({ error: "Tenant sekolah tidak ditemukan." });
     }
-    const syncResult = await syncTenantPlanToLms({
-      npsn: school.npsn,
-      slug: school.slug,
-      plan: cleanPlan,
-    });
-    if ("error" in syncResult) {
-      return res.status(syncResult.status).json({ error: syncResult.error });
-    }
+
     await prisma.sekolah.update({
       where: { id: school.id },
       data: { plan: cleanPlan },
     });
+
+    const configuredRemoteUrl = process.env.LMS_PROVISION_URL?.trim();
+    const requestHost = (req.get("host") ?? "").trim().toLowerCase();
+    let shouldSyncRemote = false;
+    if (configuredRemoteUrl) {
+      try {
+        const remoteHost = new URL(configuredRemoteUrl).host.toLowerCase();
+        shouldSyncRemote = Boolean(remoteHost && remoteHost !== requestHost);
+      } catch {
+        shouldSyncRemote = true;
+      }
+    }
+
+    if (shouldSyncRemote) {
+      const syncResult = await syncTenantPlanToLms({
+        npsn: school.npsn,
+        slug: school.slug,
+        plan: cleanPlan,
+      });
+      if ("error" in syncResult) {
+        return res.status(syncResult.status).json({
+          error: `Database diperbarui ke ${cleanPlan}, namun sinkronisasi ke LMS eksternal gagal: ${syncResult.error}`,
+        });
+      }
+      return res.json({
+        success: true,
+        plan: cleanPlan,
+        message: syncResult.message,
+      });
+    }
+
     return res.json({
       success: true,
       plan: cleanPlan,
-      message: syncResult.message,
+      message: `Paket ${school.nama} berhasil diperbarui ke ${cleanPlan.toUpperCase()}.`,
     });
   } catch (error) {
     console.error("Gagal menyinkronkan paket tenant ke LMS:", error);

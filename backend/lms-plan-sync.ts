@@ -4,33 +4,18 @@ const DEFAULT_LMS_PROVISION_ORIGIN = "https://pkbm.siput.id";
 
 export function toCleanPlanCode(value: unknown): TenantPlan | null {
   if (typeof value !== "string") return null;
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-  if (
-    normalized === "basic" ||
-    normalized === "paket basic" ||
-    normalized === "standar" ||
-    normalized === "paket standar" ||
-    normalized === "standard" ||
-    normalized === "paket standard"
-  ) {
-    return "basic";
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  if (!normalized) return null;
+  if (/\b(pro|enterprise|premium|gold|ultimate)\b/.test(normalized)) {
+    return "pro";
   }
-  if (
-    normalized === "reguler" ||
-    normalized === "paket reguler" ||
-    normalized === "regular" ||
-    normalized === "paket regular"
-  ) {
+  if (/\b(reguler|regular|silver)\b/.test(normalized)) {
     return "reguler";
   }
-  if (
-    normalized === "pro" ||
-    normalized === "paket pro" ||
-    normalized === "tahunan" ||
-    normalized === "paket tahunan" ||
-    normalized === "enterprise" ||
-    normalized === "paket enterprise"
-  ) {
+  if (/\b(basic|standar|standard|starter|free|gratis)\b/.test(normalized)) {
+    return "basic";
+  }
+  if (/\btahunan\b/.test(normalized)) {
     return "pro";
   }
   return null;

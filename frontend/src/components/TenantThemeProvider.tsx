@@ -1,16 +1,48 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { deriveTenantSlugFromHost, getCachedTenantProfile, saveCachedTenantProfile } from "./authSessionCache";
 import { fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 export type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 
 export const TENANT_THEME_EVENT = "armilla:tenant-theme-changed";
+const PREFERRED_THEME_STORAGE_KEY = "armilla:preferred-theme";
+
+const TenantThemeContext = createContext<ThemeKey>("ocean");
+
+export function useTenantTheme(): ThemeKey {
+  return useContext(TenantThemeContext);
+}
 
 export function isThemeKey(value: unknown): value is ThemeKey {
   return value === "ocean" || value === "emerald" || value === "sunset" || value === "dark";
 }
 
+export function savePreferredTheme(themeKey: ThemeKey) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PREFERRED_THEME_STORAGE_KEY, themeKey);
+  } catch {
+    // Ignore storage access errors
+  }
+}
+
+export function getPreferredTheme(fallback: ThemeKey = "dark"): ThemeKey {
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.localStorage.getItem(PREFERRED_THEME_STORAGE_KEY);
+      if (isThemeKey(stored)) return stored;
+    } catch {
+      // Ignore storage access errors
+    }
+  }
+  const hostSlug = deriveTenantSlugFromHost();
+  const cached = hostSlug ? getCachedTenantProfile(hostSlug) : null;
+  if (cached && isThemeKey(cached.themeKey)) return cached.themeKey;
+  return fallback;
+}
+
 export function dispatchTenantThemeChange(themeKey: ThemeKey) {
+  savePreferredTheme(themeKey);
   window.dispatchEvent(new CustomEvent<ThemeKey>(TENANT_THEME_EVENT, { detail: themeKey }));
 }
 
@@ -19,7 +51,7 @@ function resolveInitialTheme(initialTheme?: ThemeKey): ThemeKey {
   const hostSlug = deriveTenantSlugFromHost();
   const cached = hostSlug ? getCachedTenantProfile(hostSlug) : null;
   if (cached && isThemeKey(cached.themeKey)) return cached.themeKey;
-  return "ocean";
+  return getPreferredTheme("ocean");
 }
 
 export function TenantThemeProvider({
@@ -41,6 +73,7 @@ export function TenantThemeProvider({
         const data: unknown = await response.json();
         if (typeof data !== "object" || data === null || !("themeKey" in data) || !isThemeKey(data.themeKey)) return;
         setTheme(data.themeKey);
+        savePreferredTheme(data.themeKey);
         const hostSlug = deriveTenantSlugFromHost();
         if (hostSlug) {
           const cached = getCachedTenantProfile(hostSlug);
@@ -68,5 +101,20 @@ export function TenantThemeProvider({
     return () => window.removeEventListener(TENANT_THEME_EVENT, handleThemeChange);
   }, []);
 
-  return <div data-tenant-theme={theme}>{children}</div>;
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.tenantTheme = theme;
+    savePreferredTheme(theme);
+    return () => {
+      if (root.dataset.tenantTheme === theme) {
+        delete root.dataset.tenantTheme;
+      }
+    };
+  }, [theme]);
+
+  return (
+    <TenantThemeContext.Provider value={theme}>
+      <div data-tenant-theme={theme}>{children}</div>
+    </TenantThemeContext.Provider>
+  );
 }

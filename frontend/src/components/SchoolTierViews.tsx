@@ -20,7 +20,7 @@ import { ClassPromotion } from "./ClassPromotion";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { SchoolModal } from "./SchoolModal";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
-import { dispatchTenantThemeChange, isThemeKey, type ThemeKey } from "./TenantThemeProvider";
+import { dispatchTenantThemeChange, isThemeKey, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { ensureStandardClasses } from "./standardClasses";
 import { getPlanBySlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
@@ -31,11 +31,15 @@ export function UpgradePlanModal({
   featureName,
   requiredPlan,
   currentPlan,
+  refreshing,
+  onRefreshPlan,
   onClose,
 }: {
   featureName: string;
   requiredPlan: Exclude<PlanSlug, "basic">;
   currentPlan: PlanSlug;
+  refreshing?: boolean;
+  onRefreshPlan?: () => void;
   onClose: () => void;
 }) {
   const target = getPlanBySlug(requiredPlan);
@@ -91,7 +95,18 @@ export function UpgradePlanModal({
           </p>
         </div>
 
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          {onRefreshPlan && (
+            <button
+              type="button"
+              disabled={refreshing}
+              onClick={onRefreshPlan}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} aria-hidden="true" />
+              {refreshing ? "Memeriksa..." : "Cek Status Paket"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -106,6 +121,7 @@ export function UpgradePlanModal({
 }
 
 export function SchoolImportPanel({ onGoToStudents }: { onGoToStudents: () => void }) {
+  const isDark = useTenantTheme() === "dark";
   const [result, setResult] = useState<StudentImportResult | null>(null);
 
   return (
@@ -122,7 +138,14 @@ export function SchoolImportPanel({ onGoToStudents }: { onGoToStudents: () => vo
         }
       />
       {result && (
-        <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+        <div
+          role="status"
+          className={`mt-5 rounded-xl border p-4 text-sm ${
+            isDark
+              ? "border-emerald-500/35 bg-emerald-950/50 text-emerald-200"
+              : "border-emerald-200 bg-emerald-50 text-emerald-950"
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="font-bold">
               Impor selesai: {result.created} siswa baru ditambahkan, {result.updated} siswa diperbarui, {result.skipped.length} baris tanpa NISN dilewati.
@@ -136,7 +159,7 @@ export function SchoolImportPanel({ onGoToStudents }: { onGoToStudents: () => vo
             </button>
           </div>
           {result.skipped.length > 0 && (
-            <ul className="mt-2 list-inside list-disc text-xs text-emerald-900">
+            <ul className={`mt-2 list-inside list-disc text-xs ${isDark ? "text-emerald-200" : "text-emerald-900"}`}>
               {result.skipped.map((row) => (
                 <li key={row.number}>
                   Baris {row.number}: {row.nama || "(nama kosong)"}
@@ -146,14 +169,24 @@ export function SchoolImportPanel({ onGoToStudents }: { onGoToStudents: () => vo
           )}
         </div>
       )}
-      <div className="mt-4 rounded-2xl border border-white/80 bg-white/95 p-4 text-slate-900 sm:p-6">
+      <div
+        className={`mt-4 rounded-2xl border p-4 sm:p-6 ${
+          isDark
+            ? "border-slate-700/60 bg-slate-900/75 text-slate-100"
+            : "border-white/80 bg-white/95 text-slate-900"
+        }`}
+      >
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+          <span
+            className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+              isDark ? "border border-emerald-400/25 bg-emerald-500/15 text-emerald-300" : "bg-emerald-100 text-emerald-700"
+            }`}
+          >
             <FileSpreadsheet size={19} aria-hidden="true" />
           </span>
           <div>
-            <h3 className="text-base font-bold text-slate-900">Unggah File Excel Siswa</h3>
-            <p className="text-xs text-slate-600">Pemetaan kolom otomatis dengan pratinjau data sebelum disimpan.</p>
+            <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Unggah File Excel Siswa</h3>
+            <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Pemetaan kolom otomatis dengan pratinjau data sebelum disimpan.</p>
           </div>
         </div>
         <StudentImport
@@ -187,6 +220,7 @@ function isClassData(value: unknown): value is ClassData {
 }
 
 export function SchoolBulkPlacementView() {
+  const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<ClassData | null>(() => getCached<ClassData>("/api/sekolah/kelas"));
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
@@ -240,10 +274,14 @@ export function SchoolBulkPlacementView() {
           type="button"
           aria-pressed={tab === "promotion"}
           onClick={() => setTab("promotion")}
-          className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${
+          className={`rounded-full px-4 py-2.5 text-sm font-bold transition ${
             tab === "promotion"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "border border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50"
+              ? isDark
+                ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.35)]"
+                : "bg-indigo-600 text-white shadow-sm"
+              : isDark
+                ? "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:bg-slate-700/80 hover:text-white"
+                : "border border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50"
           }`}
         >
           Kenaikan Kelas Massal
@@ -252,10 +290,14 @@ export function SchoolBulkPlacementView() {
           type="button"
           aria-pressed={tab === "placement"}
           onClick={() => setTab("placement")}
-          className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${
+          className={`rounded-full px-4 py-2.5 text-sm font-bold transition ${
             tab === "placement"
-              ? "bg-indigo-600 text-white shadow-sm"
-              : "border border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50"
+              ? isDark
+                ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.35)]"
+                : "bg-indigo-600 text-white shadow-sm"
+              : isDark
+                ? "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:bg-slate-700/80 hover:text-white"
+                : "border border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50"
           }`}
         >
           Penempatan Siswa Massal
@@ -323,6 +365,7 @@ export function SchoolAcademicRecap({
   onOpenClassroom: () => void;
   mode?: "rekap" | "presensi";
 }) {
+  const isDark = useTenantTheme() === "dark";
   const endpoint = "/api/sekolah/rekap-akademik";
   const [data, setData] = useState<RecapData | null>(() => getCached<RecapData>(endpoint));
   const [error, setError] = useState("");
@@ -360,6 +403,9 @@ export function SchoolAcademicRecap({
       : null;
 
   const isPresensiMode = mode === "presensi";
+  const cardSurface = isDark
+    ? "rounded-2xl border border-slate-700/60 bg-slate-900/75 p-4 text-slate-100 shadow-lg"
+    : "rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs";
 
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
@@ -380,7 +426,7 @@ export function SchoolAcademicRecap({
       />
 
       {error ? (
-        <div role="alert" className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">
+        <div role="alert" className={`mt-5 rounded-xl border p-4 text-sm ${isDark ? "border-rose-500/35 bg-rose-950/50 text-rose-200" : "border-transparent bg-rose-50 text-rose-800"}`}>
           {error}{" "}
           <button type="button" onClick={() => setVersion((v) => v + 1)} className="ml-2 font-bold underline">
             Muat ulang
@@ -391,50 +437,54 @@ export function SchoolAcademicRecap({
       ) : (
         <div className="mt-5 space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Rata-rata Tugas</p>
-              <p className="mt-2 text-2xl font-black text-indigo-800">
+            <div className={cardSurface}>
+              <p className={`text-xs font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Rata-rata Tugas</p>
+              <p className={`mt-2 text-2xl font-black tabular-nums ${isDark ? "text-amber-300" : "text-indigo-800"}`}>
                 {data.summary.rataRataTugas !== null ? data.summary.rataRataTugas : "—"}
               </p>
-              <p className="mt-1 text-xs text-slate-600">{data.summary.totalNilaiTugas} pengumpulan dinilai</p>
+              <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>{data.summary.totalNilaiTugas} pengumpulan dinilai</p>
             </div>
-            <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Rata-rata Nilai Akhir</p>
-              <p className="mt-2 text-2xl font-black text-emerald-700">
+            <div className={cardSurface}>
+              <p className={`text-xs font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Rata-rata Nilai Akhir</p>
+              <p className={`mt-2 text-2xl font-black tabular-nums ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                 {data.summary.rataRataNilaiAkhir !== null ? data.summary.rataRataNilaiAkhir : "—"}
               </p>
-              <p className="mt-1 text-xs text-slate-600">{data.summary.totalEntriNilai} catatan nilai</p>
+              <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>{data.summary.totalEntriNilai} catatan nilai</p>
             </div>
-            <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Tingkat Kehadiran</p>
-              <p className="mt-2 text-2xl font-black text-cyan-700">
+            <div className={cardSurface}>
+              <p className={`text-xs font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Tingkat Kehadiran</p>
+              <p className={`mt-2 text-2xl font-black tabular-nums ${isDark ? "text-sky-300" : "text-cyan-700"}`}>
                 {presensiPct !== null ? `${presensiPct}%` : "—"}
               </p>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                 {data.summary.presensi.hadir} hadir dari {data.summary.presensi.total} catatan
               </p>
             </div>
-            <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Aktivitas KBM</p>
-              <p className="mt-2 text-2xl font-black text-slate-900">
+            <div className={cardSurface}>
+              <p className={`text-xs font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>Aktivitas KBM</p>
+              <p className={`mt-2 text-2xl font-black tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                 {data.summary.totalMateri + data.summary.totalTugas + data.summary.totalUjian}
               </p>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                 {data.summary.totalMateri} materi · {data.summary.totalTugas} tugas · {data.summary.totalUjian} ujian
               </p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
+          <div className={`${cardSurface} sm:p-5`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-base font-bold text-slate-900">Rekap Kehadiran per Kelas</h3>
+              <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Rekap Kehadiran per Kelas</h3>
               <button
                 type="button"
                 onClick={() => {
                   invalidateCache(endpoint);
                   setVersion((v) => v + 1);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                  isDark
+                    ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/40 hover:text-amber-300"
+                    : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                }`}
               >
                 <RefreshCw size={13} aria-hidden="true" />
                 Segarkan
@@ -448,7 +498,7 @@ export function SchoolAcademicRecap({
             ) : (
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full min-w-[38rem] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                  <thead className={isDark ? "bg-slate-950/60 text-xs uppercase text-slate-400" : "bg-slate-50 text-xs uppercase text-slate-600"}>
                     <tr>
                       <th className="p-3">Kelas</th>
                       <th className="p-3">Siswa Aktif</th>
@@ -460,13 +510,13 @@ export function SchoolAcademicRecap({
                   </thead>
                   <tbody>
                     {data.perKelas.map((row) => (
-                      <tr key={row.id} className="border-t border-slate-100">
-                        <td className="p-3 font-semibold text-slate-900">{row.nama}</td>
-                        <td className="p-3">{row.jumlahSiswa}</td>
-                        <td className="p-3 font-semibold text-emerald-700">{row.hadir}</td>
-                        <td className="p-3 text-amber-700">{row.sakit}</td>
-                        <td className="p-3 text-sky-700">{row.izin}</td>
-                        <td className="p-3 text-rose-700">{row.alpa}</td>
+                      <tr key={row.id} className={`border-t ${isDark ? "border-slate-800/70" : "border-slate-100"}`}>
+                        <td className={`p-3 font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{row.nama}</td>
+                        <td className="p-3 tabular-nums">{row.jumlahSiswa}</td>
+                        <td className={`p-3 font-semibold tabular-nums ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{row.hadir}</td>
+                        <td className={`p-3 tabular-nums ${isDark ? "text-amber-300" : "text-amber-700"}`}>{row.sakit}</td>
+                        <td className={`p-3 tabular-nums ${isDark ? "text-sky-300" : "text-sky-700"}`}>{row.izin}</td>
+                        <td className={`p-3 tabular-nums ${isDark ? "text-rose-400" : "text-rose-700"}`}>{row.alpa}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -476,19 +526,23 @@ export function SchoolAcademicRecap({
           </div>
 
           {!isPresensiMode && (
-            <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
+            <div className={`${cardSurface} sm:p-5`}>
               <div className="flex items-center gap-2">
-                <Award size={18} className="text-indigo-600" aria-hidden="true" />
-                <h3 className="text-base font-bold text-slate-900">Catatan Nilai Terbaru</h3>
+                <Award size={18} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Catatan Nilai Terbaru</h3>
               </div>
               {data.nilaiTerbaru.length === 0 ? (
-                <p className="mt-3 rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-600">
+                <p
+                  className={`mt-3 rounded-xl border border-dashed p-5 text-center text-sm ${
+                    isDark ? "border-slate-700/70 bg-slate-950/50 text-slate-400" : "border-slate-200 text-slate-600"
+                  }`}
+                >
                   Belum ada entri nilai simulasi atau nilai akhir. Penilaian tugas harian tetap dapat dipantau melalui menu Ruang KBM.
                 </p>
               ) : (
                 <div className="mt-4 overflow-x-auto">
                   <table className="w-full min-w-[38rem] text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                    <thead className={isDark ? "bg-slate-950/60 text-xs uppercase text-slate-400" : "bg-slate-50 text-xs uppercase text-slate-600"}>
                       <tr>
                         <th className="p-3">Siswa</th>
                         <th className="p-3">Mata Pelajaran</th>
@@ -499,12 +553,12 @@ export function SchoolAcademicRecap({
                     </thead>
                     <tbody>
                       {data.nilaiTerbaru.map((entry) => (
-                        <tr key={entry.id} className="border-t border-slate-100">
-                          <td className="p-3 font-semibold text-slate-900">{entry.siswaNama}</td>
+                        <tr key={entry.id} className={`border-t ${isDark ? "border-slate-800/70" : "border-slate-100"}`}>
+                          <td className={`p-3 font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{entry.siswaNama}</td>
                           <td className="p-3">{entry.mapelNama}</td>
-                          <td className="p-3">{entry.nilaiMandiri}</td>
-                          <td className="p-3">{entry.nilaiSimulasi}</td>
-                          <td className="p-3 font-bold text-indigo-700">{entry.nilaiAkhir}</td>
+                          <td className="p-3 tabular-nums">{entry.nilaiMandiri}</td>
+                          <td className="p-3 tabular-nums">{entry.nilaiSimulasi}</td>
+                          <td className={`p-3 font-bold tabular-nums ${isDark ? "text-amber-300" : "text-indigo-700"}`}>{entry.nilaiAkhir}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -527,27 +581,27 @@ const THEME_OPTIONS: Array<{
 }> = [
   {
     key: "ocean",
-    label: "Ocean Biru",
-    description: "Nuansa biru profesional cerah khas edukasi modern.",
-    swatch: "from-sky-700 via-blue-700 to-cyan-800",
+    label: "Ocean & Gold",
+    description: "Nuansa biru profesional cerah dengan aksen emas khas edukasi modern.",
+    swatch: "from-sky-700 via-blue-700 to-amber-500",
   },
   {
     key: "emerald",
-    label: "Emerald Hijau",
-    description: "Segar dan menenangkan dengan aksen hijau zamrud.",
+    label: "Emerald Fresh",
+    description: "Segar dan menenangkan dengan aksen hijau zamrud dan teal.",
     swatch: "from-emerald-700 via-teal-700 to-cyan-800",
   },
   {
     key: "sunset",
-    label: "Sunset Ungu",
+    label: "Sunset Violet",
     description: "Tampilan kreatif dengan gradien ungu & magenta hangat.",
     swatch: "from-violet-700 via-fuchsia-700 to-rose-600",
   },
   {
     key: "dark",
-    label: "Dark Mode",
-    description: "Latar gelap elegan dengan kontras nyaman di malam hari.",
-    swatch: "from-slate-900 via-emerald-950 to-slate-800",
+    label: "Rasyatech Dark",
+    description: "Tema gelap glassmorphism premium dengan grid arsitektural & aksen emas menyala.",
+    swatch: "from-slate-950 via-slate-900 to-amber-500",
   },
 ];
 
@@ -565,6 +619,7 @@ type IdentityPayload = {
 };
 
 export function SchoolThemeIdentityView() {
+  const isDark = useTenantTheme() === "dark";
   const initialIdentity = getCached<IdentityPayload>("/api/sekolah/identitas");
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>(() =>
     initialIdentity && isThemeKey(initialIdentity.sekolah.themeKey) ? initialIdentity.sekolah.themeKey : "ocean"
@@ -716,6 +771,13 @@ export function SchoolThemeIdentityView() {
     }
   }
 
+  const panelClass = isDark
+    ? "rounded-2xl border border-slate-700/60 bg-slate-900/75 p-4 text-slate-100 sm:p-5"
+    : "rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5";
+  const inputClass = isDark
+    ? "mt-1.5 w-full rounded-xl border border-slate-700/80 bg-slate-950/75 px-3.5 py-2.5 text-sm font-normal text-slate-100"
+    : "mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900";
+
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
@@ -725,12 +787,12 @@ export function SchoolThemeIdentityView() {
       />
 
       {error && (
-        <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-sm font-semibold text-rose-800">
+        <p role="alert" className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${isDark ? "border-rose-500/35 bg-rose-950/50 text-rose-200" : "border-transparent bg-rose-50 text-rose-800"}`}>
           {error}
         </p>
       )}
       {message && (
-        <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+        <p role="status" className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${isDark ? "border-emerald-500/35 bg-emerald-950/50 text-emerald-200" : "border-transparent bg-emerald-50 text-emerald-900"}`}>
           {message}
         </p>
       )}
@@ -739,12 +801,12 @@ export function SchoolThemeIdentityView() {
         <CardGridSkeleton count={4} columns={4} />
       ) : (
         <div className="mt-5 space-y-6">
-          <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
+          <div className={panelClass}>
             <div className="flex items-center gap-2">
-              <Palette size={19} className="text-indigo-600" aria-hidden="true" />
+              <Palette size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
               <div>
-                <h3 className="text-base font-bold text-slate-900">Tema Visual Portal Sekolah &amp; LMS</h3>
-                <p className="text-xs text-slate-600">
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Tema Visual Portal Sekolah &amp; LMS</h3>
+                <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                   Perubahan tema langsung diterapkan untuk Admin Sekolah, Guru, dan Siswa pada subdomain lembaga Anda.
                 </p>
               </div>
@@ -761,50 +823,60 @@ export function SchoolThemeIdentityView() {
                     onClick={() => applyTheme(option.key)}
                     className={`rounded-2xl border p-3.5 text-left transition ${
                       active
-                        ? "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/30"
-                        : "border-slate-200 bg-white hover:border-indigo-300"
+                        ? isDark
+                          ? "border-amber-400/70 bg-amber-500/12 ring-2 ring-amber-400/30"
+                          : "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/30"
+                        : isDark
+                          ? "border-slate-700/70 bg-slate-950/60 hover:border-amber-400/40"
+                          : "border-slate-200 bg-white hover:border-indigo-300"
                     }`}
                   >
                     <div className={`h-12 w-full rounded-xl bg-gradient-to-r ${option.swatch}`} />
                     <div className="mt-3 flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-slate-900">{option.label}</span>
+                      <span className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{option.label}</span>
                       {active && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                            isDark
+                              ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950"
+                              : "bg-indigo-600 text-white"
+                          }`}
+                        >
                           <Check size={11} aria-hidden="true" />
                           Aktif
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-600">{option.description}</p>
+                    <p className={`mt-1 text-xs leading-5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{option.description}</p>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <form onSubmit={saveIdentity} className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
+          <form onSubmit={saveIdentity} className={panelClass}>
             <div className="flex items-center gap-2">
-              <Sparkles size={19} className="text-indigo-600" aria-hidden="true" />
+              <Sparkles size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
               <div>
-                <h3 className="text-base font-bold text-slate-900">Identitas &amp; Branding Lembaga</h3>
-                <p className="text-xs text-slate-600">Kelola judul portal, subjudul, warna aksen, dan teks footer sekolah.</p>
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Identitas &amp; Branding Lembaga</h3>
+                <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kelola judul portal, subjudul, warna aksen, dan teks footer sekolah.</p>
               </div>
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="block text-sm font-semibold text-slate-800">
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                 Judul Portal Lembaga
                 <input
                   type="text"
                   maxLength={150}
                   value={form.hero_title}
                   onChange={(e) => setForm({ ...form, hero_title: e.target.value })}
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900"
+                  className={inputClass}
                   placeholder="Contoh: Portal Belajar PKBM Harapan Bangsa"
                 />
               </label>
 
-              <label className="block text-sm font-semibold text-slate-800">
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                 Warna Aksen Utama (Hex)
                 <div className="mt-1.5 flex items-center gap-2">
                   <input
@@ -812,7 +884,7 @@ export function SchoolThemeIdentityView() {
                     aria-label="Pemilih warna aksen"
                     value={/^#[0-9a-fA-F]{6}$/.test(form.primary_color) ? form.primary_color : "#4f46e5"}
                     onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
-                    className="h-10 w-12 cursor-pointer rounded-lg border border-slate-300 bg-white p-1"
+                    className={`h-10 w-12 cursor-pointer rounded-lg border p-1 ${isDark ? "border-slate-700 bg-slate-900" : "border-slate-300 bg-white"}`}
                   />
                   <input
                     type="text"
@@ -820,62 +892,62 @@ export function SchoolThemeIdentityView() {
                     pattern="^#[0-9a-fA-F]{6}$"
                     value={form.primary_color}
                     onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm font-normal text-slate-900"
+                    className={`${inputClass} mt-0 font-mono`}
                   />
                 </div>
               </label>
 
-              <label className="block text-sm font-semibold text-slate-800 sm:col-span-2">
+              <label className={`block text-sm font-semibold sm:col-span-2 ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                 Subjudul / Slogan Sekolah
                 <textarea
                   rows={2}
                   maxLength={400}
                   value={form.hero_subtitle}
                   onChange={(e) => setForm({ ...form, hero_subtitle: e.target.value })}
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900"
+                  className={inputClass}
                   placeholder="Deskripsi singkat visi belajar atau layanan pendidikan kesetaraan"
                 />
               </label>
 
-              <label className="block text-sm font-semibold text-slate-800">
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                 URL Logo Lembaga (opsional)
                 <input
                   type="text"
                   maxLength={500}
                   value={form.logo_url}
                   onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900"
+                  className={inputClass}
                   placeholder="https://..."
                 />
               </label>
 
-              <label className="block text-sm font-semibold text-slate-800">
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                 Teks Footer Lembaga
                 <input
                   type="text"
                   maxLength={300}
                   value={form.footer_text}
                   onChange={(e) => setForm({ ...form, footer_text: e.target.value })}
-                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-900"
+                  className={inputClass}
                 />
               </label>
 
               <div className="flex flex-wrap gap-6 sm:col-span-2">
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <label className={`inline-flex items-center gap-2 text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                   <input
                     type="checkbox"
                     checked={form.show_news}
                     onChange={(e) => setForm({ ...form, show_news: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                    className="h-4 w-4 rounded border-slate-300 accent-amber-500"
                   />
                   Tampilkan pengumuman lembaga
                 </label>
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <label className={`inline-flex items-center gap-2 text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                   <input
                     type="checkbox"
                     checked={form.show_gallery}
                     onChange={(e) => setForm({ ...form, show_gallery: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                    className="h-4 w-4 rounded border-slate-300 accent-amber-500"
                   />
                   Tampilkan galeri kegiatan
                 </label>
@@ -927,6 +999,7 @@ export function SchoolAdvancedSettingsView({
   onOpenTheme: () => void;
   onOpenClasses: () => void;
 }) {
+  const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<AdvancedSettingsData | null>(() =>
     getCached<AdvancedSettingsData>("/api/sekolah/pengaturan")
   );
@@ -988,6 +1061,12 @@ export function SchoolAdvancedSettingsView({
 
   const ppdbUrl = data ? `${window.location.origin}/ppdb/${encodeURIComponent(data.sekolah.slug)}` : "";
   const activePlanInfo = data ? getPlanBySlug(data.sekolah.normalizedPlan) : SUBSCRIPTION_PLANS[2];
+  const panelClass = isDark
+    ? "rounded-2xl border border-slate-700/60 bg-slate-900/75 p-5 text-slate-100"
+    : "rounded-2xl border border-white bg-white p-5 text-slate-900";
+  const subBoxClass = isDark
+    ? "rounded-xl border border-slate-700/60 bg-slate-950/60 p-3.5"
+    : "rounded-xl border border-slate-200 bg-slate-50 p-3.5";
 
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
@@ -1004,12 +1083,12 @@ export function SchoolAdvancedSettingsView({
       />
 
       {error && (
-        <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-4 text-sm font-semibold text-rose-800">
+        <p role="alert" className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${isDark ? "border-rose-500/35 bg-rose-950/50 text-rose-200" : "border-transparent bg-rose-50 text-rose-800"}`}>
           {error}
         </p>
       )}
       {notice && (
-        <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+        <p role="status" className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${isDark ? "border-emerald-500/35 bg-emerald-950/50 text-emerald-200" : "border-transparent bg-emerald-50 text-emerald-900"}`}>
           {notice}
         </p>
       )}
@@ -1018,37 +1097,43 @@ export function SchoolAdvancedSettingsView({
         <CardGridSkeleton count={4} columns={2} />
       ) : (
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          <div className="rounded-2xl border border-white bg-white p-5 text-slate-900">
+          <div className={panelClass}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Globe size={19} className="text-indigo-600" aria-hidden="true" />
-                <h3 className="text-base font-bold text-slate-900">Profil Tenant &amp; Langganan</h3>
+                <Globe size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Profil Tenant &amp; Langganan</h3>
               </div>
-              <span className="rounded-md bg-amber-100 px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider text-amber-950">
+              <span
+                className={`rounded-full border px-2.5 py-1 text-xs font-extrabold uppercase tracking-wider ${
+                  isDark
+                    ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+                    : "border-transparent bg-amber-100 text-amber-950"
+                }`}
+              >
                 {activePlanInfo.name}
               </span>
             </div>
 
             <dl className="mt-4 space-y-2.5 text-sm">
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-                <dt className="text-slate-600">Nama Lembaga</dt>
-                <dd className="text-right font-semibold text-slate-900">{data.sekolah.nama}</dd>
+              <div className={`flex justify-between gap-4 border-b pb-2 ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Nama Lembaga</dt>
+                <dd className={`text-right font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{data.sekolah.nama}</dd>
               </div>
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-                <dt className="text-slate-600">Subdomain / Slug</dt>
-                <dd className="text-right font-mono font-semibold text-indigo-700">{data.sekolah.slug}</dd>
+              <div className={`flex justify-between gap-4 border-b pb-2 ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Subdomain / Slug</dt>
+                <dd className={`text-right font-mono font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>{data.sekolah.slug}</dd>
               </div>
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-                <dt className="text-slate-600">NPSN</dt>
-                <dd className="text-right font-semibold text-slate-900">{data.sekolah.npsn ?? "Belum diisi"}</dd>
+              <div className={`flex justify-between gap-4 border-b pb-2 ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                <dt className={isDark ? "text-slate-400" : "text-slate-600"}>NPSN</dt>
+                <dd className={`text-right font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>{data.sekolah.npsn ?? "Belum diisi"}</dd>
               </div>
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-                <dt className="text-slate-600">Status Layanan</dt>
-                <dd className="text-right font-semibold text-emerald-700">{data.sekolah.status}</dd>
+              <div className={`flex justify-between gap-4 border-b pb-2 ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Status Layanan</dt>
+                <dd className={`text-right font-semibold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{data.sekolah.status}</dd>
               </div>
-              <div className="flex justify-between gap-4 border-b border-slate-100 pb-2">
-                <dt className="text-slate-600">Masa Aktif Hingga</dt>
-                <dd className="text-right font-semibold text-slate-900">
+              <div className={`flex justify-between gap-4 border-b pb-2 ${isDark ? "border-slate-800" : "border-slate-100"}`}>
+                <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Masa Aktif Hingga</dt>
+                <dd className={`text-right font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>
                   {data.sekolah.expiresAt
                     ? new Date(data.sekolah.expiresAt).toLocaleDateString("id-ID", {
                         day: "numeric",
@@ -1060,10 +1145,10 @@ export function SchoolAdvancedSettingsView({
               </div>
             </dl>
 
-            <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5">
-              <p className="text-xs font-bold text-indigo-950">Tautan Formulir PPDB Publik</p>
+            <div className={`mt-4 rounded-xl border p-3.5 ${isDark ? "border-amber-400/25 bg-slate-950/60" : "border-indigo-100 bg-indigo-50/70"}`}>
+              <p className={`text-xs font-bold ${isDark ? "text-amber-300" : "text-indigo-950"}`}>Tautan Formulir PPDB Publik</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <a href={ppdbUrl} className="min-w-0 flex-1 break-all text-xs font-semibold text-indigo-700 underline">
+                <a href={ppdbUrl} className={`min-w-0 flex-1 break-all text-xs font-semibold underline ${isDark ? "text-slate-200" : "text-indigo-700"}`}>
                   {ppdbUrl}
                 </a>
                 <button
@@ -1079,7 +1164,11 @@ export function SchoolAdvancedSettingsView({
                         .catch(() => {});
                     }
                   }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-bold text-indigo-900 hover:bg-indigo-50"
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
+                    isDark
+                      ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/40 hover:text-amber-300"
+                      : "border-indigo-200 bg-white text-indigo-900 hover:bg-indigo-50"
+                  }`}
                 >
                   {copiedPpdb ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
                   {copiedPpdb ? "Tersalin" : "Salin"}
@@ -1088,40 +1177,40 @@ export function SchoolAdvancedSettingsView({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white bg-white p-5 text-slate-900">
+          <div className={panelClass}>
             <div className="flex items-center gap-2">
-              <Settings2 size={19} className="text-indigo-600" aria-hidden="true" />
-              <h3 className="text-base font-bold text-slate-900">Kesiapan Akun &amp; Struktur Kelas</h3>
+              <Settings2 size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+              <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Kesiapan Akun &amp; Struktur Kelas</h3>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                <p className="text-xs font-bold text-slate-600">Akun LMS Siswa</p>
-                <p className="mt-1 text-xl font-black text-slate-900">
+              <div className={subBoxClass}>
+                <p className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Akun LMS Siswa</p>
+                <p className={`mt-1 text-xl font-black tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                   {data.statistik.siswaDenganAkun} / {data.statistik.siswaAktif}
                 </p>
-                <p className="mt-1 text-xs text-slate-600">Siswa aktif memiliki akun LMS</p>
+                <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Siswa aktif memiliki akun LMS</p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                <p className="text-xs font-bold text-slate-600">Akun LMS Guru</p>
-                <p className="mt-1 text-xl font-black text-slate-900">
+              <div className={subBoxClass}>
+                <p className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Akun LMS Guru</p>
+                <p className={`mt-1 text-xl font-black tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                   {data.statistik.guruDenganAkun} / {data.statistik.guruAktif}
                 </p>
-                <p className="mt-1 text-xs text-slate-600">Guru aktif memiliki akun LMS</p>
+                <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Guru aktif memiliki akun LMS</p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                <p className="text-xs font-bold text-slate-600">Kelas &amp; Mapel</p>
-                <p className="mt-1 text-xl font-black text-slate-900">
+              <div className={subBoxClass}>
+                <p className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kelas &amp; Mapel</p>
+                <p className={`mt-1 text-xl font-black tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                   {data.statistik.kelasTotal} Kelas · {data.statistik.mapelTotal} Mapel
                 </p>
-                <p className="mt-1 text-xs text-slate-600">{data.statistik.tahunAjaranTotal} Tahun Ajaran</p>
+                <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>{data.statistik.tahunAjaranTotal} Tahun Ajaran</p>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                <p className="text-xs font-bold text-slate-600">Kelas Standar PKBM</p>
-                <p className="mt-1 text-sm font-bold text-emerald-700">
+              <div className={subBoxClass}>
+                <p className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kelas Standar PKBM</p>
+                <p className={`mt-1 text-sm font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
                   {data.sekolah.kelasStandarDibuat ? "Sudah Disiapkan (12 Kelas)" : "Belum Lengkap"}
                 </p>
-                <p className="mt-1 text-xs text-slate-600">Paket A (1–6), B (7–9), C (10–12)</p>
+                <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Paket A (1–6), B (7–9), C (10–12)</p>
               </div>
             </div>
 
@@ -1137,7 +1226,11 @@ export function SchoolAdvancedSettingsView({
               <button
                 type="button"
                 onClick={onOpenClasses}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50"
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold transition ${
+                  isDark
+                    ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/40 hover:text-amber-300"
+                    : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                }`}
               >
                 Kelola Kelas
                 <ArrowUpRight size={14} aria-hidden="true" />

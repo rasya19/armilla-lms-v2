@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { TeacherPasswordReset } from "./TeacherPasswordReset";
 import { LmsSchedule } from "./LmsSchedule";
 import { Classroom } from "./Classroom";
-import { TenantThemeProvider } from "./TenantThemeProvider";
+import { TenantThemeProvider, useTenantTheme } from "./TenantThemeProvider";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { DashboardHero, PortalSpinner } from "./DashboardUI";
@@ -224,21 +224,225 @@ export function LmsHome() {
   if (status === "unauthorized") return <Navigate to="/lms/login" replace />;
   if (status === "loading") return <PortalSpinner label="Memuat portal LMS" />;
   if (status !== "ready" || !session) return <main className="min-h-screen bg-slate-950 p-8 text-white">{error || "Layanan sesi tidak tersedia. Muat ulang halaman."}</main>;
-  return <TenantThemeProvider scope="lms"><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
-    <header id="profil-lms" className="dashboard-header sticky top-0 z-30 border-b px-5 py-3"><div className="mx-auto flex max-w-6xl items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 font-bold text-white">{session.nama.charAt(0).toUpperCase()}</span><div className="min-w-0 flex-1"><h1 className="truncate font-bold">{session.nama}</h1><p className="text-xs font-semibold text-indigo-700">{session.peran === "GURU" ? "Guru" : "Siswa"}</p></div><button disabled={busy} type="button" onClick={logout} className="rounded-xl border border-indigo-200 bg-white/70 px-4 py-2 text-sm font-bold text-indigo-700 disabled:opacity-50">Keluar</button></div></header>
-    <div className="animate-page-enter mx-auto max-w-6xl space-y-5 px-4 py-6 pb-28 sm:px-6 md:pb-6">
-      <div id="beranda-lms" className="scroll-mt-24"><DashboardHero title={session.wajibGantiPassword ? "Wajib ganti password" : `Selamat datang, ${session.nama}`} description={session.wajibGantiPassword ? "Buat password baru untuk melanjutkan." : "Akses jadwal dan kegiatan pembelajaran Anda."} badge={session.peran === "GURU" ? "Portal Guru" : "Portal Siswa"} /></div>
-      {session.wajibGantiPassword ? <div className="dashboard-glass p-5"><PasswordChangeForm endpoint="/api/auth/lms/ganti-password" requireCurrentPassword={false} title="Buat password baru" description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali." onChanged={() => { clearAuthCache("lms"); navigate("/lms/login", { state: { changed: true }, replace: true }); }} buttonClassName={button} /></div> : <><nav aria-label="Navigasi pembelajaran" className="dashboard-glass flex flex-wrap gap-2 p-3"><a href="#jadwal-lms" className="rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">Jadwal</a><a href="#pembelajaran-lms" className="rounded-full bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-800">Ruang KBM</a>{session.peran === "SISWA" && <a href="#biodata-dapodik" className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800">Lengkapi Berkas Dapodik</a>}{session.peran === "GURU" && <a href="#akses-lms" className="rounded-full bg-violet-50 px-4 py-2 text-sm font-bold text-violet-700">Pengaturan akses</a>}</nav><div id="jadwal-lms" className="scroll-mt-24"><LmsSchedule role={session.peran} /></div><div id="pembelajaran-lms" className="scroll-mt-24"><Classroom role={session.peran} /></div>{session.peran === "SISWA" && <div id="biodata-dapodik" className="scroll-mt-24"><StudentVervalForm /></div>}</>}
-      {!session.wajibGantiPassword && session.peran === "GURU" && <div id="akses-lms" className="dashboard-glass scroll-mt-24 p-5"><PasswordChangeForm endpoint="/api/auth/lms/ganti-password" onChanged={() => { clearAuthCache("lms"); navigate("/lms/login", { state: { changed: true }, replace: true }); }} /><TeacherPasswordReset /></div>}
-      {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
-    </div>
-    {!session.wajibGantiPassword && <nav aria-label="Navigasi bawah pembelajaran" className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
-      {[
-        { id: "beranda", label: "Beranda", href: "#beranda-lms", icon: Home },
-        { id: "jadwal", label: "Jadwal", href: "#jadwal-lms", icon: CalendarDays },
-        { id: "materi", label: "Ruang KBM", href: "#pembelajaran-lms", icon: BookOpen },
-        { id: session.peran === "GURU" ? "profil" : "biodata", label: session.peran === "GURU" ? "Akses" : "Berkas Dapodik", href: session.peran === "GURU" ? "#akses-lms" : "#biodata-dapodik", icon: UserRound },
-      ].map(({ id, label, href, icon: Icon }) => <a key={id} href={href} onClick={() => setActiveNav(id)} aria-current={activeNav === id ? "page" : undefined} className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${activeNav === id ? "font-semibold text-indigo-600" : "font-medium text-slate-600"}`}><span className={`rounded-xl p-1.5 ${activeNav === id ? "bg-indigo-50/80" : ""}`}><Icon size={20} /></span>{label}</a>)}
-    </nav>}
-  </main></TenantThemeProvider>;
+  return (
+    <TenantThemeProvider scope="lms">
+      <LmsPortalShell
+        session={session}
+        activeNav={activeNav}
+        setActiveNav={setActiveNav}
+        busy={busy}
+        error={error}
+        onLogout={logout}
+        onPasswordChanged={() => {
+          clearAuthCache("lms");
+          navigate("/lms/login", { state: { changed: true }, replace: true });
+        }}
+      />
+    </TenantThemeProvider>
+  );
+}
+
+function LmsPortalShell({
+  session,
+  activeNav,
+  setActiveNav,
+  busy,
+  error,
+  onLogout,
+  onPasswordChanged,
+}: {
+  session: Session;
+  activeNav: string;
+  setActiveNav: (id: string) => void;
+  busy: boolean;
+  error: string;
+  onLogout: () => void;
+  onPasswordChanged: () => void;
+}) {
+  const isDark = useTenantTheme() === "dark";
+  return (
+    <main className="dashboard-canvas glass-area min-h-screen text-slate-800">
+      <header id="profil-lms" className="dashboard-header sticky top-0 z-30 border-b px-5 py-3">
+        <div className="mx-auto flex max-w-6xl items-center gap-3">
+          <span
+            className={`flex h-10 w-10 items-center justify-center rounded-xl font-black ${
+              isDark
+                ? "bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)]"
+                : "rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-white"
+            }`}
+          >
+            {session.nama.charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h1 className={`truncate font-bold ${isDark ? "text-white" : ""}`}>{session.nama}</h1>
+            <p className={`text-xs font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
+              {session.peran === "GURU" ? "Mode Guru" : "Mode Siswa"}
+            </p>
+          </div>
+          <button
+            disabled={busy}
+            type="button"
+            onClick={onLogout}
+            className={`rounded-full border px-4 py-2 text-xs font-bold transition disabled:opacity-50 sm:text-sm ${
+              isDark
+                ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/50 hover:text-amber-300"
+                : "rounded-xl border-indigo-200 bg-white/70 text-indigo-700"
+            }`}
+          >
+            Keluar
+          </button>
+        </div>
+      </header>
+      <div className="animate-page-enter mx-auto max-w-6xl space-y-5 px-4 py-6 pb-28 sm:px-6 md:pb-6">
+        <div id="beranda-lms" className="scroll-mt-24">
+          <DashboardHero
+            title={session.wajibGantiPassword ? "Wajib ganti password" : `Selamat datang, ${session.nama}`}
+            description={session.wajibGantiPassword ? "Buat password baru untuk melanjutkan." : "Akses jadwal dan kegiatan pembelajaran Anda."}
+            badge={session.peran === "GURU" ? "Portal Guru" : "Portal Siswa"}
+          />
+        </div>
+        {session.wajibGantiPassword ? (
+          <div className="dashboard-glass p-5">
+            <PasswordChangeForm
+              endpoint="/api/auth/lms/ganti-password"
+              requireCurrentPassword={false}
+              title="Buat password baru"
+              description="Password baru minimal 6 karakter dan berbeda dari password awal. Setelah disimpan, masuk kembali."
+              onChanged={onPasswordChanged}
+              buttonClassName={button}
+            />
+          </div>
+        ) : (
+          <>
+            <nav aria-label="Navigasi pembelajaran" className="dashboard-glass flex flex-wrap gap-2 p-3">
+              <a
+                href="#jadwal-lms"
+                onClick={() => setActiveNav("jadwal")}
+                className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                  isDark
+                    ? activeNav === "jadwal"
+                      ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                      : "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:text-white"
+                    : "bg-indigo-50 text-indigo-700"
+                }`}
+              >
+                Jadwal
+              </a>
+              <a
+                href="#pembelajaran-lms"
+                onClick={() => setActiveNav("materi")}
+                className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                  isDark
+                    ? activeNav === "materi"
+                      ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                      : "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:text-white"
+                    : "bg-cyan-50 text-cyan-800"
+                }`}
+              >
+                Ruang KBM
+              </a>
+              {session.peran === "SISWA" && (
+                <a
+                  href="#biodata-dapodik"
+                  onClick={() => setActiveNav("biodata")}
+                  className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                    isDark
+                      ? activeNav === "biodata"
+                        ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                        : "border border-emerald-500/35 bg-emerald-500/12 text-emerald-300 hover:bg-emerald-500/20"
+                      : "bg-emerald-50 text-emerald-800"
+                  }`}
+                >
+                  Lengkapi Berkas Dapodik
+                </a>
+              )}
+              {session.peran === "GURU" && (
+                <a
+                  href="#akses-lms"
+                  onClick={() => setActiveNav("profil")}
+                  className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                    isDark
+                      ? activeNav === "profil"
+                        ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                        : "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:text-white"
+                      : "bg-violet-50 text-violet-700"
+                  }`}
+                >
+                  Pengaturan akses
+                </a>
+              )}
+            </nav>
+            <div id="jadwal-lms" className="scroll-mt-24">
+              <LmsSchedule role={session.peran} />
+            </div>
+            <div id="pembelajaran-lms" className="scroll-mt-24">
+              <Classroom role={session.peran} />
+            </div>
+            {session.peran === "SISWA" && (
+              <div id="biodata-dapodik" className="scroll-mt-24">
+                <StudentVervalForm />
+              </div>
+            )}
+          </>
+        )}
+        {!session.wajibGantiPassword && session.peran === "GURU" && (
+          <div id="akses-lms" className="dashboard-glass scroll-mt-24 p-5">
+            <PasswordChangeForm endpoint="/api/auth/lms/ganti-password" onChanged={onPasswordChanged} />
+            <TeacherPasswordReset />
+          </div>
+        )}
+        {error && <p role="alert" className="text-sm text-rose-500">{error}</p>}
+      </div>
+      {!session.wajibGantiPassword && (
+        <nav
+          aria-label="Navigasi bawah pembelajaran"
+          className={
+            isDark
+              ? "fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md justify-around gap-1 rounded-full border border-slate-700/60 bg-slate-900/90 px-2 py-1.5 shadow-[0_14px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl md:hidden"
+              : "fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
+          }
+          style={isDark ? undefined : { paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        >
+          {[
+            { id: "beranda", label: "Beranda", href: "#beranda-lms", icon: Home },
+            { id: "jadwal", label: "Jadwal", href: "#jadwal-lms", icon: CalendarDays },
+            { id: "materi", label: "Ruang KBM", href: "#pembelajaran-lms", icon: BookOpen },
+            { id: session.peran === "GURU" ? "profil" : "biodata", label: session.peran === "GURU" ? "Akses" : "Berkas Dapodik", href: session.peran === "GURU" ? "#akses-lms" : "#biodata-dapodik", icon: UserRound },
+          ].map(({ id, label, href, icon: Icon }) =>
+            isDark ? (
+              <a
+                key={id}
+                href={href}
+                onClick={() => setActiveNav(id)}
+                aria-current={activeNav === id ? "page" : undefined}
+                className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-2 py-1.5 text-[10px] transition ${
+                  activeNav === id
+                    ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                    : "font-medium text-slate-400 hover:text-white"
+                }`}
+              >
+                <Icon size={17} />
+                <span className="truncate">{label}</span>
+              </a>
+            ) : (
+              <a
+                key={id}
+                href={href}
+                onClick={() => setActiveNav(id)}
+                aria-current={activeNav === id ? "page" : undefined}
+                className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${
+                  activeNav === id ? "font-semibold text-indigo-600" : "font-medium text-slate-600"
+                }`}
+              >
+                <span className={`rounded-xl p-1.5 ${activeNav === id ? "bg-indigo-50/80" : ""}`}>
+                  <Icon size={20} />
+                </span>
+                {label}
+              </a>
+            ),
+          )}
+        </nav>
+      )}
+    </main>
+  );
 }

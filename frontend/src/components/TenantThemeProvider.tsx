@@ -74,6 +74,16 @@ export function TenantThemeProvider({
     return () => window.removeEventListener(TENANT_THEME_EVENT, handleThemeChange);
   }, []);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.tenantTheme = theme;
+    return () => {
+      if (root.dataset.tenantTheme === theme) {
+        delete root.dataset.tenantTheme;
+      }
+    };
+  }, [theme]);
+
   return (
     <TenantThemeContext.Provider value={theme}>
       <div data-tenant-theme={theme}>{children}</div>

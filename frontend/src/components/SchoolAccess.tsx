@@ -360,44 +360,51 @@ const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
     mobileFab: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
   },
   dark: {
-    aside: "border-slate-800/80 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-200",
+    aside:
+      "border-slate-800/80 bg-[#080f1e]/92 text-slate-200 shadow-[4px_0_32px_rgba(2,6,23,0.6)] backdrop-blur-2xl",
     headerDivider: "border-slate-800/80",
-    identityCard: "border-slate-700/60 bg-slate-800/50",
-    avatar: "bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-sm",
+    identityCard: "border-slate-700/50 bg-slate-900/75 shadow-inner",
+    avatar:
+      "bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)]",
     schoolName: "text-white",
-    roleText: "text-emerald-300",
+    roleText: "text-amber-400",
     closeBtn: "text-slate-300 hover:bg-slate-800",
-    dashboardActive: "bg-gradient-to-r from-emerald-700 via-teal-700 to-slate-700 text-white shadow-md",
-    dashboardActiveIcon: "bg-white/15 text-white",
-    dashboardInactive: "text-slate-300 hover:bg-slate-800/70 hover:text-white",
-    dashboardInactiveIcon: "bg-slate-800/80 text-slate-300",
+    dashboardActive:
+      "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_24px_rgba(245,158,11,0.34)]",
+    dashboardActiveIcon: "bg-slate-950/15 text-slate-950",
+    dashboardInactive: "text-slate-300 hover:bg-slate-800/75 hover:text-white",
+    dashboardInactiveIcon: "bg-slate-800/85 text-slate-400",
     sectionLabel: "text-slate-400 opacity-75",
-    groupButton: "text-slate-200 hover:bg-slate-800/80",
-    groupIcon: "bg-slate-800/80 text-slate-300",
-    groupBorder: "border-slate-700/70",
-    itemActive: "border border-white/15 bg-white/10 text-white shadow-inner backdrop-blur-md",
-    itemActiveIcon: "bg-gradient-to-br from-emerald-500 to-teal-500 text-white",
-    itemInactive: "text-slate-300 hover:bg-white/10 hover:text-white",
-    itemLocked: "text-slate-400 hover:bg-white/5 hover:text-slate-200",
-    itemIcon: "bg-slate-800/70 text-slate-300",
+    groupButton: "text-slate-200 hover:bg-slate-800/80 hover:text-white",
+    groupIcon: "bg-slate-800/85 text-amber-400",
+    groupBorder: "border-slate-800/90",
+    itemActive:
+      "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.32)]",
+    itemActiveIcon: "bg-slate-950/15 text-slate-950",
+    itemInactive: "text-slate-300 hover:bg-slate-800/70 hover:text-white",
+    itemLocked: "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
+    itemIcon: "bg-slate-800/80 text-slate-400",
     devBadge: "border-sky-400/30 bg-sky-500/15 text-sky-200",
     proBadgeActive: "bg-amber-400/20 text-amber-200",
     proBadgeLocked: "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30",
     regBadgeActive: "bg-cyan-400/20 text-cyan-200",
     regBadgeLocked: "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/30",
-    standaloneDivider: "border-slate-800/70",
+    standaloneDivider: "border-slate-800/80",
     footerDivider: "border-slate-800/80",
-    tierCard: "border-slate-700/60 bg-slate-800/50",
+    tierCard: "border-slate-700/50 bg-slate-900/75",
     tierLabel: "text-slate-300",
-    refreshBtn: "text-slate-300 hover:bg-slate-700/70 hover:text-white",
-    logoutBtn: "border-rose-900/60 bg-rose-950/25 text-rose-300 hover:bg-rose-950/50",
+    refreshBtn: "text-amber-300 hover:bg-slate-800 hover:text-amber-200",
+    logoutBtn: "border-rose-500/25 bg-rose-950/30 text-rose-300 hover:bg-rose-950/55",
     useLightBadges: false,
-    headerSchoolPill: "bg-slate-800 text-slate-100",
-    headerAvatar: "bg-gradient-to-br from-emerald-600 to-teal-500",
-    headerMenuBtn: "hover:bg-slate-800 text-slate-200",
-    mobileAccentText: "text-indigo-600",
-    mobileAccentBg: "bg-indigo-50/80",
-    mobileFab: "bg-gradient-to-br from-emerald-600 to-teal-500",
+    headerSchoolPill: "bg-transparent px-0 text-white",
+    headerAvatar:
+      "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]",
+    headerMenuBtn: "hover:bg-slate-800/80 text-slate-200",
+    mobileAccentText: "text-slate-950",
+    mobileAccentBg:
+      "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]",
+    mobileFab:
+      "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.4)]",
   },
 };
 
@@ -834,7 +841,7 @@ export function SchoolHome() {
                 endpoint="/api/auth/sekolah/ganti-password"
                 onChanged={() => navigate("/login", { state: { passwordChanged: true }, replace: true })}
                 description="Gunakan kombinasi huruf dan angka yang kuat agar akses sekolah tetap aman."
-                className="rounded-2xl border border-white bg-white/90 p-6 text-slate-900"
+                className="dashboard-glass rounded-2xl p-6"
                 inputClassName="glass-input mt-2 w-full rounded-xl px-4 py-3"
                 buttonClassName="master-primary py-3 disabled:opacity-50"
               />
@@ -1186,9 +1193,11 @@ function SchoolPortalHeader({
   onOpenMenu: () => void;
 }) {
   const theme = useTenantTheme();
+  const isDark = theme === "dark";
   const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  const headerBadgeClass = palette.useLightBadges ? planStyle.headerClass : planStyle.sidebarClass;
   return (
-    <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
+    <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
       <button
         type="button"
         onClick={onOpenMenu}
@@ -1198,24 +1207,49 @@ function SchoolPortalHeader({
       >
         <Menu size={21} />
       </button>
+      {isDark && (
+        <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-sm font-black text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)] sm:flex">
+          {school.charAt(0).toUpperCase()}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className={`inline-block max-w-full truncate rounded-lg px-3 py-1 text-sm font-extrabold ${palette.headerSchoolPill}`}>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className={`inline-block max-w-full truncate rounded-lg text-sm font-extrabold ${isDark ? "px-0 py-0.5 text-white sm:text-base" : `px-3 py-1 ${palette.headerSchoolPill}`}`}>
             {school}
           </h1>
-          <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${planStyle.headerClass}`}>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+              isDark
+                ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-300"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Sekolah Aktif
+          </span>
+          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${headerBadgeClass}`}>
             {planStyle.label}
           </span>
         </div>
-        <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          Sekolah aktif
-        </p>
       </div>
-      <span className="hidden text-xs font-bold text-slate-700 sm:block">Admin</span>
-      <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white shadow-md ${palette.headerAvatar}`}>
-        AD
-      </span>
+      {isDark ? (
+        <div className="flex items-center gap-2.5">
+          <span className="hidden items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-1.5 text-xs font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)] sm:inline-flex">
+            <ShieldCheck size={14} aria-hidden="true" />
+            Mode Admin
+          </span>
+          <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black ${palette.headerAvatar}`}>
+            AD
+          </span>
+        </div>
+      ) : (
+        <>
+          <span className="hidden text-xs font-bold text-slate-700 sm:block">Admin</span>
+          <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white shadow-md ${palette.headerAvatar}`}>
+            AD
+          </span>
+        </>
+      )}
     </header>
   );
 }
@@ -1232,41 +1266,63 @@ function SchoolMobileNav({
   onSelectView: (next: SchoolView) => void;
 }) {
   const theme = useTenantTheme();
+  const isDark = theme === "dark";
   const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
   return (
     <nav
       aria-label="Navigasi bawah sekolah"
-      className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
-      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      className={
+        isDark
+          ? "fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md items-center justify-around gap-1 rounded-full border border-slate-700/60 bg-slate-900/90 px-2 py-1.5 shadow-[0_14px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl md:hidden"
+          : "fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
+      }
+      style={isDark ? undefined : { paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       {([
         { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => onSelectView("dashboard") },
         { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => onSelectView("siswa") },
         { label: "Jadwal", icon: CalendarDays, active: !menuOpen && view === "akademik", click: () => onSelectView("akademik") },
         { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => onSelectView("ppdb") },
-        { label: "Menu Lainnya", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: onOpenMenu },
-      ] as const).map(({ label, icon: Icon, active, click }) => (
-        <button
-          key={label}
-          type="button"
-          aria-current={active ? "page" : undefined}
-          onClick={click}
-          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${
-            active ? `font-semibold ${palette.mobileAccentText}` : "font-medium text-slate-600"
-          }`}
-        >
-          <span
-            className={
-              label === "Jadwal"
-                ? `-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ${palette.mobileFab}`
-                : `rounded-xl p-1.5 ${active ? palette.mobileAccentBg : ""}`
-            }
+        { label: "Menu", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: onOpenMenu },
+      ] as const).map(({ label, icon: Icon, active, click }) =>
+        isDark ? (
+          <button
+            key={label}
+            type="button"
+            aria-current={active ? "page" : undefined}
+            onClick={click}
+            className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-2 py-1.5 text-[10px] transition ${
+              active
+                ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+                : "font-medium text-slate-400 hover:text-white"
+            }`}
           >
-            <Icon size={20} />
-          </span>
-          {label}
-        </button>
-      ))}
+            <Icon size={17} />
+            <span className="truncate">{label}</span>
+          </button>
+        ) : (
+          <button
+            key={label}
+            type="button"
+            aria-current={active ? "page" : undefined}
+            onClick={click}
+            className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${
+              active ? `font-semibold ${palette.mobileAccentText}` : "font-medium text-slate-600"
+            }`}
+          >
+            <span
+              className={
+                label === "Jadwal"
+                  ? `-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ${palette.mobileFab}`
+                  : `rounded-xl p-1.5 ${active ? palette.mobileAccentBg : ""}`
+              }
+            >
+              <Icon size={20} />
+            </span>
+            {label}
+          </button>
+        ),
+      )}
     </nav>
   );
 }
@@ -1299,6 +1355,8 @@ function SchoolOverview({
   onOpenView: (view: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
   onRequireUpgrade: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
 }) {
+  const theme = useTenantTheme();
+  const isDark = theme === "dark";
   const [summary, setSummary] = useState<Summary | null>(() => getCached<Summary>("/api/sekolah/ringkasan"));
   const [recap, setRecap] = useState<OverviewRecap | null>(() => getCached<OverviewRecap>("/api/sekolah/rekap-akademik"));
   const [error, setError] = useState("");
@@ -1386,7 +1444,7 @@ function SchoolOverview({
       sub: "Warga belajar terdaftar",
       icon: Users,
       tint: "from-blue-50 to-indigo-100",
-      iconClass: "bg-indigo-600/10 text-indigo-700",
+      iconClass: isDark ? "border border-amber-400/25 bg-amber-500/15 text-amber-400" : "bg-indigo-600/10 text-indigo-700",
     },
     {
       id: "guru" as const,
@@ -1395,7 +1453,7 @@ function SchoolOverview({
       sub: "Tutor & pengampu mapel",
       icon: GraduationCap,
       tint: "from-violet-50 to-purple-100",
-      iconClass: "bg-violet-600/10 text-violet-700",
+      iconClass: isDark ? "border border-violet-400/25 bg-violet-500/15 text-violet-300" : "bg-violet-600/10 text-violet-700",
     },
     {
       id: "kelas" as const,
@@ -1404,7 +1462,7 @@ function SchoolOverview({
       sub: avgDisplay !== null ? `${summary?.kelas ?? 0} kelas aktif` : "Rombel Kesetaraan",
       icon: avgDisplay !== null ? Award : Building2,
       tint: "from-cyan-50 to-sky-100",
-      iconClass: "bg-cyan-600/10 text-cyan-700",
+      iconClass: isDark ? "border border-sky-400/25 bg-sky-500/15 text-sky-300" : "bg-cyan-600/10 text-cyan-700",
     },
     {
       id: "ppdb" as const,
@@ -1413,7 +1471,7 @@ function SchoolOverview({
       sub: `${totalPpdb} total pendaftar PPDB`,
       icon: ClipboardList,
       tint: "from-emerald-50 to-teal-100",
-      iconClass: "bg-emerald-600/10 text-emerald-700",
+      iconClass: isDark ? "border border-emerald-400/25 bg-emerald-500/15 text-emerald-300" : "bg-emerald-600/10 text-emerald-700",
     },
   ];
 
@@ -1444,12 +1502,16 @@ function SchoolOverview({
                   key={card.id}
                   type="button"
                   onClick={() => onSelect(card.id)}
-                  className={`flex items-center justify-between gap-4 rounded-2xl border border-white bg-gradient-to-br ${card.tint} p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md`}
+                  className={
+                    isDark
+                      ? "flex items-center justify-between gap-4 rounded-2xl border border-slate-700/50 bg-[#0d1628]/85 p-5 text-left shadow-lg backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-amber-400/40"
+                      : `flex items-center justify-between gap-4 rounded-2xl border border-white bg-gradient-to-br ${card.tint} p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md`
+                  }
                 >
                   <div className="min-w-0">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">{card.label}</p>
-                    <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">{card.value}</p>
-                    <p className="mt-1 truncate text-xs font-medium text-slate-600">{card.sub}</p>
+                    <p className={`text-[11px] font-extrabold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>{card.label}</p>
+                    <p className={`mt-2 text-3xl font-black tracking-tight tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>{card.value}</p>
+                    <p className={`mt-1 truncate text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>{card.sub}</p>
                   </div>
                   <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${card.iconClass}`}>
                     <Icon size={21} />
@@ -1464,12 +1526,16 @@ function SchoolOverview({
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        isDark ? "border border-amber-400/25 bg-amber-500/15 text-amber-400" : "bg-indigo-50 text-indigo-700"
+                      }`}
+                    >
                       <BarChart3 size={18} />
                     </span>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Statistik Nilai Rata-rata Mapel</h3>
-                      <p className="text-xs text-slate-600">Capaian nilai evaluasi warga belajar terhadap batas ketuntasan minimal</p>
+                      <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Statistik Nilai Rata-rata Mapel</h3>
+                      <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Capaian nilai evaluasi warga belajar terhadap batas ketuntasan minimal</p>
                     </div>
                   </div>
                   <button
@@ -1479,35 +1545,47 @@ function SchoolOverview({
                         ? onOpenView("rekap-akademik", "reguler", "Analitik & Rekap Nilai")
                         : onRequireUpgrade("Analitik & Rekap Nilai", "reguler")
                     }
-                    className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    className={
+                      isDark
+                        ? "rounded-full border border-amber-400/35 bg-amber-500/12 px-3.5 py-1.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20"
+                        : "rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    }
                   >
                     {canUseRecap ? "Buka Analitik Lengkap" : "Paket Reguler+"}
                   </button>
                 </div>
 
                 {!canUseRecap ? (
-                  <div className="mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300/80 bg-white/50 p-6 text-center">
-                    <p className="max-w-md text-sm text-slate-700">
+                  <div
+                    className={`mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center ${
+                      isDark ? "border-slate-700/70 bg-slate-950/60" : "border-slate-300/80 bg-white/50"
+                    }`}
+                  >
+                    <p className={`max-w-md text-sm ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       Grafik perbandingan rata-rata nilai per mata pelajaran dan rekap presensi tersedia mulai{" "}
-                      <strong>Paket Reguler</strong>.
+                      <strong className={isDark ? "text-amber-300" : undefined}>Paket Reguler</strong>.
                     </p>
                     <button
                       type="button"
                       onClick={() => onRequireUpgrade("Analitik & Rekap Nilai", "reguler")}
-                      className="master-primary mt-4 px-4 py-2"
+                      className="master-primary mt-4 rounded-xl px-4 py-2"
                     >
                       Lihat Paket Reguler
                     </button>
                   </div>
                 ) : subjectStats.length === 0 ? (
-                  <div className="mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300/80 bg-white/50 p-6 text-center">
-                    <p className="max-w-md text-sm text-slate-700">
+                  <div
+                    className={`mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed p-6 text-center ${
+                      isDark ? "border-slate-700/70 bg-slate-950/60" : "border-slate-300/80 bg-white/50"
+                    }`}
+                  >
+                    <p className={`max-w-md text-sm ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       Belum ada entri nilai simulasi atau nilai akhir yang tercatat. Mulai kelola materi, tugas, dan penilaian melalui Ruang KBM.
                     </p>
                     <button
                       type="button"
                       onClick={() => onOpenView("ruang-kbm")}
-                      className="master-primary mt-4 px-4 py-2"
+                      className="master-primary mt-4 rounded-xl px-4 py-2"
                     >
                       Buka Ruang KBM &amp; Materi
                     </button>
@@ -1518,16 +1596,20 @@ function SchoolOverview({
                       const passed = item.avg >= 75;
                       return (
                         <div key={item.nama} className="space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                          <div className={`flex items-center justify-between text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                             <span className="truncate pr-3">{item.nama}</span>
-                            <span className={passed ? "text-emerald-700" : "text-amber-700"}>{item.avg}</span>
+                            <span className={`tabular-nums ${passed ? (isDark ? "text-emerald-400" : "text-emerald-700") : (isDark ? "text-amber-400" : "text-amber-700")}`}>
+                              {item.avg}
+                            </span>
                           </div>
-                          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200/80">
+                          <div className={`h-2.5 w-full overflow-hidden rounded-full ${isDark ? "bg-slate-800/90" : "bg-slate-200/80"}`}>
                             <div
                               className={`h-full rounded-full ${
                                 passed
-                                  ? "bg-gradient-to-r from-indigo-500 to-emerald-500"
-                                  : "bg-gradient-to-r from-amber-500 to-orange-500"
+                                  ? isDark
+                                    ? "bg-gradient-to-r from-emerald-400 to-teal-400"
+                                    : "bg-gradient-to-r from-indigo-500 to-emerald-500"
+                                  : "bg-gradient-to-r from-amber-400 to-orange-500"
                               }`}
                               style={{ width: `${Math.min(100, Math.max(0, item.avg))}%` }}
                             />
@@ -1539,59 +1621,69 @@ function SchoolOverview({
                 )}
               </div>
 
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/75 px-4 py-3 text-xs">
+              <div
+                className={`mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${
+                  isDark ? "border-slate-700/60 bg-slate-950/55" : "border-slate-200/80 bg-white/75"
+                }`}
+              >
                 <div className="flex flex-wrap items-center gap-4">
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <span className={`inline-flex items-center gap-1.5 font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                     Tuntas (&ge; 75 KKM)
                   </span>
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700">
-                    <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  <span className={`inline-flex items-center gap-1.5 font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                     Perlu Pendampingan (&lt; 75)
                   </span>
                 </div>
-                <span className="font-bold text-indigo-900">Target KKM Lembaga: 75</span>
+                <span className={`font-bold ${isDark ? "text-amber-300" : "text-indigo-900"}`}>Target KKM Lembaga: 75</span>
               </div>
             </div>
 
             <div className="dashboard-glass flex flex-col justify-between rounded-2xl p-6 lg:col-span-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Aliran Pendaftar PPDB</h3>
-                <p className="mt-0.5 text-xs text-slate-600">Ringkasan status verifikasi calon warga belajar</p>
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Aliran Pendaftar PPDB</h3>
+                <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Ringkasan status verifikasi calon warga belajar</p>
                 <div
                   className="mx-auto mt-5 flex h-36 w-36 items-center justify-center rounded-full shadow-inner"
                   style={{
                     background: totalPpdb
                       ? `conic-gradient(#f59e0b 0 ${(summary.ppdb / totalPpdb) * 100}%, #10b981 0 ${((summary.ppdb + summary.ppdbDiterima) / totalPpdb) * 100}%, #f43f5e 0)`
-                      : "#e2e8f0",
+                      : isDark
+                        ? "#1e293b"
+                        : "#e2e8f0",
                   }}
                 >
-                  <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white text-slate-900 shadow-xs">
-                    <span className="text-2xl font-black">{totalPpdb}</span>
-                    <span className="text-[11px] font-semibold text-slate-500">Pendaftar</span>
+                  <div
+                    className={`flex h-24 w-24 flex-col items-center justify-center rounded-full shadow-xs ${
+                      isDark ? "border border-slate-700/70 bg-[#0b1324] text-white" : "bg-white text-slate-900"
+                    }`}
+                  >
+                    <span className="text-2xl font-black tabular-nums">{totalPpdb}</span>
+                    <span className={`text-[11px] font-semibold ${isDark ? "text-slate-400" : "text-slate-500"}`}>Pendaftar</span>
                   </div>
                 </div>
-                <div className="mt-5 space-y-2 text-xs text-slate-700">
+                <div className={`mt-5 space-y-2 text-xs ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                       Menunggu Verifikasi
                     </span>
-                    <strong>{summary.ppdb}</strong>
+                    <strong className="tabular-nums">{summary.ppdb}</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                       Diterima
                     </span>
-                    <strong>{summary.ppdbDiterima}</strong>
+                    <strong className="tabular-nums">{summary.ppdbDiterima}</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
                       Ditolak
                     </span>
-                    <strong>{summary.ppdbDitolak}</strong>
+                    <strong className="tabular-nums">{summary.ppdbDitolak}</strong>
                   </div>
                 </div>
               </div>
@@ -1599,7 +1691,7 @@ function SchoolOverview({
               <button
                 type="button"
                 onClick={() => onSelect("ppdb")}
-                className="master-primary mt-5 w-full py-2.5"
+                className="master-primary mt-5 w-full rounded-xl py-2.5"
               >
                 Selesaikan Seleksi PPDB
               </button>
@@ -1611,12 +1703,16 @@ function SchoolOverview({
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        isDark ? "border border-sky-400/25 bg-sky-500/15 text-sky-300" : "bg-cyan-50 text-cyan-700"
+                      }`}
+                    >
                       <Activity size={18} />
                     </span>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Aktivitas Sistem Terkini</h3>
-                      <p className="text-xs text-slate-600">Pantauan operasional akademik dan pendaftaran lembaga</p>
+                      <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Aktivitas Sistem Terkini</h3>
+                      <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Pantauan operasional akademik dan pendaftaran lembaga</p>
                     </div>
                   </div>
                   <button
@@ -1626,28 +1722,44 @@ function SchoolOverview({
                         ? onOpenView("rekap-akademik", "reguler", "Analitik & Rekap Nilai")
                         : onOpenView("ruang-kbm")
                     }
-                    className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    className={
+                      isDark
+                        ? "rounded-full border border-slate-700/80 bg-slate-800/80 px-3.5 py-1.5 text-xs font-bold text-slate-200 transition hover:border-amber-400/40 hover:text-amber-300"
+                        : "rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+                    }
                   >
                     Lihat Semua Aktivitas
                   </button>
                 </div>
 
                 <ul className="mt-5 space-y-2.5 text-xs">
-                  <li className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-4 py-3 text-slate-800">
+                  <li
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                    }`}
+                  >
                     <span>Total warga belajar aktif &amp; rombel berjalan</span>
-                    <strong className="text-indigo-900">
+                    <strong className={`tabular-nums ${isDark ? "text-amber-300" : "text-indigo-900"}`}>
                       {summary.siswa} siswa · {summary.kelas} kelas
                     </strong>
                   </li>
-                  <li className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-4 py-3 text-slate-800">
+                  <li
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                    }`}
+                  >
                     <span>Antrean seleksi PPDB menunggu tinjauan</span>
-                    <strong className={summary.ppdb > 0 ? "text-amber-700" : "text-emerald-700"}>
+                    <strong className={`tabular-nums ${summary.ppdb > 0 ? (isDark ? "text-amber-300" : "text-amber-700") : (isDark ? "text-emerald-300" : "text-emerald-700")}`}>
                       {summary.ppdb} pendaftar
                     </strong>
                   </li>
-                  <li className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-4 py-3 text-slate-800">
+                  <li
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                    }`}
+                  >
                     <span>Aktivitas materi ajar, tugas KBM, &amp; presensi</span>
-                    <strong className="text-slate-900">
+                    <strong className={isDark ? "text-white" : "text-slate-900"}>
                       {canUseRecap && recap
                         ? `${recap.summary.totalMateri} materi · ${recap.summary.totalTugas} tugas · ${recap.summary.presensi.total} presensi`
                         : "Aktif di Ruang KBM"}
@@ -1661,32 +1773,46 @@ function SchoolOverview({
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                        isDark ? "border border-emerald-400/25 bg-emerald-500/15 text-emerald-300" : "bg-emerald-50 text-emerald-700"
+                      }`}
+                    >
                       <Server size={18} />
                     </span>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Status Sistem &amp; Kapasitas Layanan</h3>
-                      <p className="text-xs text-slate-600">Konfigurasi tenant dan paket langganan</p>
+                      <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Status Sistem &amp; Kapasitas Layanan</h3>
+                      <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Konfigurasi tenant dan paket langganan</p>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-800">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold ${
+                      isDark
+                        ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300"
+                        : "border-emerald-200 bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                     ONLINE
                   </span>
                 </div>
 
-                <dl className="mt-5 space-y-2.5 rounded-xl border border-white bg-white/80 p-4 text-xs">
+                <dl
+                  className={`mt-5 space-y-2.5 rounded-xl border p-4 text-xs ${
+                    isDark ? "border-slate-700/50 bg-slate-950/55" : "border-white bg-white/80"
+                  }`}
+                >
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-600">Paket Langganan</dt>
-                    <dd className="font-extrabold text-indigo-900">{activePlan.name}</dd>
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Paket Langganan</dt>
+                    <dd className={`font-extrabold ${isDark ? "text-amber-300" : "text-indigo-900"}`}>{activePlan.name}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-600">Subdomain Portal</dt>
-                    <dd className="truncate font-mono font-bold text-slate-900">{slug}.pkbm.siput.id</dd>
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Subdomain Portal</dt>
+                    <dd className={`truncate font-mono font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{slug}.pkbm.siput.id</dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-slate-600">Kapasitas Guru &amp; Kelas</dt>
-                    <dd className="font-bold text-slate-900">
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Kapasitas Guru &amp; Kelas</dt>
+                    <dd className={`font-bold tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                       {summary.guru} guru · {summary.kelas} kelas
                     </dd>
                   </div>
@@ -1698,7 +1824,7 @@ function SchoolOverview({
                   <button
                     type="button"
                     onClick={() => onOpenView("pengaturan-lanjutan", "pro", "Pengaturan Lanjutan")}
-                    className="master-primary flex-1 py-2.5"
+                    className="master-primary flex-1 rounded-xl py-2.5"
                   >
                     Pengaturan Lanjutan Tenant
                   </button>
@@ -1706,7 +1832,7 @@ function SchoolOverview({
                   <button
                     type="button"
                     onClick={() => onRequireUpgrade("Tema & Identitas Sekolah", "pro")}
-                    className="master-primary flex-1 py-2.5"
+                    className="master-primary flex-1 rounded-xl py-2.5"
                   >
                     Lihat Fitur Paket Pro
                   </button>

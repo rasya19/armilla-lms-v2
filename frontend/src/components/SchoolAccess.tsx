@@ -49,7 +49,7 @@ import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { CardGridSkeleton, DashboardHero, PortalSpinner } from "./DashboardUI";
 import { Classroom } from "./Classroom";
-import { isThemeKey, TenantThemeProvider, type ThemeKey } from "./TenantThemeProvider";
+import { isThemeKey, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
 import { getCached, invalidateCache, prefetchCoreSchoolData, prefetchForView, setCached, setCacheScope } from "./schoolCache";
 import { resetStandardClassesCache } from "./standardClasses";
 import {
@@ -191,6 +191,213 @@ const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string;
     label: "PAKET PRO",
     sidebarClass: "border-amber-400/60 bg-amber-500/25 text-amber-100",
     headerClass: "border-amber-300 bg-amber-100 text-amber-950",
+  },
+};
+
+type SidebarThemePalette = {
+  aside: string;
+  headerDivider: string;
+  identityCard: string;
+  avatar: string;
+  schoolName: string;
+  roleText: string;
+  closeBtn: string;
+  dashboardActive: string;
+  dashboardActiveIcon: string;
+  dashboardInactive: string;
+  dashboardInactiveIcon: string;
+  sectionLabel: string;
+  groupButton: string;
+  groupIcon: string;
+  groupBorder: string;
+  itemActive: string;
+  itemActiveIcon: string;
+  itemInactive: string;
+  itemLocked: string;
+  itemIcon: string;
+  devBadge: string;
+  proBadgeActive: string;
+  proBadgeLocked: string;
+  regBadgeActive: string;
+  regBadgeLocked: string;
+  standaloneDivider: string;
+  footerDivider: string;
+  tierCard: string;
+  tierLabel: string;
+  refreshBtn: string;
+  logoutBtn: string;
+  useLightBadges: boolean;
+  headerSchoolPill: string;
+  headerAvatar: string;
+  headerMenuBtn: string;
+  mobileAccentText: string;
+  mobileAccentBg: string;
+  mobileFab: string;
+};
+
+const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
+  ocean: {
+    aside:
+      "border-sky-200/90 bg-gradient-to-b from-white/90 via-sky-50/90 to-cyan-100/80 text-slate-800 shadow-[4px_0_24px_rgba(3,105,161,0.08)] backdrop-blur-xl",
+    headerDivider: "border-sky-200/80",
+    identityCard: "border-sky-200/90 bg-white/85 shadow-xs",
+    avatar: "bg-gradient-to-tr from-sky-700 to-cyan-500 text-white shadow-sm",
+    schoolName: "text-sky-950",
+    roleText: "text-sky-700",
+    closeBtn: "text-slate-600 hover:bg-sky-100 hover:text-sky-950",
+    dashboardActive: "bg-gradient-to-r from-sky-700 via-cyan-700 to-teal-700 text-white shadow-md shadow-sky-900/15",
+    dashboardActiveIcon: "bg-white/20 text-white",
+    dashboardInactive: "text-slate-700 hover:bg-sky-100/80 hover:text-sky-950",
+    dashboardInactiveIcon: "bg-sky-100 text-sky-700",
+    sectionLabel: "text-sky-900/65",
+    groupButton: "text-slate-800 hover:bg-sky-100/80 hover:text-sky-950",
+    groupIcon: "bg-sky-100 text-sky-700",
+    groupBorder: "border-sky-200/90",
+    itemActive: "border border-sky-300/90 bg-white/95 text-sky-950 shadow-xs",
+    itemActiveIcon: "bg-gradient-to-br from-sky-600 to-cyan-500 text-white shadow-xs",
+    itemInactive: "text-slate-700 hover:bg-sky-100/75 hover:text-sky-950",
+    itemLocked: "text-slate-500 hover:bg-sky-100/50 hover:text-slate-800",
+    itemIcon: "bg-sky-100/80 text-sky-700",
+    devBadge: "border-sky-300 bg-sky-100 text-sky-900",
+    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
+    regBadgeActive: "bg-cyan-100 text-cyan-900 ring-1 ring-cyan-300",
+    regBadgeLocked: "bg-cyan-50 text-cyan-800 ring-1 ring-cyan-300",
+    standaloneDivider: "border-sky-200/80",
+    footerDivider: "border-sky-200/80",
+    tierCard: "border-sky-200/90 bg-white/85 shadow-xs",
+    tierLabel: "text-slate-700",
+    refreshBtn: "text-sky-700 hover:bg-sky-100 hover:text-sky-950",
+    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
+    useLightBadges: true,
+    headerSchoolPill: "bg-sky-100/90 text-sky-950",
+    headerAvatar: "bg-gradient-to-br from-sky-600 to-cyan-500",
+    headerMenuBtn: "hover:bg-sky-100 text-sky-900",
+    mobileAccentText: "text-sky-700",
+    mobileAccentBg: "bg-sky-100/90",
+    mobileFab: "bg-gradient-to-br from-sky-600 to-cyan-500",
+  },
+  emerald: {
+    aside:
+      "border-emerald-200/90 bg-gradient-to-b from-white/90 via-emerald-50/90 to-teal-100/80 text-slate-800 shadow-[4px_0_24px_rgba(4,120,87,0.08)] backdrop-blur-xl",
+    headerDivider: "border-emerald-200/80",
+    identityCard: "border-emerald-200/90 bg-white/85 shadow-xs",
+    avatar: "bg-gradient-to-tr from-emerald-700 to-teal-500 text-white shadow-sm",
+    schoolName: "text-emerald-950",
+    roleText: "text-emerald-700",
+    closeBtn: "text-slate-600 hover:bg-emerald-100 hover:text-emerald-950",
+    dashboardActive: "bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-700 text-white shadow-md shadow-emerald-900/15",
+    dashboardActiveIcon: "bg-white/20 text-white",
+    dashboardInactive: "text-slate-700 hover:bg-emerald-100/80 hover:text-emerald-950",
+    dashboardInactiveIcon: "bg-emerald-100 text-emerald-700",
+    sectionLabel: "text-emerald-900/65",
+    groupButton: "text-slate-800 hover:bg-emerald-100/80 hover:text-emerald-950",
+    groupIcon: "bg-emerald-100 text-emerald-700",
+    groupBorder: "border-emerald-200/90",
+    itemActive: "border border-emerald-300/90 bg-white/95 text-emerald-950 shadow-xs",
+    itemActiveIcon: "bg-gradient-to-br from-emerald-600 to-teal-500 text-white shadow-xs",
+    itemInactive: "text-slate-700 hover:bg-emerald-100/75 hover:text-emerald-950",
+    itemLocked: "text-slate-500 hover:bg-emerald-100/50 hover:text-slate-800",
+    itemIcon: "bg-emerald-100/80 text-emerald-700",
+    devBadge: "border-sky-300 bg-sky-100 text-sky-900",
+    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
+    regBadgeActive: "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300",
+    regBadgeLocked: "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300",
+    standaloneDivider: "border-emerald-200/80",
+    footerDivider: "border-emerald-200/80",
+    tierCard: "border-emerald-200/90 bg-white/85 shadow-xs",
+    tierLabel: "text-slate-700",
+    refreshBtn: "text-emerald-700 hover:bg-emerald-100 hover:text-emerald-950",
+    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
+    useLightBadges: true,
+    headerSchoolPill: "bg-emerald-100/90 text-emerald-950",
+    headerAvatar: "bg-gradient-to-br from-emerald-600 to-teal-500",
+    headerMenuBtn: "hover:bg-emerald-100 text-emerald-900",
+    mobileAccentText: "text-emerald-700",
+    mobileAccentBg: "bg-emerald-100/90",
+    mobileFab: "bg-gradient-to-br from-emerald-600 to-teal-500",
+  },
+  sunset: {
+    aside:
+      "border-fuchsia-200/90 bg-gradient-to-b from-white/90 via-fuchsia-50/85 to-rose-100/80 text-slate-800 shadow-[4px_0_24px_rgba(162,28,175,0.08)] backdrop-blur-xl",
+    headerDivider: "border-fuchsia-200/80",
+    identityCard: "border-fuchsia-200/90 bg-white/85 shadow-xs",
+    avatar: "bg-gradient-to-tr from-violet-600 to-fuchsia-500 text-white shadow-sm",
+    schoolName: "text-violet-950",
+    roleText: "text-violet-700",
+    closeBtn: "text-slate-600 hover:bg-fuchsia-100 hover:text-violet-950",
+    dashboardActive: "bg-gradient-to-r from-violet-700 via-fuchsia-700 to-rose-600 text-white shadow-md shadow-violet-900/15",
+    dashboardActiveIcon: "bg-white/20 text-white",
+    dashboardInactive: "text-slate-700 hover:bg-fuchsia-100/80 hover:text-violet-950",
+    dashboardInactiveIcon: "bg-fuchsia-100 text-violet-700",
+    sectionLabel: "text-violet-900/65",
+    groupButton: "text-slate-800 hover:bg-fuchsia-100/80 hover:text-violet-950",
+    groupIcon: "bg-fuchsia-100 text-violet-700",
+    groupBorder: "border-fuchsia-200/90",
+    itemActive: "border border-fuchsia-300/90 bg-white/95 text-violet-950 shadow-xs",
+    itemActiveIcon: "bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-xs",
+    itemInactive: "text-slate-700 hover:bg-fuchsia-100/75 hover:text-violet-950",
+    itemLocked: "text-slate-500 hover:bg-fuchsia-100/50 hover:text-slate-800",
+    itemIcon: "bg-fuchsia-100/80 text-violet-700",
+    devBadge: "border-violet-300 bg-violet-100 text-violet-900",
+    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
+    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
+    regBadgeActive: "bg-fuchsia-100 text-fuchsia-900 ring-1 ring-fuchsia-300",
+    regBadgeLocked: "bg-fuchsia-50 text-fuchsia-800 ring-1 ring-fuchsia-300",
+    standaloneDivider: "border-fuchsia-200/80",
+    footerDivider: "border-fuchsia-200/80",
+    tierCard: "border-fuchsia-200/90 bg-white/85 shadow-xs",
+    tierLabel: "text-slate-700",
+    refreshBtn: "text-violet-700 hover:bg-fuchsia-100 hover:text-violet-950",
+    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
+    useLightBadges: true,
+    headerSchoolPill: "bg-fuchsia-100/90 text-violet-950",
+    headerAvatar: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
+    headerMenuBtn: "hover:bg-fuchsia-100 text-violet-900",
+    mobileAccentText: "text-violet-700",
+    mobileAccentBg: "bg-fuchsia-100/90",
+    mobileFab: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
+  },
+  dark: {
+    aside: "border-slate-800/80 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-200",
+    headerDivider: "border-slate-800/80",
+    identityCard: "border-slate-700/60 bg-slate-800/50",
+    avatar: "bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-sm",
+    schoolName: "text-white",
+    roleText: "text-emerald-300",
+    closeBtn: "text-slate-300 hover:bg-slate-800",
+    dashboardActive: "bg-gradient-to-r from-emerald-700 via-teal-700 to-slate-700 text-white shadow-md",
+    dashboardActiveIcon: "bg-white/15 text-white",
+    dashboardInactive: "text-slate-300 hover:bg-slate-800/70 hover:text-white",
+    dashboardInactiveIcon: "bg-slate-800/80 text-slate-300",
+    sectionLabel: "text-slate-400 opacity-75",
+    groupButton: "text-slate-200 hover:bg-slate-800/80",
+    groupIcon: "bg-slate-800/80 text-slate-300",
+    groupBorder: "border-slate-700/70",
+    itemActive: "border border-white/15 bg-white/10 text-white shadow-inner backdrop-blur-md",
+    itemActiveIcon: "bg-gradient-to-br from-emerald-500 to-teal-500 text-white",
+    itemInactive: "text-slate-300 hover:bg-white/10 hover:text-white",
+    itemLocked: "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+    itemIcon: "bg-slate-800/70 text-slate-300",
+    devBadge: "border-sky-400/30 bg-sky-500/15 text-sky-200",
+    proBadgeActive: "bg-amber-400/20 text-amber-200",
+    proBadgeLocked: "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30",
+    regBadgeActive: "bg-cyan-400/20 text-cyan-200",
+    regBadgeLocked: "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/30",
+    standaloneDivider: "border-slate-800/70",
+    footerDivider: "border-slate-800/80",
+    tierCard: "border-slate-700/60 bg-slate-800/50",
+    tierLabel: "text-slate-300",
+    refreshBtn: "text-slate-300 hover:bg-slate-700/70 hover:text-white",
+    logoutBtn: "border-rose-900/60 bg-rose-950/25 text-rose-300 hover:bg-rose-950/50",
+    useLightBadges: false,
+    headerSchoolPill: "bg-slate-800 text-slate-100",
+    headerAvatar: "bg-gradient-to-br from-emerald-600 to-teal-500",
+    headerMenuBtn: "hover:bg-slate-800 text-slate-200",
+    mobileAccentText: "text-indigo-600",
+    mobileAccentBg: "bg-indigo-50/80",
+    mobileFab: "bg-gradient-to-br from-emerald-600 to-teal-500",
   },
 };
 
@@ -549,72 +756,6 @@ export function SchoolHome() {
     setMenuOpen(false);
   }
 
-  function renderMenuItem(item: SchoolMenuItem, standalone = false) {
-    const Icon = item.icon;
-    const active = view === item.target;
-    const locked = item.requiredPlan ? !hasPlanAccess(plan, item.requiredPlan) : false;
-    return (
-      <button
-        key={item.target}
-        type="button"
-        title={item.label}
-        aria-current={active ? "page" : undefined}
-        onMouseEnter={() => {
-          if (!locked && !item.inDevelopment) prefetchForView(item.target);
-        }}
-        onClick={() => selectView(item.target, item.requiredPlan, item.label)}
-        className={`flex w-full items-center justify-between gap-1.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
-          active
-            ? "border border-white/15 bg-white/10 text-white shadow-inner backdrop-blur-md"
-            : locked
-              ? "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              : standalone
-                ? "text-slate-300 hover:bg-white/10 hover:text-white"
-                : "text-slate-300 hover:bg-white/10 hover:text-white"
-        }`}
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-              active ? "bg-gradient-to-br from-indigo-500 to-cyan-500 text-white" : "bg-slate-800/70 text-slate-300"
-            }`}
-          >
-            <Icon size={14} />
-          </span>
-          <span className="truncate">{item.label}</span>
-        </span>
-        {(item.inDevelopment || item.requiredPlan) && (
-          <span className="flex shrink-0 items-center gap-1">
-            {item.inDevelopment && (
-              <span
-                title="Modul dalam tahap pengembangan"
-                className="inline-flex items-center rounded border border-sky-400/30 bg-sky-500/15 px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider text-sky-200"
-              >
-                DEV
-              </span>
-            )}
-            {item.requiredPlan && (
-              <span
-                className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${
-                  item.requiredPlan === "pro"
-                    ? locked
-                      ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30"
-                      : "bg-amber-400/20 text-amber-200"
-                    : locked
-                      ? "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-400/30"
-                      : "bg-cyan-400/20 text-cyan-200"
-                }`}
-              >
-                {locked && <Lock size={8} aria-hidden="true" />}
-                {item.requiredPlan === "pro" ? "PRO" : "REG"}
-              </span>
-            )}
-          </span>
-        )}
-      </button>
-    );
-  }
-
   const planStyle = PLAN_BADGE_STYLES[plan];
   const effectiveMode: SandboxMode = isDeveloper ? sandboxMode : "client";
   const effectiveRole: SandboxRole = isDeveloper ? sandboxRole : "ADMIN";
@@ -640,164 +781,36 @@ export function SchoolHome() {
       />
     ) : (
     <div className="mx-auto flex min-h-screen max-w-[1600px]">
-      <aside className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r border-slate-800/80 bg-gradient-to-b from-slate-900 via-indigo-950 to-slate-900 p-3.5 text-slate-200 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0`}>
-        <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-3.5">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-slate-700/50 bg-slate-800/40 p-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 font-black text-white shadow-sm">
-              {school.charAt(0).toUpperCase()}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-black uppercase tracking-wide text-white">{school}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-1">
-                <span className="text-[10px] font-bold uppercase text-indigo-300">ADMIN</span>
-                <span className={`inline-flex rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${planStyle.sidebarClass}`}>
-                  {planStyle.label}
-                </span>
-              </div>
-            </div>
-          </div>
-          <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className="rounded-lg p-1.5 text-slate-300 lg:hidden"><X size={18} /></button>
-        </div>
-
-        <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
-          <button
-            type="button"
-            aria-current={view === "dashboard" ? "page" : undefined}
-            onMouseEnter={() => prefetchForView("dashboard")}
-            onClick={() => selectView("dashboard")}
-            className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition ${
-              view === "dashboard"
-                ? "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md"
-                : "text-slate-300 hover:bg-slate-800/70 hover:text-white"
-            }`}
-          >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-              <LayoutDashboard size={15} />
-            </span>
-            <span className="truncate">Dashboard Utama</span>
-          </button>
-
-          <p className="mb-2 mt-4 px-3 text-[10px] font-black uppercase tracking-wider text-slate-400 opacity-60">MENU NAVIGASI</p>
-
-          <div className="space-y-1.5">
-            <div>
-              <button
-                type="button"
-                aria-expanded={masterOpen}
-                onClick={() => setMasterOpen(!masterOpen)}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800/80"
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-                    <Database size={14} />
-                  </span>
-                  <span>Master Data</span>
-                </span>
-                {masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {masterOpen && (
-                <div className="ml-3 mt-1.5 space-y-1.5 border-l border-slate-700/70 pl-2.5">
-                  {visibleMasterItems.map((item) => renderMenuItem(item))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <button
-                type="button"
-                aria-expanded={academicOpen}
-                onClick={() => setAcademicOpen(!academicOpen)}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800/80"
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-                    <GraduationCap size={14} />
-                  </span>
-                  <span>Akademik &amp; Rapor</span>
-                </span>
-                {academicOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {academicOpen && (
-                <div className="ml-3 mt-1.5 space-y-1.5 border-l border-slate-700/70 pl-2.5">
-                  {visibleAcademicItems.map((item) => renderMenuItem(item))}
-                </div>
-              )}
-            </div>
-
-            {visibleCbtItems.length > 0 && (
-              <div>
-                <button
-                  type="button"
-                  aria-expanded={cbtOpen}
-                  onClick={() => setCbtOpen(!cbtOpen)}
-                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold text-slate-200 hover:bg-slate-800/80"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/80">
-                      <MonitorCheck size={14} />
-                    </span>
-                    <span>Ujian Online (CBT)</span>
-                  </span>
-                  {cbtOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-                {cbtOpen && (
-                  <div className="ml-3 mt-1.5 space-y-1.5 border-l border-slate-700/70 pl-2.5">
-                    {visibleCbtItems.map((item) => renderMenuItem(item))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-2 space-y-1.5 border-t border-slate-800/70 pt-2">
-            {visibleStandaloneItems.map((item) => renderMenuItem(item, true))}
-          </div>
-        </nav>
-
-        <div className="mt-3 shrink-0 space-y-2.5 border-t border-slate-800/80 pt-3">
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/60 bg-slate-800/50 px-3 py-2">
-            <span className="text-[11px] font-bold text-slate-300">Tier Akses</span>
-            <div className="flex items-center gap-1.5">
-              <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${planStyle.sidebarClass}`}>
-                {planStyle.label}
-              </span>
-              <button
-                type="button"
-                disabled={refreshingPlan}
-                onClick={() => void refreshSessionProfile({ manual: true })}
-                title="Segarkan status paket"
-                aria-label="Segarkan status paket"
-                className="rounded p-1 text-slate-300 transition hover:bg-slate-700/70 hover:text-white disabled:opacity-50"
-              >
-                <RefreshCw size={12} className={refreshingPlan ? "animate-spin" : ""} aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={logout}
-            className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-rose-900/60 bg-rose-950/25 px-3.5 py-2.5 text-xs font-bold text-rose-300 transition hover:bg-rose-950/50"
-          >
-            <LogOut size={15} />
-            Keluar
-          </button>
-        </div>
-      </aside>
+      <SchoolSidebar
+        school={school}
+        plan={plan}
+        planStyle={planStyle}
+        view={view}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        masterOpen={masterOpen}
+        setMasterOpen={setMasterOpen}
+        academicOpen={academicOpen}
+        setAcademicOpen={setAcademicOpen}
+        cbtOpen={cbtOpen}
+        setCbtOpen={setCbtOpen}
+        visibleMasterItems={visibleMasterItems}
+        visibleAcademicItems={visibleAcademicItems}
+        visibleCbtItems={visibleCbtItems}
+        visibleStandaloneItems={visibleStandaloneItems}
+        refreshingPlan={refreshingPlan}
+        onRefreshPlan={() => void refreshSessionProfile({ manual: true })}
+        onSelectView={selectView}
+        onLogout={logout}
+      />
       {menuOpen && <button type="button" aria-label="Tutup menu sekolah" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" />}
       <div className="min-w-0 flex-1">
-        <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
-          <button type="button" onClick={() => setMenuOpen(true)} aria-label="Buka menu sekolah" aria-expanded={menuOpen} className="rounded-lg p-2 hover:bg-indigo-100 lg:hidden"><Menu size={21} /></button>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="inline-block max-w-full truncate rounded-lg bg-indigo-50 px-3 py-1 text-sm font-extrabold text-indigo-900">{school}</h1>
-              <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${planStyle.headerClass}`}>
-                {planStyle.label}
-              </span>
-            </div>
-            <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Sekolah aktif</p>
-          </div>
-          <span className="hidden text-xs font-bold text-slate-700 sm:block">Admin</span><span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white shadow-md">AD</span>
-        </header>
+        <SchoolPortalHeader
+          school={school}
+          planStyle={planStyle}
+          menuOpen={menuOpen}
+          onOpenMenu={() => setMenuOpen(true)}
+        />
         {error && <p role="alert" className="glass-panel m-4 rounded-xl p-4 text-rose-700">{error}</p>}
         <div className={`animate-page-enter ${transitionAlternate ? "page-enter-alternate" : ""} mx-auto max-w-7xl space-y-6 p-6 pb-28 md:pb-6`}>
           {view === "dashboard" && (
@@ -891,17 +904,371 @@ export function SchoolHome() {
       />
     )}
     {effectiveRole === "ADMIN" && (
-    <nav aria-label="Navigasi bawah sekolah" className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
-      {([
-        { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => selectView("dashboard") },
-        { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => selectView("siswa") },
-        { label: "Jadwal", icon: CalendarDays, active: !menuOpen && view === "akademik", click: () => selectView("akademik") },
-        { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => selectView("ppdb") },
-        { label: "Menu Lainnya", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: () => setMenuOpen(true) },
-      ] as const).map(({ label, icon: Icon, active, click }) => <button key={label} type="button" aria-current={active ? "page" : undefined} onClick={click} className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${active ? "font-semibold text-indigo-600" : "font-medium text-slate-600"}`}><span className={label === "Jadwal" ? "-mt-6 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 text-white shadow-lg" : `rounded-xl p-1.5 ${active ? "bg-indigo-50/80" : ""}`}><Icon size={20} /></span>{label}</button>)}
-    </nav>
+      <SchoolMobileNav
+        menuOpen={menuOpen}
+        view={view}
+        onOpenMenu={() => setMenuOpen(true)}
+        onSelectView={(next) => selectView(next)}
+      />
     )}
   </main></TenantThemeProvider>;
+}
+
+function SchoolSidebar({
+  school,
+  plan,
+  planStyle,
+  view,
+  menuOpen,
+  setMenuOpen,
+  masterOpen,
+  setMasterOpen,
+  academicOpen,
+  setAcademicOpen,
+  cbtOpen,
+  setCbtOpen,
+  visibleMasterItems,
+  visibleAcademicItems,
+  visibleCbtItems,
+  visibleStandaloneItems,
+  refreshingPlan,
+  onRefreshPlan,
+  onSelectView,
+  onLogout,
+}: {
+  school: string;
+  plan: PlanSlug;
+  planStyle: { label: string; sidebarClass: string; headerClass: string };
+  view: SchoolView;
+  menuOpen: boolean;
+  setMenuOpen: (open: boolean) => void;
+  masterOpen: boolean;
+  setMasterOpen: (open: boolean) => void;
+  academicOpen: boolean;
+  setAcademicOpen: (open: boolean) => void;
+  cbtOpen: boolean;
+  setCbtOpen: (open: boolean) => void;
+  visibleMasterItems: SchoolMenuItem[];
+  visibleAcademicItems: SchoolMenuItem[];
+  visibleCbtItems: SchoolMenuItem[];
+  visibleStandaloneItems: SchoolMenuItem[];
+  refreshingPlan: boolean;
+  onRefreshPlan: () => void;
+  onSelectView: (next: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
+  onLogout: () => void;
+}) {
+  const theme = useTenantTheme();
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  const badgeClass = palette.useLightBadges ? planStyle.headerClass : planStyle.sidebarClass;
+
+  function renderMenuItem(item: SchoolMenuItem) {
+    const Icon = item.icon;
+    const active = view === item.target;
+    const locked = item.requiredPlan ? !hasPlanAccess(plan, item.requiredPlan) : false;
+    return (
+      <button
+        key={item.target}
+        type="button"
+        title={item.label}
+        aria-current={active ? "page" : undefined}
+        onMouseEnter={() => {
+          if (!locked && !item.inDevelopment) prefetchForView(item.target);
+        }}
+        onClick={() => onSelectView(item.target, item.requiredPlan, item.label)}
+        className={`flex w-full items-center justify-between gap-1.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
+          active ? palette.itemActive : locked ? palette.itemLocked : palette.itemInactive
+        }`}
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              active ? palette.itemActiveIcon : palette.itemIcon
+            }`}
+          >
+            <Icon size={14} />
+          </span>
+          <span className="truncate">{item.label}</span>
+        </span>
+        {(item.inDevelopment || item.requiredPlan) && (
+          <span className="flex shrink-0 items-center gap-1">
+            {item.inDevelopment && (
+              <span
+                title="Modul dalam tahap pengembangan"
+                className={`inline-flex items-center rounded border px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${palette.devBadge}`}
+              >
+                DEV
+              </span>
+            )}
+            {item.requiredPlan && (
+              <span
+                className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${
+                  item.requiredPlan === "pro"
+                    ? locked
+                      ? palette.proBadgeLocked
+                      : palette.proBadgeActive
+                    : locked
+                      ? palette.regBadgeLocked
+                      : palette.regBadgeActive
+                }`}
+              >
+                {locked && <Lock size={8} aria-hidden="true" />}
+                {item.requiredPlan === "pro" ? "PRO" : "REG"}
+              </span>
+            )}
+          </span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <aside
+      className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r p-3.5 transition-colors duration-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 ${palette.aside}`}
+    >
+      <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
+        <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black ${palette.avatar}`}>
+            {school.charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={`truncate text-xs font-black uppercase tracking-wide ${palette.schoolName}`}>{school}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className={`text-[10px] font-bold uppercase ${palette.roleText}`}>ADMIN</span>
+              <span className={`inline-flex rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${badgeClass}`}>
+                {planStyle.label}
+              </span>
+            </div>
+          </div>
+        </div>
+        <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
+        <button
+          type="button"
+          aria-current={view === "dashboard" ? "page" : undefined}
+          onMouseEnter={() => prefetchForView("dashboard")}
+          onClick={() => onSelectView("dashboard")}
+          className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition ${
+            view === "dashboard" ? palette.dashboardActive : palette.dashboardInactive
+          }`}
+        >
+          <span
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              view === "dashboard" ? palette.dashboardActiveIcon : palette.dashboardInactiveIcon
+            }`}
+          >
+            <LayoutDashboard size={15} />
+          </span>
+          <span className="truncate">Dashboard Utama</span>
+        </button>
+
+        <p className={`mb-2 mt-4 px-3 text-[10px] font-black uppercase tracking-wider ${palette.sectionLabel}`}>MENU NAVIGASI</p>
+
+        <div className="space-y-1.5">
+          <div>
+            <button
+              type="button"
+              aria-expanded={masterOpen}
+              onClick={() => setMasterOpen(!masterOpen)}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
+            >
+              <span className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                  <Database size={14} />
+                </span>
+                <span>Master Data</span>
+              </span>
+              {masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {masterOpen && (
+              <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
+                {visibleMasterItems.map((item) => renderMenuItem(item))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <button
+              type="button"
+              aria-expanded={academicOpen}
+              onClick={() => setAcademicOpen(!academicOpen)}
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
+            >
+              <span className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                  <GraduationCap size={14} />
+                </span>
+                <span>Akademik &amp; Rapor</span>
+              </span>
+              {academicOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {academicOpen && (
+              <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
+                {visibleAcademicItems.map((item) => renderMenuItem(item))}
+              </div>
+            )}
+          </div>
+
+          {visibleCbtItems.length > 0 && (
+            <div>
+              <button
+                type="button"
+                aria-expanded={cbtOpen}
+                onClick={() => setCbtOpen(!cbtOpen)}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                    <MonitorCheck size={14} />
+                  </span>
+                  <span>Ujian Online (CBT)</span>
+                </span>
+                {cbtOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {cbtOpen && (
+                <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
+                  {visibleCbtItems.map((item) => renderMenuItem(item))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={`mt-2 space-y-1.5 border-t pt-2 ${palette.standaloneDivider}`}>
+          {visibleStandaloneItems.map((item) => renderMenuItem(item))}
+        </div>
+      </nav>
+
+      <div className={`mt-3 shrink-0 space-y-2.5 border-t pt-3 ${palette.footerDivider}`}>
+        <div className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${palette.tierCard}`}>
+          <span className={`text-[11px] font-bold ${palette.tierLabel}`}>Tier Akses</span>
+          <div className="flex items-center gap-1.5">
+            <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${badgeClass}`}>
+              {planStyle.label}
+            </span>
+            <button
+              type="button"
+              disabled={refreshingPlan}
+              onClick={onRefreshPlan}
+              title="Segarkan status paket"
+              aria-label="Segarkan status paket"
+              className={`rounded p-1 transition disabled:opacity-50 ${palette.refreshBtn}`}
+            >
+              <RefreshCw size={12} className={refreshingPlan ? "animate-spin" : ""} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          className={`flex w-full items-center justify-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-bold transition ${palette.logoutBtn}`}
+        >
+          <LogOut size={15} />
+          Keluar
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function SchoolPortalHeader({
+  school,
+  planStyle,
+  menuOpen,
+  onOpenMenu,
+}: {
+  school: string;
+  planStyle: { label: string; sidebarClass: string; headerClass: string };
+  menuOpen: boolean;
+  onOpenMenu: () => void;
+}) {
+  const theme = useTenantTheme();
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  return (
+    <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
+      <button
+        type="button"
+        onClick={onOpenMenu}
+        aria-label="Buka menu sekolah"
+        aria-expanded={menuOpen}
+        className={`rounded-lg p-2 lg:hidden ${palette.headerMenuBtn}`}
+      >
+        <Menu size={21} />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className={`inline-block max-w-full truncate rounded-lg px-3 py-1 text-sm font-extrabold ${palette.headerSchoolPill}`}>
+            {school}
+          </h1>
+          <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${planStyle.headerClass}`}>
+            {planStyle.label}
+          </span>
+        </div>
+        <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          Sekolah aktif
+        </p>
+      </div>
+      <span className="hidden text-xs font-bold text-slate-700 sm:block">Admin</span>
+      <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white shadow-md ${palette.headerAvatar}`}>
+        AD
+      </span>
+    </header>
+  );
+}
+
+function SchoolMobileNav({
+  menuOpen,
+  view,
+  onOpenMenu,
+  onSelectView,
+}: {
+  menuOpen: boolean;
+  view: SchoolView;
+  onOpenMenu: () => void;
+  onSelectView: (next: SchoolView) => void;
+}) {
+  const theme = useTenantTheme();
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  return (
+    <nav
+      aria-label="Navigasi bawah sekolah"
+      className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
+      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+    >
+      {([
+        { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => onSelectView("dashboard") },
+        { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => onSelectView("siswa") },
+        { label: "Jadwal", icon: CalendarDays, active: !menuOpen && view === "akademik", click: () => onSelectView("akademik") },
+        { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => onSelectView("ppdb") },
+        { label: "Menu Lainnya", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: onOpenMenu },
+      ] as const).map(({ label, icon: Icon, active, click }) => (
+        <button
+          key={label}
+          type="button"
+          aria-current={active ? "page" : undefined}
+          onClick={click}
+          className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1 text-[10px] ${
+            active ? `font-semibold ${palette.mobileAccentText}` : "font-medium text-slate-600"
+          }`}
+        >
+          <span
+            className={
+              label === "Jadwal"
+                ? `-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ${palette.mobileFab}`
+                : `rounded-xl p-1.5 ${active ? palette.mobileAccentBg : ""}`
+            }
+          >
+            <Icon size={20} />
+          </span>
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
 }
 
 type Summary = { siswa: number; guru: number; kelas: number; ppdb: number; ppdbDiterima: number; ppdbDitolak: number };

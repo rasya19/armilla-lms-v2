@@ -1,10 +1,16 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { deriveTenantSlugFromHost, getCachedTenantProfile, saveCachedTenantProfile } from "./authSessionCache";
 import { fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 export type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 
 export const TENANT_THEME_EVENT = "armilla:tenant-theme-changed";
+
+const TenantThemeContext = createContext<ThemeKey>("ocean");
+
+export function useTenantTheme(): ThemeKey {
+  return useContext(TenantThemeContext);
+}
 
 export function isThemeKey(value: unknown): value is ThemeKey {
   return value === "ocean" || value === "emerald" || value === "sunset" || value === "dark";
@@ -68,5 +74,9 @@ export function TenantThemeProvider({
     return () => window.removeEventListener(TENANT_THEME_EVENT, handleThemeChange);
   }, []);
 
-  return <div data-tenant-theme={theme}>{children}</div>;
+  return (
+    <TenantThemeContext.Provider value={theme}>
+      <div data-tenant-theme={theme}>{children}</div>
+    </TenantThemeContext.Provider>
+  );
 }

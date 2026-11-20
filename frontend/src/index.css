@@ -175,8 +175,7 @@
 [data-tenant-theme="sunset"] .dashboard-canvas { background: linear-gradient(135deg, #faf5ff, #fdf2f8, #fff1ed); }
 [data-tenant-theme="sunset"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(167,139,250,.42), transparent 34%), radial-gradient(circle at 85% 32%, rgba(232,121,249,.36), transparent 32%), radial-gradient(circle at 52% 85%, rgba(251,146,120,.32), transparent 35%); }
 [data-tenant-theme="sunset"] .dashboard-hero, [data-tenant-theme="sunset"] .master-primary { background: linear-gradient(115deg, #6d28d9, #a21caf 60%, #be4557); }
-[data-tenant-theme="dark"] .dashboard-canvas,
-.dinas-grid-dark {
+[data-tenant-theme="dark"] .dashboard-canvas {
   background-color: #07111f;
   background-image:
     linear-gradient(to right, rgba(148, 163, 184, 0.065) 1px, transparent 1px),
@@ -184,8 +183,7 @@
   background-size: 24px 24px;
   color: #e2e8f0;
 }
-[data-tenant-theme="dark"] .dashboard-canvas::before,
-.dinas-grid-dark::before {
+[data-tenant-theme="dark"] .dashboard-canvas::before {
   background:
     radial-gradient(circle at 10% 8%, rgba(16, 185, 129, 0.17), transparent 36%),
     radial-gradient(circle at 88% 12%, rgba(37, 99, 235, 0.2), transparent 38%),

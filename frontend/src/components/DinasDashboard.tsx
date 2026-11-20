@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   Archive,
@@ -742,6 +742,9 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
 }
 
 export function DinasHome() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isBeritaAcaraPage = location.pathname.replace(/\/+$/, "").endsWith("/berita-acara");
   const initialAuth = getAuthCache<DinasAuthCache>("dinas");
   const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() =>
     initialAuth ? "ready" : "loading",
@@ -1509,67 +1512,158 @@ export function DinasHome() {
               </button>
             </div>
           </div>
+
+          <nav
+            aria-label="Menu Portal Dinas Pendidikan"
+            className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/80 pt-3"
+          >
+            <button
+              type="button"
+              aria-current={!isBeritaAcaraPage ? "page" : undefined}
+              onClick={() => navigate("/dinas")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+                !isBeritaAcaraPage
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
+                  : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
+              }`}
+            >
+              <ShieldCheck size={15} />
+              <span>Verifikasi &amp; Monitoring PKBM</span>
+            </button>
+            <button
+              type="button"
+              aria-current={isBeritaAcaraPage ? "page" : undefined}
+              onClick={() => navigate("/dinas/berita-acara")}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+                isBeritaAcaraPage
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-600/25"
+                  : "border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50/70"
+              }`}
+            >
+              <FileText size={15} />
+              <span>Buat &amp; Arsip Berita Acara</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                  isBeritaAcaraPage ? "bg-amber-400 text-slate-950" : "bg-sky-100 text-blue-900"
+                }`}
+              >
+                {baArchive.length} Arsip · {unsavedBaTargets.length} Belum
+              </span>
+            </button>
+          </nav>
         </header>
       </div>
 
       <div className="mx-auto max-w-7xl space-y-5 px-4 pt-5 sm:px-6">
-        {/* Baris 1: Hero Ocean & Gold Kontras Tinggi */}
-        <section
-          className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
-          style={{
-            background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
-          }}
-        >
-          <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
-          <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
-            <div className="min-w-0 max-w-2xl">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
-                <ShieldCheck size={13} />
-                Verifikasi &amp; Validasi Kesetaraan Wilayah · Administratif
-              </span>
-              <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                Dashboard Dinas Pendidikan
-              </h2>
-              <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
-                Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), rekonsiliasi hasil tarik Dapodik vs bukti fisik, dan cut-off pendaftaran ({summary?.cutoffDate ?? "31 Agustus"}) tanpa mengakses nilai atau presensi KBM.
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                  <Database size={12} className="text-amber-300" />
-                  Wilayah: {summary ? summary.wilayah : "Memuat..."}
+        {/* Baris 1: Hero Ocean & Gold Kontras Tinggi sesuai Halaman Aktif */}
+        {!isBeritaAcaraPage ? (
+          <section
+            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
+            style={{
+              background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
+            }}
+          >
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
+              <div className="min-w-0 max-w-2xl">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                  <ShieldCheck size={13} />
+                  Verifikasi &amp; Validasi Kesetaraan Wilayah · Administratif
                 </span>
-                {summary && (
+                <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                  Verifikasi &amp; Monitoring PKBM
+                </h2>
+                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                  Pantau kesiapan berkas administrasi (KK, Akta/KTP, Ijazah, Surat Pindah), rekonsiliasi hasil tarik Dapodik vs bukti fisik, dan cut-off pendaftaran ({summary?.cutoffDate ?? "31 Agustus"}) tanpa mengakses nilai atau presensi KBM.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
-                    Data Riil DB: {summary.pkbm.length} PKBM · {summary.kpi.totalWargaBelajar} Siswa
+                    <Database size={12} className="text-amber-300" />
+                    Wilayah: {summary ? summary.wilayah : "Memuat..."}
                   </span>
-                )}
+                  {summary && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                      Data Riil DB: {summary.pkbm.length} PKBM · {summary.kpi.totalWargaBelajar} Siswa
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => navigate("/dinas/berita-acara")}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
+                >
+                  <Archive size={15} aria-hidden="true" />
+                  Buat Berita Acara ({unsavedBaTargets.length} Belum)
+                </button>
+                <button
+                  type="button"
+                  disabled={!displayedView || displayedView.pkbm.length === 0 || exporting}
+                  onClick={() => void handleExportRekap()}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400 disabled:opacity-50"
+                >
+                  <FileSpreadsheet size={16} aria-hidden="true" />
+                  {exporting ? "Menyiapkan..." : "Export Rekap Verval Kabupaten"}
+                </button>
               </div>
             </div>
+          </section>
+        ) : (
+          <section
+            className="relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_18px_40px_rgba(37,99,235,0.26)] sm:p-7"
+            style={{
+              background: "linear-gradient(115deg, #1d4ed8 0%, #2563eb 52%, #4338ca 100%)",
+            }}
+          >
+            <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 h-72 w-72 rounded-full border-[36px] border-white/10" />
+            <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 right-24 h-56 w-56 rounded-full bg-cyan-300/15 blur-2xl" />
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-5">
+              <div className="min-w-0 max-w-2xl">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold tracking-wide text-white backdrop-blur-md">
+                  <FileText size={13} />
+                  Penerbitan Dokumen Resmi · {activeWilayahLabel}
+                </span>
+                <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                  Buat &amp; Arsip Berita Acara Verval
+                </h2>
+                <p className="mt-1.5 text-sm font-medium leading-6 text-blue-50">
+                  Terbitkan, simpan permanen, edit, dan cetak Berita Acara Verifikasi &amp; Validasi per Satuan Pendidikan (PKBM) maupun Rekapitulasi Kabupaten/Kota lengkap dengan kop dan pejabat penandatangan.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                    <Database size={12} className="text-amber-300" />
+                    Wilayah: {activeWilayahLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 font-bold text-white backdrop-blur-sm">
+                    Sudah Tersimpan: {baArchive.length} · Belum Dibuat: {unsavedBaTargets.length}
+                  </span>
+                </div>
+              </div>
 
-            <div className="flex shrink-0 flex-wrap items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() =>
-                  document.getElementById("panel-berita-acara-dinas")?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-                className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
-              >
-                <Archive size={15} aria-hidden="true" />
-                Berita Acara ({baArchive.length})
-              </button>
-              <button
-                type="button"
-                disabled={!displayedView || displayedView.pkbm.length === 0 || exporting}
-                onClick={() => void handleExportRekap()}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400 disabled:opacity-50"
-              >
-                <FileSpreadsheet size={16} aria-hidden="true" />
-                {exporting ? "Menyiapkan..." : "Export Rekap Verval Kabupaten"}
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => navigate("/dinas")}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/15 px-4 py-3 text-xs font-extrabold text-white backdrop-blur-md transition hover:bg-white/25"
+                >
+                  <ShieldCheck size={15} aria-hidden="true" />
+                  Kembali ke Verifikasi PKBM
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintFromForm}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-5 py-3 text-xs font-extrabold text-slate-950 shadow-[0_8px_22px_rgba(245,158,11,0.38)] transition hover:from-amber-300 hover:to-amber-400"
+                >
+                  <Printer size={16} aria-hidden="true" />
+                  Cetak / Simpan PDF Berita Acara
+                </button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {showDemoSimulation && summary && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-400/80 bg-amber-50/95 px-4 py-3 text-xs text-slate-900 shadow-xs">
@@ -1617,6 +1711,9 @@ export function DinasHome() {
           </p>
         )}
 
+        {/* Halaman Verifikasi & Monitoring PKBM */}
+        {!isBeritaAcaraPage && (
+        <>
         {/* Baris 2: 4 Kartu KPI Ocean & Gold Kontras Tinggi */}
         {!displayedView ? (
           error ? null : <DinasCardSkeleton count={4} />
@@ -1947,8 +2044,11 @@ export function DinasHome() {
             )}
           </section>
         )}
+        </>
+        )}
 
-        {/* Baris 5: Penerbitan & Manajemen Arsip Berita Acara Verval */}
+        {/* Halaman Buat & Arsip Berita Acara Verval */}
+        {isBeritaAcaraPage && (
         <section
           id="panel-berita-acara-dinas"
           className="scroll-mt-6 space-y-6 rounded-2xl border border-white/95 bg-white/90 p-5 text-slate-900 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6"
@@ -2546,10 +2646,11 @@ export function DinasHome() {
             )}
           </div>
         </section>
+        )}
       </div>
       </div>
 
-      {inspectStudent && (
+      {!isBeritaAcaraPage && inspectStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
           <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white bg-white text-slate-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50/70 px-6 py-4">

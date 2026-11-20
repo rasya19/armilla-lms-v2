@@ -6,7 +6,7 @@ import { Classroom } from "./Classroom";
 import { TenantThemeProvider } from "./TenantThemeProvider";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
-import { DashboardHero } from "./DashboardUI";
+import { DashboardHero, PortalSpinner } from "./DashboardUI";
 import { BookOpen, CalendarDays, Home, UserRound } from "lucide-react";
 
 type Session = { nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean };
@@ -83,7 +83,8 @@ export function LmsHome() {
     finally { setBusy(false); }
   }
   if (status === "unauthorized") return <Navigate to="/lms/login" replace />;
-  if (status !== "ready" || !session) return <main className="p-8">{status === "loading" ? "Memeriksa sesi..." : "Layanan sesi tidak tersedia. Muat ulang halaman."}</main>;
+  if (status === "loading") return <PortalSpinner label="Memuat portal LMS" />;
+  if (status !== "ready" || !session) return <main className="min-h-screen bg-slate-950 p-8 text-white">Layanan sesi tidak tersedia. Muat ulang halaman.</main>;
   return <TenantThemeProvider scope="lms"><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
     <header id="profil-lms" className="dashboard-header sticky top-0 z-30 border-b px-5 py-3"><div className="mx-auto flex max-w-6xl items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 font-bold text-white">{session.nama.charAt(0).toUpperCase()}</span><div className="min-w-0 flex-1"><h1 className="truncate font-bold">{session.nama}</h1><p className="text-xs font-semibold text-indigo-700">{session.peran === "GURU" ? "Guru" : "Siswa"}</p></div><button disabled={busy} type="button" onClick={logout} className="rounded-xl border border-indigo-200 bg-white/70 px-4 py-2 text-sm font-bold text-indigo-700 disabled:opacity-50">Keluar</button></div></header>
     <div className="animate-page-enter mx-auto max-w-6xl space-y-5 px-4 py-6 pb-28 sm:px-6 md:pb-6">

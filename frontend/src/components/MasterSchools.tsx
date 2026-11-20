@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, X } from "lucide-react";
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
+import { TableSkeleton } from "./DashboardUI";
+import { getCached, invalidateCache, setCached } from "./schoolCache";
 
 type School = {
   id: string;
@@ -49,8 +51,17 @@ function isSchoolPage(data: unknown): data is SchoolPage {
 
 export function MasterSchools() {
   const [page, setPage] = useState(1);
-  const [result, setResult] = useState<SchoolPage | null>(null);
-  const [selectedPlans, setSelectedPlans] = useState<Record<string, PlanSlug>>({});
+  const endpoint = `/api/master/sekolah?page=${page}`;
+  const [result, setResult] = useState<SchoolPage | null>(() => getCached<SchoolPage>(endpoint));
+  const [selectedPlans, setSelectedPlans] = useState<Record<string, PlanSlug>>(() => {
+    const cached = getCached<SchoolPage>(endpoint);
+    if (!cached) return {};
+    const next: Record<string, PlanSlug> = {};
+    for (const school of cached.sekolah) {
+      next[school.id] = resolvePlanSlug(school.plan);
+    }
+    return next;
+  });
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [error, setError] = useState("");
@@ -63,9 +74,14 @@ export function MasterSchools() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setResult(null);
+    const cached = getCached<SchoolPage>(endpoint);
+    if (cached) {
+      setResult(cached);
+    } else {
+      setResult(null);
+    }
     setError("");
-    fetch(`/api/master/sekolah?page=${page}`, { signal: controller.signal })
+    fetch(endpoint, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(
@@ -78,6 +94,7 @@ export function MasterSchools() {
         if (!isSchoolPage(data) || data.page !== page) {
           throw new Error("Respons daftar sekolah tidak valid.");
         }
+        setCached(endpoint, data);
         setResult(data);
         setSelectedPlans((previous) => {
           const next = { ...previous };
@@ -88,13 +105,13 @@ export function MasterSchools() {
         });
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && !cached) {
           console.error("Gagal memuat daftar sekolah:", failure);
           setError(failure instanceof Error ? failure.message : "Daftar sekolah tidak tersedia.");
         }
       });
     return () => controller.abort();
-  }, [page]);
+  }, [endpoint, page]);
 
   async function syncPlanToLms(school: School, nextPlan: PlanSlug) {
     const cleanPlan = resolvePlanSlug(nextPlan);
@@ -131,6 +148,7 @@ export function MasterSchools() {
         (bodyObj && typeof bodyObj.message === "string" && bodyObj.message) ||
         `Paket ${school.nama} berhasil disinkronkan ke LMS (${planLabel}).`;
 
+      invalidateCache(["/api/master/sekolah", "/api/master/overview"]);
       setResult((previous) =>
         previous
           ? {
@@ -198,7 +216,7 @@ export function MasterSchools() {
           {error}
         </p>
       ) : !result ? (
-        <p className="mt-5 text-sm text-slate-600">Memuat daftar tenant...</p>
+        <TableSkeleton rows={5} columns={5} />
       ) : (
         <>
           {result.sekolah.length === 0 ? (

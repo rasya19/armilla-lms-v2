@@ -46,10 +46,10 @@ import {
 import { SchoolData, type SchoolDataKind } from "./SchoolData";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
-import { DashboardHero } from "./DashboardUI";
+import { CardGridSkeleton, DashboardHero, PortalSpinner } from "./DashboardUI";
 import { Classroom } from "./Classroom";
 import { TenantThemeProvider } from "./TenantThemeProvider";
-import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { getCached, invalidateCache, prefetchCoreSchoolData, prefetchForView, setCached, setCacheScope } from "./schoolCache";
 import { resetStandardClassesCache } from "./standardClasses";
 import { getPlanBySlug, hasPlanAccess, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { ModulePlaceholderView, type DevelopmentModuleId } from "./ModulePlaceholderView";
@@ -253,6 +253,7 @@ export function SchoolHome() {
       if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") throw new Error("Respons sesi tidak valid.");
       setSchool(data.sekolah);
       setSlug(data.slug);
+      setCacheScope(data.slug);
       const rawOrNormalized =
         ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
         ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
@@ -341,6 +342,9 @@ export function SchoolHome() {
         type="button"
         title={item.label}
         aria-current={active ? "page" : undefined}
+        onMouseEnter={() => {
+          if (!locked && !item.inDevelopment) prefetchForView(item.target);
+        }}
         onClick={() => selectView(item.target, item.requiredPlan, item.label)}
         className={`flex w-full items-center justify-between gap-1.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
           active
@@ -405,7 +409,8 @@ export function SchoolHome() {
   const visibleStandaloneItems = standaloneItems.filter((item) => !item.inDevelopment || showDevMenus);
 
   if (status === "unauthorized") return <Navigate to="/login" replace />;
-  if (status !== "ready") return <main className="school-dashboard min-h-screen p-8 text-white">{status === "loading" ? "Memeriksa sesi..." : "Sesi tidak tersedia. Muat ulang halaman."}</main>;
+  if (status === "loading") return <PortalSpinner label="Memuat portal sekolah" />;
+  if (status !== "ready") return <main className="school-dashboard min-h-screen bg-slate-950 p-8 text-white">Sesi tidak tersedia. Muat ulang halaman.</main>;
 
   return <TenantThemeProvider scope="sekolah"><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
     {isDeveloper && effectiveRole !== "ADMIN" ? (
@@ -441,6 +446,7 @@ export function SchoolHome() {
           <button
             type="button"
             aria-current={view === "dashboard" ? "page" : undefined}
+            onMouseEnter={() => prefetchForView("dashboard")}
             onClick={() => selectView("dashboard")}
             className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition ${
               view === "dashboard"
@@ -714,6 +720,7 @@ function SchoolOverview({
       const next: Summary = { siswa: data.siswa, guru: data.guru, kelas: data.kelas, ppdb: data.ppdb, ppdbDiterima: data.ppdbDiterima, ppdbDitolak: data.ppdbDitolak };
       setCached("/api/sekolah/ringkasan", next);
       setSummary(next);
+      prefetchCoreSchoolData();
     }).catch((failure: unknown) => {
       if (!controller.signal.aborted) {
         console.error("Gagal memuat ringkasan:", failure);
@@ -722,6 +729,12 @@ function SchoolOverview({
     });
     return () => controller.abort();
   }, [version]);
+
+  useEffect(() => {
+    if (summary) {
+      prefetchCoreSchoolData();
+    }
+  }, [summary !== null]);
 
   useEffect(() => {
     if (!canUseRecap) return;
@@ -820,7 +833,7 @@ function SchoolOverview({
           </button>
         </div>
       ) : !summary ? (
-        <p className="glass-panel rounded-2xl p-6 text-sm">Memuat ringkasan...</p>
+        <CardGridSkeleton count={4} columns={4} />
       ) : (
         <>
           <div className="page-stagger grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">

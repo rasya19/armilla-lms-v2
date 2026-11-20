@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { TableSkeleton } from "./DashboardUI";
+import { getCached, invalidateCache, setCached } from "./schoolCache";
 
 type Registration = {
   id: string;
@@ -32,28 +34,35 @@ function isRegistrationPage(data: unknown): data is RegistrationPage {
 export function MasterSchoolRegistrations() {
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [result, setResult] = useState<RegistrationPage | null>(null);
+  const endpoint = `/api/master/pendaftaran-sekolah?page=${page}`;
+  const [result, setResult] = useState<RegistrationPage | null>(() => getCached<RegistrationPage>(endpoint));
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    setResult(null);
+    const cached = getCached<RegistrationPage>(endpoint);
+    if (cached) {
+      setResult(cached);
+    } else {
+      setResult(null);
+    }
     setError("");
-    fetch(`/api/master/pendaftaran-sekolah?page=${page}`, { signal: controller.signal }).then(async (response) => {
+    fetch(endpoint, { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Daftar pendaftaran tidak tersedia. Coba lagi nanti.");
       const data: unknown = await response.json();
       if (!isRegistrationPage(data) || data.page !== page) throw new Error("Respons daftar pendaftaran tidak valid.");
+      setCached(endpoint, data);
       setResult(data);
     }).catch((error: unknown) => {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && !cached) {
         console.error("Gagal memuat pendaftaran sekolah:", error);
         setError(error instanceof Error ? error.message : "Daftar pendaftaran tidak tersedia.");
       }
     });
     return () => controller.abort();
-  }, [page, refreshKey]);
+  }, [endpoint, page, refreshKey]);
 
   async function deleteRegistration(item: Registration) {
     const warning = item.sekolahId
@@ -67,6 +76,7 @@ export function MasterSchoolRegistrations() {
       if (!response.ok) {
         throw new Error(response.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : response.status === 404 ? "Pendaftaran tidak ditemukan. Muat ulang daftar." : response.status === 409 ? "Sekolah memiliki data terkait dan tidak dapat dihapus melalui menu ini." : "Pendaftaran belum dapat dihapus. Coba lagi nanti.");
       }
+      invalidateCache(["/api/master/pendaftaran-sekolah", "/api/master/sekolah", "/api/master/overview"]);
       if (result?.pendaftaran.length === 1 && page > 1) setPage((value) => value - 1);
       else setRefreshKey((value) => value + 1);
     } catch (error) {
@@ -82,7 +92,7 @@ export function MasterSchoolRegistrations() {
     <p className="mt-2 text-sm leading-6 text-slate-600">Pendaftaran diteruskan ke Rasyatech Admin. Verifikasi dan aktivasi dilakukan di sana; status di LMS berubah setelah provisioning berhasil.</p>
     {error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}
     {deleteError && <p role="alert" className="mt-4 text-sm text-rose-700">{deleteError}</p>}
-    {!result && !error && <p className="mt-5 text-sm text-slate-600">Memuat daftar pendaftaran...</p>}
+    {!result && !error && <TableSkeleton rows={4} columns={3} />}
     {result && <>
       {result.pendaftaran.length === 0 && <p className="mt-5 text-sm text-slate-600">Tidak ada pendaftaran pada halaman ini.</p>}
       <div className="mt-5 space-y-4">{result.pendaftaran.map((item) => <article key={item.id} className="master-record p-4">

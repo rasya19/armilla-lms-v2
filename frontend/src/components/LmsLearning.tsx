@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
-import { EmptyState } from "./DashboardUI";
+import { EmptyState, TableSkeleton } from "./DashboardUI";
+import { getCached, invalidateCache, setCached } from "./schoolCache";
 
 type Named = { nama: string };
 type Assignment = { id: string; hari: number; jamMulai: string; jamSelesai: string; kelas: Named & { id: string }; mapel: Named & { id: string }; tahunAjaran: Named & { semester: string } };
@@ -81,7 +82,14 @@ export function LmsLearning({
   const [kind, setKind] = useState<Kind>(initialKind);
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
-  const [data, setData] = useState<Page<Content> | null>(null);
+  const queryStr = (() => {
+    const q = new URLSearchParams({ page: String(page) });
+    if (kelasId) q.set("kelasId", kelasId);
+    if (mapelId) q.set("mapelId", mapelId);
+    return q.toString();
+  })();
+  const listCacheKey = `/api/${role === "ADMIN" ? "sekolah" : "lms"}/pembelajaran/${kind}?${queryStr}::${sandboxRole ?? "real"}`;
+  const [data, setData] = useState<Page<Content> | null>(() => getCached<Page<Content>>(listCacheKey));
   const [assignments, setAssignments] = useState<Assignment[] | null>(null);
   const [assignmentError, setAssignmentError] = useState("");
   const [error, setError] = useState("");
@@ -100,16 +108,18 @@ export function LmsLearning({
   useEffect(() => { setPage(1); setSelected(null); }, [kelasId, mapelId]);
   useEffect(() => {
     const controller = new AbortController();
-    setData(null); setError("");
-    const query = new URLSearchParams({ page: String(page) });
-    if (kelasId) query.set("kelasId", kelasId);
-    if (mapelId) query.set("mapelId", mapelId);
-    request(`/${kind}?${query}`, "GET", undefined, controller.signal, role === "ADMIN", sandboxRole).then((value) => {
+    const cached = getCached<Page<Content>>(listCacheKey);
+    if (cached) setData(cached);
+    setError("");
+    request(`/${kind}?${queryStr}`, "GET", undefined, controller.signal, role === "ADMIN", sandboxRole).then((value) => {
       if (!isPage(value, content) || value.page !== page) throw new Error("Respons materi atau tugas tidak valid.");
+      setCached(listCacheKey, value);
       setData(value);
-    }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat pembelajaran:", failure); setError(failureMessage(failure)); } });
+    }).catch((failure: unknown) => {
+      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat pembelajaran:", failure); setError(failureMessage(failure)); }
+    });
     return () => controller.abort();
-  }, [kind, page, version, kelasId, mapelId, role, sandboxRole]);
+  }, [kind, page, queryStr, listCacheKey, version, kelasId, mapelId, role, sandboxRole]);
   useEffect(() => {
     if (role !== "GURU") return;
     const controller = new AbortController();
@@ -133,7 +143,7 @@ export function LmsLearning({
 
   async function mutate(path: string, method: string, body: object, success: string) {
     setBusy(true); setError(""); setMessage("");
-    try { await request(path, method, body, undefined, role === "ADMIN", sandboxRole); setMessage(success); setVersion((v) => v + 1); return true; }
+    try { await request(path, method, body, undefined, role === "ADMIN", sandboxRole); invalidateCache(["/api/sekolah/pembelajaran", "/api/lms/pembelajaran", "/api/sekolah/rekap-akademik"]); setMessage(success); setVersion((v) => v + 1); return true; }
     catch (failure) { console.error("Gagal memproses pembelajaran:", failure); setError(failureMessage(failure)); return false; }
     finally { setBusy(false); }
   }
@@ -172,13 +182,13 @@ export function LmsLearning({
       {kind === "materi" ? <label className="mt-3 block text-sm font-semibold">Tautan HTTPS (opsional)<input type="url" maxLength={2000} className={field} value={form.tautan} onChange={(e) => setForm({ ...form, tautan: e.target.value })} /></label> : <label className="mt-3 block text-sm font-semibold">Batas waktu WIB (opsional)<input type="datetime-local" className={field} value={form.batasWaktu} onChange={(e) => setForm({ ...form, batasWaktu: e.target.value })} /></label>}
       {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}<button disabled={busy || !filteredAssignments?.length} className={button}>Simpan {kind}</button>
     </form></SchoolModal>}
-    {!data && !error ? <p className="mt-4 text-sm">Memuat...</p> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <EmptyState title={`Belum ada ${kind}`} description="Data pada halaman ini akan ditampilkan di sini." action={role === "GURU" ? <button type="button" className="master-primary" onClick={() => setCreateOpen(true)}>Buat {kind}</button> : undefined} /> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p><Link value={item.tautan} />
+    {!data && !error ? <TableSkeleton rows={4} columns={3} /> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <EmptyState title={`Belum ada ${kind}`} description="Data pada halaman ini akan ditampilkan di sini." action={role === "GURU" ? <button type="button" className="master-primary" onClick={() => setCreateOpen(true)}>Buat {kind}</button> : undefined} /> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p><Link value={item.tautan} />
       {kind === "tugas" && <><p className="mt-2">Batas: {item.batasWaktu ? time(item.batasWaktu) : "Tidak ada"}</p>{role === "SISWA" && item.pengumpulan?.[0] ? <div className="mt-2"><p>Sudah dikumpulkan: {time(item.pengumpulan[0].dikumpulkanPada)}{item.batasWaktu && new Date(item.pengumpulan[0].dikumpulkanPada) > new Date(item.batasWaktu) ? " · Terlambat" : ""}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].jawaban}</p><Link value={item.pengumpulan[0].tautan} /><p>Nilai: {item.pengumpulan[0].nilai ?? "Belum dinilai"}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].catatanGuru}</p></div> : (role === "SISWA" || (role === "GURU" && item.bisaMenilai)) && <button type="button" onClick={() => { setSelected(item); setAnswerPage(1); setAnswerText(""); setAnswerLink(""); }} className="mt-2 font-bold underline">{role === "GURU" ? "Periksa dan beri nilai" : "Kumpulkan jawaban"}</button>}</>}
     </li>)}</ul>}<div className="mt-4 flex gap-4 text-sm"><button type="button" disabled={page === 1} onClick={() => { setSelected(null); setPage((v) => v - 1); }} className="font-bold underline disabled:text-slate-400">Sebelumnya</button><span>Halaman {page}</span><button type="button" disabled={!data.hasNext} onClick={() => { setSelected(null); setPage((v) => v + 1); }} className="font-bold underline disabled:text-slate-400">Berikutnya</button></div></>}
     {selected && kind === "tugas" && <section className="mt-4 rounded-xl border border-[#e6dfd0] bg-white p-4"><h3 className="font-bold">{role === "GURU" ? "Pengumpulan" : "Jawaban"}: {selected.judul}</h3><button type="button" onClick={() => setSelected(null)} className="mt-2 text-sm font-bold underline">Tutup</button>
       {role === "SISWA" ? <form onSubmit={submitAnswer}><p className="mt-2 text-sm">Jawaban hanya dapat dikumpulkan sekali dan tidak bisa diubah. Jawaban setelah batas waktu tetap diterima dan ditandai terlambat.</p><label className="mt-3 block text-sm font-semibold">Jawaban teks<textarea maxLength={5000} className={field} value={answerText} onChange={(e) => setAnswerText(e.target.value)} /></label><label className="mt-3 block text-sm font-semibold">Tautan HTTPS<input type="url" maxLength={2000} className={field} value={answerLink} onChange={(e) => setAnswerLink(e.target.value)} /></label><button disabled={busy || (!answerText.trim() && !answerLink.trim())} className={button}>Kumpulkan tugas</button></form>
         : answerError ? <p role="alert" className="mt-3 text-sm text-rose-700">{answerError} <button type="button" onClick={() => setVersion((v) => v + 1)} className="font-bold underline">Coba lagi</button></p>
-        : !answers ? <p className="mt-3 text-sm">Memuat pengumpulan...</p> : <>{answers.rows.length === 0 ? <p className="mt-3 text-sm">Belum ada pengumpulan pada halaman ini.</p> : answers.rows.map((answer) => <GradeForm key={answer.id} answer={answer} deadline={selected.batasWaktu} busy={busy} onSave={grade} />)}<div className="mt-4 flex gap-4 text-sm"><button type="button" disabled={answerPage === 1} onClick={() => setAnswerPage((v) => v - 1)} className="font-bold underline disabled:text-slate-400">Sebelumnya</button><span>Halaman {answerPage}</span><button type="button" disabled={!answers.hasNext} onClick={() => setAnswerPage((v) => v + 1)} className="font-bold underline disabled:text-slate-400">Berikutnya</button></div></>}
+        : !answers ? <TableSkeleton rows={3} columns={3} /> : <>{answers.rows.length === 0 ? <p className="mt-3 text-sm">Belum ada pengumpulan pada halaman ini.</p> : answers.rows.map((answer) => <GradeForm key={answer.id} answer={answer} deadline={selected.batasWaktu} busy={busy} onSave={grade} />)}<div className="mt-4 flex gap-4 text-sm"><button type="button" disabled={answerPage === 1} onClick={() => setAnswerPage((v) => v - 1)} className="font-bold underline disabled:text-slate-400">Sebelumnya</button><span>Halaman {answerPage}</span><button type="button" disabled={!answers.hasNext} onClick={() => setAnswerPage((v) => v + 1)} className="font-bold underline disabled:text-slate-400">Berikutnya</button></div></>}
     </section>}
   </section>;
 }

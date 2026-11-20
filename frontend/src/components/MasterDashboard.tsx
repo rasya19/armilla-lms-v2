@@ -8,6 +8,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { MasterSchools } from "./MasterSchools";
 import { MasterSchoolRegistrations } from "./MasterSchoolRegistrations";
+import { CardGridSkeleton, TableSkeleton } from "./DashboardUI";
+import { getCached, setCached } from "./schoolCache";
 
 type MenuItem = { id: string; label: string; icon: LucideIcon; description: string };
 const menuItems: MenuItem[] = [
@@ -59,11 +61,14 @@ function parseOverview(registrations: unknown, schools: unknown, summary: unknow
 const dateFormat = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric" });
 
 function OverviewPanel({ search, selectMenu, showBoard }: { search: string; selectMenu: (id: string) => void; showBoard: boolean }) {
-  const [data, setData] = useState<Overview | null>(null);
+  const cacheKey = "/api/master/overview";
+  const [data, setData] = useState<Overview | null>(() => getCached<Overview>(cacheKey));
   const [error, setError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
+    const cached = getCached<Overview>(cacheKey);
+    if (cached) setData(cached);
     Promise.all([
       fetch("/api/master/pendaftaran-sekolah?page=1", { signal: controller.signal }),
       fetch("/api/master/sekolah?page=1", { signal: controller.signal }),
@@ -71,9 +76,11 @@ function OverviewPanel({ search, selectMenu, showBoard }: { search: string; sele
     ]).then(async ([registrations, schools, summary]) => {
       if (!registrations.ok || !schools.ok || !summary.ok) throw new Error(registrations.status === 401 || schools.status === 401 || summary.status === 401 ? "Sesi berakhir. Silakan masuk kembali." : "Data ringkasan tidak tersedia. Coba muat ulang halaman.");
       const [registrationData, schoolData, summaryData]: unknown[] = await Promise.all([registrations.json(), schools.json(), summary.json()]);
-      setData(parseOverview(registrationData, schoolData, summaryData));
+      const parsed = parseOverview(registrationData, schoolData, summaryData);
+      setCached(cacheKey, parsed);
+      setData(parsed);
     }).catch((reason: unknown) => {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && !cached) {
         console.error("Gagal memuat ringkasan:", reason);
         setError(reason instanceof Error ? reason.message : "Data ringkasan tidak tersedia.");
       }
@@ -101,7 +108,7 @@ function OverviewPanel({ search, selectMenu, showBoard }: { search: string; sele
         <div><p className="master-eyebrow">ALUR LEMBAGA</p><h2 className="mt-2 text-xl font-bold text-white">Panel Pendaftaran Sekolah</h2><p className="mt-1 text-sm text-slate-400">Ikhtisar pendaftaran dan lembaga yang tercatat.</p></div>
         <button type="button" onClick={() => selectMenu("verifikasi")} className="master-outline">Lihat semua pendaftaran <span aria-hidden="true">→</span></button>
       </div>
-      {error ? <p role="alert" className="mt-6 text-sm text-rose-300">{error}</p> : !data ? <p className="mt-6 text-sm text-slate-400">Memuat data...</p> : <>
+      {error ? <p role="alert" className="mt-6 text-sm text-rose-300">{error}</p> : !data ? <CardGridSkeleton count={4} columns={4} /> : <>
         <div className="master-metrics mt-5 flex flex-wrap gap-3 text-xs text-slate-300"><span className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"><strong className="text-white">{data.schoolCount}</strong> sekolah tercatat</span><span className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"><strong className="text-white">{data.adminCount}</strong> akun admin sekolah</span><span className="master-mobile-metric rounded-lg border border-white/10 bg-white/5 px-3 py-2"><strong className="text-white">{data.registrations.filter((item) => item.status === "MENUNGGU").length}</strong> menunggu <small>(25 terbaru)</small></span></div>
         <p className="mt-5 text-xs text-slate-400">Menampilkan hingga 25 pendaftaran dan 25 lembaga terbaru. Pencarian hanya mencakup data ini{data.moreRegistrations || data.moreSchools ? "; buka daftar lengkap untuk halaman lainnya" : ""}.</p>
         <div className="master-board mt-5">
@@ -115,7 +122,7 @@ function OverviewPanel({ search, selectMenu, showBoard }: { search: string; sele
     <section className="master-section" id="linimasa-pendaftaran">
       <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="master-eyebrow">AKTIVITAS LEMBAGA</p><h2 className="mt-2 text-xl font-bold text-white">Linimasa Pendaftaran</h2><p className="mt-1 text-sm text-slate-400">Tanggal masuk dari pendaftaran terbaru.</p></div><button type="button" onClick={() => selectMenu("verifikasi")} className="master-outline">Buka pendaftaran <span aria-hidden="true">→</span></button></div>
       <p className="mt-5 text-xs leading-5 text-slate-400">Tanggal verifikasi, persetujuan, dan aktivasi per tahap belum tersedia untuk linimasa. Tanggal di bawah adalah tanggal pendaftaran, bukan durasi proses.</p>
-      {error ? <p className="mt-5 text-sm text-rose-300">{error}</p> : !data ? <p className="mt-5 text-sm text-slate-400">Memuat linimasa...</p> : registrations.length === 0 ? <p className="master-empty mt-5">Tidak ada pendaftaran untuk ditampilkan.</p> : <div className="mt-5 divide-y divide-white/10">{registrations.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div className="flex min-w-0 items-center gap-3"><span className="h-2 w-2 shrink-0 rounded-full bg-indigo-400" /><span className="truncate font-medium text-slate-200">{item.namaSekolah}</span></div><div className="flex items-center gap-4 text-xs text-slate-400"><span>{item.status === "MENUNGGU" ? "Menunggu" : item.status === "DISETUJUI" ? "Disetujui" : "Ditolak"}</span><time dateTime={item.dibuatPada}>{dateFormat.format(new Date(item.dibuatPada))}</time></div></div>)}</div>}
+      {error ? <p className="mt-5 text-sm text-rose-300">{error}</p> : !data ? <TableSkeleton rows={4} columns={3} /> : registrations.length === 0 ? <p className="master-empty mt-5">Tidak ada pendaftaran untuk ditampilkan.</p> : <div className="mt-5 divide-y divide-white/10">{registrations.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><div className="flex min-w-0 items-center gap-3"><span className="h-2 w-2 shrink-0 rounded-full bg-indigo-400" /><span className="truncate font-medium text-slate-200">{item.namaSekolah}</span></div><div className="flex items-center gap-4 text-xs text-slate-400"><span>{item.status === "MENUNGGU" ? "Menunggu" : item.status === "DISETUJUI" ? "Disetujui" : "Ditolak"}</span><time dateTime={item.dibuatPada}>{dateFormat.format(new Date(item.dibuatPada))}</time></div></div>)}</div>}
     </section>
   </>;
 }

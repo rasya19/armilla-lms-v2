@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ClassPromotion } from "./ClassPromotion";
-import { DashboardHero, EmptyState } from "./DashboardUI";
+import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { SchoolModal } from "./SchoolModal";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
 import { dispatchTenantThemeChange, isThemeKey, type ThemeKey } from "./TenantThemeProvider";
@@ -270,7 +270,7 @@ export function SchoolBulkPlacementView() {
           </button>
         </p>
       ) : !data ? (
-        <p className="mt-5 text-sm">Memuat daftar kelas...</p>
+        <CardGridSkeleton count={2} columns={2} />
       ) : (
         <div className="mt-5">
           {tab === "promotion" ? (
@@ -387,7 +387,7 @@ export function SchoolAcademicRecap({
           </button>
         </div>
       ) : !data ? (
-        <p className="mt-5 text-sm">Memuat rekap akademik...</p>
+        <CardGridSkeleton count={4} columns={4} />
       ) : (
         <div className="mt-5 space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -565,17 +565,20 @@ type IdentityPayload = {
 };
 
 export function SchoolThemeIdentityView() {
-  const [selectedTheme, setSelectedTheme] = useState<ThemeKey>("ocean");
-  const [form, setForm] = useState({
-    primary_color: "#4f46e5",
-    logo_url: "",
-    hero_title: "",
-    hero_subtitle: "",
-    footer_text: "",
-    show_gallery: true,
-    show_news: true,
-  });
-  const [loading, setLoading] = useState(true);
+  const initialIdentity = getCached<IdentityPayload>("/api/sekolah/identitas");
+  const [selectedTheme, setSelectedTheme] = useState<ThemeKey>(() =>
+    initialIdentity && isThemeKey(initialIdentity.sekolah.themeKey) ? initialIdentity.sekolah.themeKey : "ocean"
+  );
+  const [form, setForm] = useState(() => ({
+    primary_color: initialIdentity?.settings.primary_color || "#4f46e5",
+    logo_url: initialIdentity?.settings.logo_url ?? "",
+    hero_title: initialIdentity?.settings.hero_title ?? "",
+    hero_subtitle: initialIdentity?.settings.hero_subtitle ?? "",
+    footer_text: initialIdentity?.settings.footer_text ?? "",
+    show_gallery: initialIdentity?.settings.show_gallery ?? true,
+    show_news: initialIdentity?.settings.show_news ?? true,
+  }));
+  const [loading, setLoading] = useState(!initialIdentity);
   const [themeBusy, setThemeBusy] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [error, setError] = useState("");
@@ -583,7 +586,22 @@ export function SchoolThemeIdentityView() {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
+    const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
+    if (cached) {
+      if (isThemeKey(cached.sekolah.themeKey)) setSelectedTheme(cached.sekolah.themeKey);
+      setForm({
+        primary_color: cached.settings.primary_color || "#4f46e5",
+        logo_url: cached.settings.logo_url ?? "",
+        hero_title: cached.settings.hero_title ?? "",
+        hero_subtitle: cached.settings.hero_subtitle ?? "",
+        footer_text: cached.settings.footer_text ?? "",
+        show_gallery: cached.settings.show_gallery,
+        show_news: cached.settings.show_news,
+      });
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     fetch("/api/sekolah/identitas", { signal: controller.signal })
       .then(async (res) => {
@@ -596,6 +614,7 @@ export function SchoolThemeIdentityView() {
           );
         }
         const data = body as IdentityPayload;
+        setCached("/api/sekolah/identitas", data);
         if (isThemeKey(data.sekolah.themeKey)) {
           setSelectedTheme(data.sekolah.themeKey);
         }
@@ -610,7 +629,7 @@ export function SchoolThemeIdentityView() {
         });
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && !cached) {
           setError(failure instanceof Error ? failure.message : "Pengaturan belum dapat dimuat.");
         }
       })
@@ -639,6 +658,7 @@ export function SchoolThemeIdentityView() {
         );
       }
       setSelectedTheme(themeKey);
+      invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
       dispatchTenantThemeChange(themeKey);
       setMessage("Tema dashboard sekolah dan LMS siswa/guru berhasil diperbarui.");
     } catch (failure: unknown) {
@@ -667,6 +687,7 @@ export function SchoolThemeIdentityView() {
             : "Identitas sekolah gagal disimpan."
         );
       }
+      invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
       setMessage("Identitas dan kustomisasi halaman lembaga berhasil disimpan.");
     } catch (failure: unknown) {
       setError(failure instanceof Error ? failure.message : "Identitas sekolah gagal disimpan.");
@@ -695,7 +716,7 @@ export function SchoolThemeIdentityView() {
       )}
 
       {loading ? (
-        <p className="mt-5 text-sm">Memuat tema dan identitas sekolah...</p>
+        <CardGridSkeleton count={4} columns={4} />
       ) : (
         <div className="mt-5 space-y-6">
           <div className="rounded-2xl border border-white bg-white p-4 text-slate-900 sm:p-5">
@@ -974,7 +995,7 @@ export function SchoolAdvancedSettingsView({
       )}
 
       {!data ? (
-        <p className="mt-5 text-sm">Memuat pengaturan lanjutan...</p>
+        <CardGridSkeleton count={4} columns={2} />
       ) : (
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <div className="rounded-2xl border border-white bg-white p-5 text-slate-900">

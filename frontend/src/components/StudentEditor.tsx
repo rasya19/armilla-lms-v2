@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
 import { classMatchesPackage, ensureStandardClasses } from "./standardClasses";
+import { TableSkeleton } from "./DashboardUI";
 
 const empty = {
   nama: "", nisn: "", nik: "", tempatLahir: "", tanggalLahir: "", jenisKelamin: "", jenjang: "", tanggalMasuk: "", jalurPendaftaran: "",
@@ -288,7 +289,7 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
             <label className={`${labelClass} md:col-span-2`}>Alamat lengkap<textarea rows={2} className={fieldClass} maxLength={500} value={form.alamatLengkap} onChange={(event) => change("alamatLengkap", event.target.value)} /></label>
           </div>
         </div>
-      </> : !error && <p className="text-sm text-slate-600">Memuat detail siswa...</p>}
+      </> : !error && <TableSkeleton rows={5} columns={2} />}
       {error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}
     </div>
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-white/80 px-5 py-4 sm:px-7">

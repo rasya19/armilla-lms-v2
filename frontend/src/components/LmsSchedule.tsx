@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { TableSkeleton } from "./DashboardUI";
+import { getCached, setCached } from "./schoolCache";
 
 type Named = { nama: string };
 type Schedule = { id: string; hari: number; jamMulai: string; jamSelesai: string; ruangan: string | null; kelas: Named; guru: Named; mapel: Named; tahunAjaran: Named & { semester: string } };
@@ -19,11 +21,14 @@ function isResult(value: unknown): value is Result {
 export function LmsSchedule({ role, sandboxRole }: { role: "GURU" | "SISWA"; sandboxRole?: "GURU" | "SISWA" }) {
   const [page, setPage] = useState(1);
   const [version, setVersion] = useState(0);
-  const [data, setData] = useState<Result | null>(null);
+  const cacheKey = `/api/lms/jadwal?page=${page}::${sandboxRole ?? "real"}`;
+  const [data, setData] = useState<Result | null>(() => getCached<Result>(cacheKey));
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    setData(null); setError("");
+    const cached = getCached<Result>(cacheKey);
+    if (cached) setData(cached);
+    setError("");
     fetch(`/api/lms/jadwal?page=${page}`, {
       signal: controller.signal,
       ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
@@ -33,17 +38,18 @@ export function LmsSchedule({ role, sandboxRole }: { role: "GURU" | "SISWA"; san
       if (!response.ok) throw new Error("Jadwal belum dapat dimuat.");
       const body: unknown = await response.json();
       if (!isResult(body) || body.page !== page) throw new Error("Respons jadwal tidak valid.");
+      setCached(cacheKey, body);
       setData(body);
     }).catch((failure: unknown) => {
-      if (!controller.signal.aborted) { console.error("Gagal memuat jadwal LMS:", failure); setError(failure instanceof TypeError ? "Server tidak dapat dihubungi." : failure instanceof Error ? failure.message : "Jadwal belum dapat dimuat."); }
+      if (!controller.signal.aborted && !cached) { console.error("Gagal memuat jadwal LMS:", failure); setError(failure instanceof TypeError ? "Server tidak dapat dihubungi." : failure instanceof Error ? failure.message : "Jadwal belum dapat dimuat."); }
     });
     return () => controller.abort();
-  }, [page, version, sandboxRole]);
+  }, [page, cacheKey, version, sandboxRole]);
   return <section className="mt-6 rounded-xl border border-[#e6dfd0] bg-[#f8f6ef] p-5">
     <h2 className="font-bold">{role === "GURU" ? "Jadwal mengajar" : "Jadwal belajar"}</h2>
     <p className="mt-2 text-sm text-slate-600">Jadwal mingguan untuk tahun ajaran aktif berdasarkan tanggal Jakarta. Hubungi admin sekolah jika data belum sesuai.</p>
     {error ? <div className="mt-3"><p role="alert" className="text-sm text-rose-700">{error}</p><button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-2 text-sm font-bold underline">Coba lagi</button></div>
-      : !data ? <p className="mt-3 text-sm">Memuat jadwal...</p>
+      : !data ? <TableSkeleton rows={4} columns={3} />
       : data.belumDitempatkan ? <p className="mt-3 text-sm">Anda belum ditempatkan di kelas. Hubungi admin sekolah.</p>
       : <>{data.rows.length === 0 ? <p className="mt-3 text-sm">Belum ada jadwal pada halaman ini.</p> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="rounded-xl border border-[#e6dfd0] bg-white p-3 text-sm">
         <p className="font-bold">{days[item.hari] ?? `Hari ${item.hari}`} · {item.jamMulai}–{item.jamSelesai}</p>

@@ -21,7 +21,7 @@ import { schoolManagementRoutes } from "./school-management-routes.js";
 import { normalizeTenantPlan } from "./plan-utils.js";
 import { schoolTierRoutes } from "./school-tier-routes.js";
 import { syncTenantPlanToLms, toCleanPlanCode } from "./lms-plan-sync.js";
-import { resolveSchoolWithSandboxSeed, SANDBOX_SLUG } from "./sandbox-seed.js";
+import { resolveSchoolWithSandboxSeed, resolveTenantHostSchool, SANDBOX_SLUG } from "./sandbox-seed.js";
 
 const app = express();
 export default app;
@@ -39,7 +39,7 @@ app.use("/api", httpSecurity({ production, origin: production ? productionOrigin
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
-app.use("/api", tenantHostMiddleware(production, (slug) => resolveSchoolWithSandboxSeed(prisma, slug), process.env.APP_ORIGIN));
+app.use("/api", tenantHostMiddleware(production, (slug) => resolveTenantHostSchool(prisma, slug), process.env.APP_ORIGIN));
 app.get("/api/tenant/context", (req, res) => res.json({
   kind: req.tenant?.kind,
   ...(req.tenant?.kind === "school" ? { slug: req.tenant.slug } : {}),

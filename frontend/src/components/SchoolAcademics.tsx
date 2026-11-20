@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
-import { EmptyState } from "./DashboardUI";
+import { CardGridSkeleton, EmptyState, TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 
 type Named = { id: string; nama: string };
@@ -114,7 +114,7 @@ export function SchoolAcademics({ mode }: { mode: "mapel" | "akademik" }) {
     {mode === "akademik" && <p className="text-sm text-slate-600">Tahun ajaran dianggap aktif berdasarkan tanggal Jakarta, termasuk hari mulai dan selesai. Beberapa periode dapat aktif bersamaan; periksa tanggal dengan teliti. Bentrok jam jadwal belum diperiksa otomatis.</p>}
     {error && !(mode === "mapel" && subjectOpen) && !academicModal && <p role="alert" className="text-sm text-rose-700">{error}</p>}
     {message && <p role="status" className="text-sm text-green-700">{message}</p>}
-    {!data ? <button type="button" onClick={() => { setError(""); setVersion((v) => v + 1); }} className="text-sm font-bold underline">Muat ulang data akademik</button> : <>
+    {!data ? (error ? <button type="button" onClick={() => { setError(""); setVersion((v) => v + 1); }} className="text-sm font-bold underline">Muat ulang data akademik</button> : (mode === "mapel" ? <TableSkeleton rows={5} columns={3} /> : <CardGridSkeleton count={4} columns={2} />)) : <>
       {mode === "akademik" && <section><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">Tahun ajaran</h3><button type="button" className="master-primary" onClick={() => { setError(""); setYearId(null); setYear({ nama: "", semester: "Ganjil", mulai: "", selesai: "" }); setAcademicModal("tahun"); }}>+ Tambah tahun ajaran</button></div>
         {!data.tahun.length ? <EmptyState title="Belum ada tahun ajaran" description="Tambahkan tahun ajaran untuk membuat jadwal." action={<button type="button" className="master-primary" onClick={() => { setYearId(null); setYear({ nama: "", semester: "Ganjil", mulai: "", selesai: "" }); setAcademicModal("tahun"); }}>Tambah tahun ajaran</button>} /> : <ul className="mt-4 space-y-2">{data.tahun.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm">{item.nama} · {item.semester} · {item.mulai.slice(0, 10)} s.d. {item.selesai.slice(0, 10)} <button type="button" disabled={busy} className="font-bold text-indigo-700 underline" onClick={() => { setError(""); setYearId(item.id); setYear({ nama: item.nama, semester: item.semester, mulai: item.mulai.slice(0, 10), selesai: item.selesai.slice(0, 10) }); setAcademicModal("tahun"); }}>Ubah</button><button type="button" disabled={busy} onClick={() => deleteItem("tahun", item)} className="ml-3 font-bold text-rose-700 underline disabled:opacity-50">Hapus</button></li>)}</ul>}
         {academicModal === "tahun" && <SchoolModal title={yearId ? "Ubah tahun ajaran" : "Tambah tahun ajaran"} busy={busy} onClose={() => { setAcademicModal(null); setError(""); }}><form onSubmit={saveYear}>

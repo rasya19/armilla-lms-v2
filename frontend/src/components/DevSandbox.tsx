@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Eye, GraduationCap, ShieldAlert, Terminal, UserCheck, Users } from "lucide-react";
 import { Classroom } from "./Classroom";
-import { DashboardHero, EmptyState } from "./DashboardUI";
+import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { LmsSchedule } from "./LmsSchedule";
 import type { PlanSlug } from "./subscriptionPlans";
 
@@ -213,7 +213,7 @@ export function DevSandboxLmsPreview({
         />
 
         {loading ? (
-          <div className="dashboard-glass rounded-2xl p-6 text-sm">Memuat sampel akun {role.toLowerCase()}...</div>
+          <CardGridSkeleton count={3} columns={3} />
         ) : !sampleUser ? (
           <EmptyState
             title={`Belum ada data ${role === "GURU" ? "guru" : "siswa"} aktif`}

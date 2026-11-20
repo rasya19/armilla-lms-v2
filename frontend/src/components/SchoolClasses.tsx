@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
-import { EmptyState } from "./DashboardUI";
+import { CardGridSkeleton, EmptyState } from "./DashboardUI";
 import { ClassPromotion } from "./ClassPromotion";
 import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ensureStandardClasses } from "./standardClasses";
@@ -105,7 +105,7 @@ export function SchoolClasses({
     <p className="text-sm text-slate-600">Setiap siswa hanya memiliki satu kelas saat ini. Perpindahan mengganti kelas sebelumnya tanpa menyimpan riwayat. Wali kelas tidak otomatis mendapat hak reset; hak tersebut memerlukan jadwal mengajar.</p>
     {error && !classOpen && <p role="alert" className="text-sm text-rose-700">{error}</p>}
     {message && <p role="status" className="text-sm text-green-700">{message}</p>}
-    {!data ? <button type="button" onClick={() => { setError(""); setVersion((value) => value + 1); }} className="text-sm font-bold underline">Muat ulang kelas</button> : <>
+    {!data ? (error ? <button type="button" onClick={() => { setError(""); setVersion((value) => value + 1); }} className="text-sm font-bold underline">Muat ulang kelas</button> : <CardGridSkeleton count={4} columns={2} />) : <>
       <div className="flex flex-wrap gap-2"><button type="button" aria-pressed={tab === "list"} onClick={() => setTab("list")} className={`rounded-full px-4 py-2 text-sm font-bold ${tab === "list" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Daftar Kelas</button><button type="button" aria-pressed={tab === "promotion"} onClick={() => { if (!canUseReguler) { onRequireUpgrade?.("Kenaikan Kelas Massal", "reguler"); return; } setError(""); setMessage(""); setTab("promotion"); }} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${tab === "promotion" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>{!canUseReguler && <Lock size={14} aria-hidden="true" />}Kenaikan Kelas Massal{!canUseReguler && <span className="rounded bg-indigo-200/80 px-1.5 py-0.5 text-[10px] font-extrabold uppercase text-indigo-950">Reguler</span>}</button></div>
       {tab === "promotion" && canUseReguler ? <ClassPromotion classes={data.kelas} onMoved={handleMoved} /> : <>
       <div className="flex flex-wrap items-center justify-between gap-3"><label className="text-sm"><span className="sr-only">Cari kelas</span><input type="search" className={field} placeholder="Cari nama kelas" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button type="button" className="master-primary" onClick={() => { setError(""); setEditing(null); setNama(""); setWali(""); setClassOpen(true); }}>+ Tambah Kelas</button></div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGlassConfirm } from "./GlassConfirm";
+import { TableSkeleton } from "./DashboardUI";
 
 const fieldClass = "mt-1 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal";
 const buttonClass = "rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
@@ -82,7 +83,7 @@ export function SchoolPersonEditor({ id, onSaved, onBusyChange }: { id: string; 
       <label className="block text-sm font-semibold">Email<input type="email" required maxLength={254} className={fieldClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
       <label className="block text-sm font-semibold">Telepon<input type="tel" required maxLength={30} className={fieldClass} value={form.telepon} onChange={(e) => setForm({ ...form, telepon: e.target.value })} /></label>
       <button disabled={busy} className="master-primary w-full disabled:opacity-50">{busy ? "Menyimpan..." : "Simpan perubahan"}</button>
-    </> : !error && <p className="text-sm">Memuat detail...</p>}
+    </> : !error && <TableSkeleton rows={4} columns={2} />}
     {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
   </form>;
 }

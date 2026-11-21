@@ -55,8 +55,12 @@ export function PortalLogin() {
   </div></main>;
 }
 
-export function PublicSchoolPortal() {
-  const { slug = "" } = useParams();
+export function PublicSchoolPortal({ slug: propSlug }: { slug?: string }) {
+  const { slug: paramSlug = "" } = useParams();
+  const host = window.location.hostname.toLowerCase();
+  const base = ["pkbm.siput.id", "rsch.my.id"].find((d) => host.endsWith("." + d));
+  const hostSlug = base ? host.slice(0, -(base.length + 1)) : "";
+  const slug = propSlug || paramSlug || hostSlug;
   return <SchoolPortal key={slug} slug={slug} />;
 }
 

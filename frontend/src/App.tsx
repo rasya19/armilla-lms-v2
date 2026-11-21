@@ -195,7 +195,7 @@ export default function App() {
           </div>
         )}
         <Routes>
-          <Route path="/" element={<PublicSchoolPortal slug={subdomainSlug} />} />
+          <Route path="/" element={<PublicSchoolPortal />} />
           <Route path="/login" element={<SchoolLogin />} />
           <Route path="/sekolah" element={<SchoolHome />} />
           <Route path="/lms/login" element={<LmsLogin />} />

@@ -156,7 +156,13 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     try {
       const count = await store.updateTheme(themeKey, validId ? id : null, validNpsn ? npsn : undefined);
       if (all !== true && count === 0) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
-      return res.json({ success: true, updated: count });
+      if (cleanPlanInTheme && store.updatePlan) {
+        const parsedPlan = parsePlanUpdate(input);
+        if (!("error" in parsedPlan)) {
+          await store.updatePlan(parsedPlan);
+        }
+      }
+      return res.json({ success: true, updated: count, ...(cleanPlanInTheme ? { plan: cleanPlanInTheme, planTier: cleanPlanInTheme } : {}) });
     } catch (error) {
       console.error("Gagal memperbarui tema tenant:", error);
       return res.status(503).json({ error: "Tema tenant belum dapat diperbarui." });

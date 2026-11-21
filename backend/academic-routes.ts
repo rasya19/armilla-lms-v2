@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { parseAcademicYear, parseSchedule, parseSubject } from "./academic-input.js";
 
-export function academicRoutes(schoolForRequest: (req: Request) => Promise<string | null>) {
+export function academicRoutes(schoolForRequest: (req: Request) => Promise<string | null>, _today?: () => Date) {
   const router = Router();
 
   router.use(async (req, res, next) => {

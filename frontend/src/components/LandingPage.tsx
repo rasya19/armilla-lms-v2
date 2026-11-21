@@ -11,7 +11,6 @@ import {
   LockKeyhole,
   LogIn,
   Menu,
-  Palette,
   Sparkles,
   Users,
   X,
@@ -19,7 +18,6 @@ import {
 import { SUBSCRIPTION_PLANS } from './subscriptionPlans';
 import { fetchWithTimeout, isCallerAborted } from './fetchWithTimeout';
 import {
-  dispatchTenantThemeChange,
   getPreferredTheme,
   isThemeKey,
   TENANT_THEME_EVENT,
@@ -48,13 +46,6 @@ const programs = [
 ];
 
 type PublicStats = { totalVisitors: number; totalSchools: number };
-
-const LANDING_THEME_OPTIONS: Array<{ key: ThemeKey; label: string; dot: string }> = [
-  { key: 'ocean', label: 'Ocean & Gold', dot: 'bg-gradient-to-br from-sky-500 to-amber-400' },
-  { key: 'emerald', label: 'Emerald Fresh', dot: 'bg-gradient-to-br from-emerald-500 to-teal-400' },
-  { key: 'sunset', label: 'Sunset Violet', dot: 'bg-gradient-to-br from-violet-500 to-rose-400' },
-  { key: 'dark', label: 'Rasyatech Dark', dot: 'bg-gradient-to-br from-amber-400 to-amber-600' },
-];
 
 type LandingThemeStyles = {
   logoBg: string;
@@ -253,7 +244,7 @@ const LANDING_THEMES: Record<ThemeKey, LandingThemeStyles> = {
 export const LandingPage: React.FC = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [stats, setStats] = useState<PublicStats | null>(null);
-  const [theme, setTheme] = useState<ThemeKey>(() => getPreferredTheme('dark'));
+  const [theme, setTheme] = useState<ThemeKey>(() => getPreferredTheme('ocean'));
   const masterClicks = useRef(0);
   const navigate = useNavigate();
 
@@ -305,11 +296,6 @@ export const LandingPage: React.FC = () => {
     return () => controller.abort();
   }, []);
 
-  const handleSelectTheme = (next: ThemeKey) => {
-    setTheme(next);
-    dispatchTenantThemeChange(next);
-  };
-
   const openMasterLogin = () => {
     masterClicks.current += 1;
     if (masterClicks.current === 5) {
@@ -329,35 +315,6 @@ export const LandingPage: React.FC = () => {
 
   return (
     <div data-tenant-theme={theme} className="landing-page min-h-screen antialiased">
-      {/* Bar Pemilih Tema Multi-Theme (Ocean & Gold, Emerald Fresh, Sunset Violet, Rasyatech Dark) */}
-      <div className={`relative z-50 px-4 py-2 sm:px-8 ${palette.themeBarWrap}`}>
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
-          <div className={`flex items-center gap-1.5 text-[11px] font-bold ${palette.themeBarLabel}`}>
-            <Palette size={13} />
-            <span>Tema Tampilan:</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Pilih tema landing page">
-            {LANDING_THEME_OPTIONS.map((option) => {
-              const active = theme === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => handleSelectTheme(option.key)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
-                    active ? palette.themeBtnActive : palette.themeBtnInactive
-                  }`}
-                >
-                  <span className={`h-2 w-2 rounded-full ${option.dot}`} aria-hidden="true" />
-                  <span>{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
       <header className="landing-header sticky top-0 z-40">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-5 px-5 sm:px-8">
           <a href="#" className="flex items-center gap-3" aria-label="Rasyatech Digital Zenith, kembali ke beranda">

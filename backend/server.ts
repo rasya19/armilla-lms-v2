@@ -31,6 +31,11 @@ import {
 } from "./sandbox-seed.js";
 import { vervalRoutes } from "./verval-routes.js";
 import { dinasRoutes, type DinasContext } from "./dinas-routes.js";
+import { tahap2AcademicRoutes } from "./tahap2-academic-routes.js";
+import { tahap2CbtRoutes } from "./tahap2-cbt-routes.js";
+import { tahap2ProRoutes } from "./tahap2-pro-routes.js";
+import { tahap2CollabRoutes } from "./tahap2-collab-routes.js";
+import type { SchoolSessionInfo } from "./tahap2-shared.js";
 
 const app = express();
 export default app;
@@ -48,6 +53,10 @@ app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/verval", express.json({ limit: "4mb" }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
+app.use("/api/school", express.json({ limit: "256kb" }));
+app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));
+app.use("/api/sekolah/diskusi", express.json({ limit: "256kb" }));
+app.use("/api/sekolah/cbt", express.json({ limit: "256kb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", tenantHostMiddleware(production, (slug) => resolveTenantHostSchool(prisma, slug), process.env.APP_ORIGIN));
@@ -58,7 +67,7 @@ app.get("/api/tenant/context", (req, res) => res.json({
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;
   if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
-  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|lms|ppdb|verval)(?:\/|$)/.test(req.path)) {
+  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval)(?:\/|$)/.test(req.path)) {
     if (/^\/auth\/(?:sekolah|lms)\/login$/.test(req.path)) return res.status(401).json({ error: "Akun tidak terdaftar pada instansi ini. Gunakan subdomain sekolah Anda." });
     return res.status(404).json({ error: "Fitur ini tersedia melalui subdomain sekolah." });
   }
@@ -1006,8 +1015,32 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
   }
 });
 
+const resolveAdminSchoolSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
+  const session = await getSession(req, "ADMIN");
+  if (!session?.akun.sekolahId) return null;
+  return { sekolahId: session.akun.sekolahId, nama: session.akun.nama, peran: "ADMIN" };
+};
+const resolveCollabSchoolSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
+  const admin = await resolveAdminSchoolSession(req);
+  if (admin) return admin;
+  if (req.path.startsWith("/diskusi") || req.path.startsWith("/ai-assistant")) {
+    const lmsSession = await getLmsSession(req);
+    if (lmsSession?.akun.sekolahId && !lmsSession.akun.wajibGantiPassword && (lmsSession.akun.peran === "GURU" || lmsSession.akun.peran === "SISWA")) {
+      return { sekolahId: lmsSession.akun.sekolahId, nama: lmsSession.akun.nama, peran: lmsSession.akun.peran };
+    }
+    const sandbox = await getDevSandboxLmsContext(req);
+    if (sandbox) return { sekolahId: sandbox.sekolahId, nama: sandbox.nama, peran: sandbox.peran };
+  }
+  return null;
+};
+
 app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
+app.use("/api/sekolah", tahap2AcademicRoutes(resolveAdminSchoolSession));
+app.use("/api/sekolah", tahap2CbtRoutes(resolveAdminSchoolSession));
+app.use("/api/sekolah", tahap2ProRoutes(resolveAdminSchoolSession));
+app.use("/api/sekolah", tahap2CollabRoutes(resolveCollabSchoolSession));
+app.use("/api/school", tahap2CollabRoutes(resolveCollabSchoolSession));
 app.use("/api/verval", vervalRoutes(async (req) => {
   const adminSession = await getSession(req, "ADMIN");
   if (adminSession?.akun.sekolahId) {

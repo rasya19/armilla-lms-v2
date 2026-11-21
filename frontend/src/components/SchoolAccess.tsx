@@ -64,7 +64,28 @@ import {
 } from "./authSessionCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { getPlanBySlug, hasPlanAccess, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
-import { ModulePlaceholderView, type DevelopmentModuleId } from "./ModulePlaceholderView";
+import {
+  AgendaMengajarView,
+  CekRaportView,
+  ModulKesetaraanView,
+} from "./SchoolEquivalenceRaport";
+import {
+  CbtBankSoalView,
+  CbtJadwalView,
+  CbtMonitoringView,
+  CbtPengaturanView,
+} from "./SchoolCbtModules";
+import {
+  AkreditasiSnpView,
+  DataAlumniView,
+  KartuDigitalQrView,
+  KeuanganSppView,
+} from "./SchoolProAdminModules";
+import {
+  AsistenAiView,
+  ManajemenAsetView,
+  RuangDiskusiView,
+} from "./SchoolCollabAssetModules";
 import {
   DevSandboxLmsPreview,
   DevSandboxToolbar,
@@ -84,9 +105,25 @@ import { VervalDapodikView } from "./VervalDapodikView";
 
 const DEVELOPER_EMAIL = "ismantoj88@gmail.com";
 
+type SchoolModuleId =
+  | "modul-kesetaraan"
+  | "akreditasi-snp"
+  | "agenda-mengajar"
+  | "data-alumni"
+  | "cek-raport"
+  | "cbt-bank-soal"
+  | "cbt-jadwal"
+  | "cbt-monitoring"
+  | "cbt-pengaturan"
+  | "keuangan-spp"
+  | "ruang-diskusi"
+  | "asisten-ai"
+  | "manajemen-aset"
+  | "kartu-digital-qr";
+
 type SchoolView =
   | SchoolDataKind
-  | DevelopmentModuleId
+  | SchoolModuleId
   | "dashboard"
   | "password"
   | "ruang-kbm"
@@ -103,34 +140,12 @@ type SchoolMenuItem = {
   icon: LucideIcon;
   target: Exclude<SchoolView, "dashboard">;
   requiredPlan?: Exclude<PlanSlug, "basic">;
-  inDevelopment?: boolean;
 };
 
 const DATA_KINDS = new Set<SchoolView>(["siswa", "guru", "ppdb", "kelas", "mapel", "akademik"]);
 
-const DEV_MODULE_SET = new Set<SchoolView>([
-  "modul-kesetaraan",
-  "akreditasi-snp",
-  "agenda-mengajar",
-  "data-alumni",
-  "cek-raport",
-  "cbt-bank-soal",
-  "cbt-jadwal",
-  "cbt-monitoring",
-  "cbt-pengaturan",
-  "keuangan-spp",
-  "ruang-diskusi",
-  "asisten-ai",
-  "manajemen-aset",
-  "kartu-digital-qr",
-]);
-
 function isSchoolDataKind(view: SchoolView): view is SchoolDataKind {
   return DATA_KINDS.has(view);
-}
-
-function isDevelopmentModule(view: SchoolView): view is DevelopmentModuleId {
-  return DEV_MODULE_SET.has(view);
 }
 
 const masterItems: SchoolMenuItem[] = [
@@ -140,56 +155,52 @@ const masterItems: SchoolMenuItem[] = [
   { label: "Manajemen Kelas", icon: Building2, target: "kelas" },
   { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
   { label: "Verval Dapodik", icon: ClipboardCheck, target: "verval-dapodik" },
-  { label: "Modul Kesetaraan", icon: Layers, target: "modul-kesetaraan", requiredPlan: "reguler", inDevelopment: true },
-  { label: "Akreditasi 8 SNP", icon: ShieldCheck, target: "akreditasi-snp", requiredPlan: "pro", inDevelopment: true },
+  { label: "Modul Kesetaraan", icon: Layers, target: "modul-kesetaraan", requiredPlan: "reguler" },
+  { label: "Akreditasi 8 SNP", icon: ShieldCheck, target: "akreditasi-snp", requiredPlan: "pro" },
 ];
 
 const academicItems: SchoolMenuItem[] = [
   { label: "Tahun & Jadwal", icon: CalendarDays, target: "akademik" },
-  { label: "Agenda & Jurnal Mengajar", icon: FileText, target: "agenda-mengajar", inDevelopment: true },
+  { label: "Agenda & Jurnal Mengajar", icon: FileText, target: "agenda-mengajar" },
   { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi", requiredPlan: "reguler" },
   { label: "Ruang KBM & Materi", icon: BookOpen, target: "ruang-kbm" },
-  { label: "Data Alumni (Tracer Study)", icon: Briefcase, target: "data-alumni", requiredPlan: "reguler", inDevelopment: true },
+  { label: "Data Alumni (Tracer Study)", icon: Briefcase, target: "data-alumni", requiredPlan: "reguler" },
   { label: "Kenaikan Kelas Massal", icon: ArrowLeftRight, target: "penempatan-kelas", requiredPlan: "reguler" },
-  { label: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler", inDevelopment: true },
+  { label: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler" },
   { label: "Analitik & Rekap Nilai", icon: BarChart3, target: "rekap-akademik", requiredPlan: "reguler" },
 ];
 
 const cbtItems: SchoolMenuItem[] = [
-  { label: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler", inDevelopment: true },
-  { label: "Jadwal Ujian CBT", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler", inDevelopment: true },
-  { label: "Monitoring Ujian Live", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler", inDevelopment: true },
-  { label: "Pengaturan Ujian", icon: SlidersHorizontal, target: "cbt-pengaturan", requiredPlan: "reguler", inDevelopment: true },
+  { label: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler" },
+  { label: "Jadwal Ujian CBT", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler" },
+  { label: "Monitoring Ujian Live", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler" },
+  { label: "Pengaturan Ujian", icon: SlidersHorizontal, target: "cbt-pengaturan", requiredPlan: "reguler" },
 ];
 
 const standaloneItems: SchoolMenuItem[] = [
-  { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro", inDevelopment: true },
-  { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi", inDevelopment: true },
-  { label: "Asisten Belajar AI", icon: Bot, target: "asisten-ai", requiredPlan: "pro", inDevelopment: true },
+  { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
+  { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
+  { label: "Asisten Belajar AI", icon: Bot, target: "asisten-ai", requiredPlan: "pro" },
   { label: "Tema & Identitas Sekolah", icon: Palette, target: "tema-identitas", requiredPlan: "pro" },
-  { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro", inDevelopment: true },
-  { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "pro", inDevelopment: true },
+  { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro" },
+  { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "pro" },
   { label: "Ganti Password", icon: KeyRound, target: "password" },
 ];
-
-const MENU_ICON_MAP = new Map<SchoolView, LucideIcon>(
-  [...masterItems, ...academicItems, ...cbtItems, ...standaloneItems].map((item) => [item.target, item.icon])
-);
 
 const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string; headerClass: string }> = {
   basic: {
     label: "PAKET BASIC",
-    sidebarClass: "border-slate-500/50 bg-slate-700/70 text-slate-100",
+    sidebarClass: "border-white/30 bg-white/15 text-white",
     headerClass: "border-slate-300 bg-slate-100 text-slate-900",
   },
   reguler: {
     label: "PAKET REGULER",
-    sidebarClass: "border-cyan-400/50 bg-cyan-500/20 text-cyan-100",
+    sidebarClass: "border-cyan-200/60 bg-cyan-400/20 text-cyan-50",
     headerClass: "border-indigo-300 bg-indigo-100 text-indigo-950",
   },
   pro: {
     label: "PAKET PRO",
-    sidebarClass: "border-amber-400/60 bg-amber-500/25 text-amber-100",
+    sidebarClass: "border-amber-300/70 bg-amber-400/25 text-amber-100",
     headerClass: "border-amber-300 bg-amber-100 text-amber-950",
   },
 };
@@ -215,7 +226,6 @@ type SidebarThemePalette = {
   itemInactive: string;
   itemLocked: string;
   itemIcon: string;
-  devBadge: string;
   proBadgeActive: string;
   proBadgeLocked: string;
   regBadgeActive: string;
@@ -226,7 +236,6 @@ type SidebarThemePalette = {
   tierLabel: string;
   refreshBtn: string;
   logoutBtn: string;
-  useLightBadges: boolean;
   headerSchoolPill: string;
   headerAvatar: string;
   headerMenuBtn: string;
@@ -238,38 +247,36 @@ type SidebarThemePalette = {
 const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
   ocean: {
     aside:
-      "border-sky-200/90 bg-gradient-to-b from-white/90 via-sky-50/90 to-cyan-100/80 text-slate-800 shadow-[4px_0_24px_rgba(3,105,161,0.08)] backdrop-blur-xl",
-    headerDivider: "border-sky-200/80",
-    identityCard: "border-sky-200/90 bg-white/85 shadow-xs",
-    avatar: "bg-gradient-to-tr from-sky-700 to-cyan-500 text-white shadow-sm",
-    schoolName: "text-sky-950",
-    roleText: "text-sky-700",
-    closeBtn: "text-slate-600 hover:bg-sky-100 hover:text-sky-950",
-    dashboardActive: "bg-gradient-to-r from-sky-700 via-cyan-700 to-teal-700 text-white shadow-md shadow-sky-900/15",
-    dashboardActiveIcon: "bg-white/20 text-white",
-    dashboardInactive: "text-slate-700 hover:bg-sky-100/80 hover:text-sky-950",
-    dashboardInactiveIcon: "bg-sky-100 text-sky-700",
-    sectionLabel: "text-sky-900/65",
-    groupButton: "text-slate-800 hover:bg-sky-100/80 hover:text-sky-950",
-    groupIcon: "bg-sky-100 text-sky-700",
-    groupBorder: "border-sky-200/90",
-    itemActive: "border border-sky-300/90 bg-white/95 text-sky-950 shadow-xs",
-    itemActiveIcon: "bg-gradient-to-br from-sky-600 to-cyan-500 text-white shadow-xs",
-    itemInactive: "text-slate-700 hover:bg-sky-100/75 hover:text-sky-950",
-    itemLocked: "text-slate-500 hover:bg-sky-100/50 hover:text-slate-800",
-    itemIcon: "bg-sky-100/80 text-sky-700",
-    devBadge: "border-sky-300 bg-sky-100 text-sky-900",
-    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
-    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
-    regBadgeActive: "bg-cyan-100 text-cyan-900 ring-1 ring-cyan-300",
-    regBadgeLocked: "bg-cyan-50 text-cyan-800 ring-1 ring-cyan-300",
-    standaloneDivider: "border-sky-200/80",
-    footerDivider: "border-sky-200/80",
-    tierCard: "border-sky-200/90 bg-white/85 shadow-xs",
-    tierLabel: "text-slate-700",
-    refreshBtn: "text-sky-700 hover:bg-sky-100 hover:text-sky-950",
-    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
-    useLightBadges: true,
+      "border-sky-300/30 bg-[linear-gradient(180deg,#0c4a6e_0%,#0369a1_50%,#0284c7_100%)] text-white shadow-[4px_0_28px_rgba(7,89,133,0.28)]",
+    headerDivider: "border-white/20",
+    identityCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    avatar: "bg-gradient-to-tr from-amber-300 to-amber-500 text-sky-950 shadow-sm",
+    schoolName: "text-white",
+    roleText: "text-sky-100",
+    closeBtn: "text-sky-100 hover:bg-white/15 hover:text-white",
+    dashboardActive: "bg-white text-sky-950 shadow-md shadow-sky-950/25",
+    dashboardActiveIcon: "bg-sky-100 text-sky-800",
+    dashboardInactive: "text-sky-50/95 hover:bg-white/15 hover:text-white",
+    dashboardInactiveIcon: "bg-white/15 text-sky-100",
+    sectionLabel: "text-sky-200/80",
+    groupButton: "text-white hover:bg-white/15 hover:text-white",
+    groupIcon: "bg-white/15 text-sky-100",
+    groupBorder: "border-sky-300/30",
+    itemActive: "border border-white/80 bg-white text-sky-950 shadow-sm",
+    itemActiveIcon: "bg-gradient-to-br from-sky-700 to-cyan-600 text-white shadow-xs",
+    itemInactive: "text-sky-50/90 hover:bg-white/15 hover:text-white",
+    itemLocked: "text-sky-100/70 hover:bg-white/10 hover:text-white",
+    itemIcon: "bg-white/15 text-sky-100",
+    proBadgeActive: "bg-amber-300/30 text-amber-50 ring-1 ring-amber-200/70",
+    proBadgeLocked: "bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/50",
+    regBadgeActive: "bg-cyan-300/25 text-cyan-50 ring-1 ring-cyan-200/60",
+    regBadgeLocked: "bg-cyan-400/20 text-cyan-100 ring-1 ring-cyan-200/45",
+    standaloneDivider: "border-white/20",
+    footerDivider: "border-white/20",
+    tierCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    tierLabel: "text-sky-100",
+    refreshBtn: "text-amber-200 hover:bg-white/15 hover:text-white",
+    logoutBtn: "border-rose-300/40 bg-rose-500/20 text-rose-50 hover:bg-rose-500/35",
     headerSchoolPill: "bg-sky-100/90 text-sky-950",
     headerAvatar: "bg-gradient-to-br from-sky-600 to-cyan-500",
     headerMenuBtn: "hover:bg-sky-100 text-sky-900",
@@ -279,38 +286,36 @@ const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
   },
   emerald: {
     aside:
-      "border-emerald-200/90 bg-gradient-to-b from-white/90 via-emerald-50/90 to-teal-100/80 text-slate-800 shadow-[4px_0_24px_rgba(4,120,87,0.08)] backdrop-blur-xl",
-    headerDivider: "border-emerald-200/80",
-    identityCard: "border-emerald-200/90 bg-white/85 shadow-xs",
-    avatar: "bg-gradient-to-tr from-emerald-700 to-teal-500 text-white shadow-sm",
-    schoolName: "text-emerald-950",
-    roleText: "text-emerald-700",
-    closeBtn: "text-slate-600 hover:bg-emerald-100 hover:text-emerald-950",
-    dashboardActive: "bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-700 text-white shadow-md shadow-emerald-900/15",
-    dashboardActiveIcon: "bg-white/20 text-white",
-    dashboardInactive: "text-slate-700 hover:bg-emerald-100/80 hover:text-emerald-950",
-    dashboardInactiveIcon: "bg-emerald-100 text-emerald-700",
-    sectionLabel: "text-emerald-900/65",
-    groupButton: "text-slate-800 hover:bg-emerald-100/80 hover:text-emerald-950",
-    groupIcon: "bg-emerald-100 text-emerald-700",
-    groupBorder: "border-emerald-200/90",
-    itemActive: "border border-emerald-300/90 bg-white/95 text-emerald-950 shadow-xs",
-    itemActiveIcon: "bg-gradient-to-br from-emerald-600 to-teal-500 text-white shadow-xs",
-    itemInactive: "text-slate-700 hover:bg-emerald-100/75 hover:text-emerald-950",
-    itemLocked: "text-slate-500 hover:bg-emerald-100/50 hover:text-slate-800",
-    itemIcon: "bg-emerald-100/80 text-emerald-700",
-    devBadge: "border-sky-300 bg-sky-100 text-sky-900",
-    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
-    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
-    regBadgeActive: "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300",
-    regBadgeLocked: "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300",
-    standaloneDivider: "border-emerald-200/80",
-    footerDivider: "border-emerald-200/80",
-    tierCard: "border-emerald-200/90 bg-white/85 shadow-xs",
-    tierLabel: "text-slate-700",
-    refreshBtn: "text-emerald-700 hover:bg-emerald-100 hover:text-emerald-950",
-    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
-    useLightBadges: true,
+      "border-emerald-300/30 bg-[linear-gradient(180deg,#064e3b_0%,#047857_48%,#0f766e_100%)] text-white shadow-[4px_0_28px_rgba(4,120,87,0.28)]",
+    headerDivider: "border-white/20",
+    identityCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    avatar: "bg-gradient-to-tr from-amber-300 to-amber-500 text-emerald-950 shadow-sm",
+    schoolName: "text-white",
+    roleText: "text-emerald-100",
+    closeBtn: "text-emerald-100 hover:bg-white/15 hover:text-white",
+    dashboardActive: "bg-white text-emerald-950 shadow-md shadow-emerald-950/25",
+    dashboardActiveIcon: "bg-emerald-100 text-emerald-800",
+    dashboardInactive: "text-emerald-50/95 hover:bg-white/15 hover:text-white",
+    dashboardInactiveIcon: "bg-white/15 text-emerald-100",
+    sectionLabel: "text-emerald-200/80",
+    groupButton: "text-white hover:bg-white/15 hover:text-white",
+    groupIcon: "bg-white/15 text-emerald-100",
+    groupBorder: "border-emerald-300/30",
+    itemActive: "border border-white/80 bg-white text-emerald-950 shadow-sm",
+    itemActiveIcon: "bg-gradient-to-br from-emerald-700 to-teal-600 text-white shadow-xs",
+    itemInactive: "text-emerald-50/90 hover:bg-white/15 hover:text-white",
+    itemLocked: "text-emerald-100/70 hover:bg-white/10 hover:text-white",
+    itemIcon: "bg-white/15 text-emerald-100",
+    proBadgeActive: "bg-amber-300/30 text-amber-50 ring-1 ring-amber-200/70",
+    proBadgeLocked: "bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/50",
+    regBadgeActive: "bg-teal-300/25 text-teal-50 ring-1 ring-teal-200/60",
+    regBadgeLocked: "bg-teal-400/20 text-teal-100 ring-1 ring-teal-200/45",
+    standaloneDivider: "border-white/20",
+    footerDivider: "border-white/20",
+    tierCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    tierLabel: "text-emerald-100",
+    refreshBtn: "text-amber-200 hover:bg-white/15 hover:text-white",
+    logoutBtn: "border-rose-300/40 bg-rose-500/20 text-rose-50 hover:bg-rose-500/35",
     headerSchoolPill: "bg-emerald-100/90 text-emerald-950",
     headerAvatar: "bg-gradient-to-br from-emerald-600 to-teal-500",
     headerMenuBtn: "hover:bg-emerald-100 text-emerald-900",
@@ -320,38 +325,36 @@ const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
   },
   sunset: {
     aside:
-      "border-fuchsia-200/90 bg-gradient-to-b from-white/90 via-fuchsia-50/85 to-rose-100/80 text-slate-800 shadow-[4px_0_24px_rgba(162,28,175,0.08)] backdrop-blur-xl",
-    headerDivider: "border-fuchsia-200/80",
-    identityCard: "border-fuchsia-200/90 bg-white/85 shadow-xs",
-    avatar: "bg-gradient-to-tr from-violet-600 to-fuchsia-500 text-white shadow-sm",
-    schoolName: "text-violet-950",
-    roleText: "text-violet-700",
-    closeBtn: "text-slate-600 hover:bg-fuchsia-100 hover:text-violet-950",
-    dashboardActive: "bg-gradient-to-r from-violet-700 via-fuchsia-700 to-rose-600 text-white shadow-md shadow-violet-900/15",
-    dashboardActiveIcon: "bg-white/20 text-white",
-    dashboardInactive: "text-slate-700 hover:bg-fuchsia-100/80 hover:text-violet-950",
-    dashboardInactiveIcon: "bg-fuchsia-100 text-violet-700",
-    sectionLabel: "text-violet-900/65",
-    groupButton: "text-slate-800 hover:bg-fuchsia-100/80 hover:text-violet-950",
-    groupIcon: "bg-fuchsia-100 text-violet-700",
-    groupBorder: "border-fuchsia-200/90",
-    itemActive: "border border-fuchsia-300/90 bg-white/95 text-violet-950 shadow-xs",
-    itemActiveIcon: "bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white shadow-xs",
-    itemInactive: "text-slate-700 hover:bg-fuchsia-100/75 hover:text-violet-950",
-    itemLocked: "text-slate-500 hover:bg-fuchsia-100/50 hover:text-slate-800",
-    itemIcon: "bg-fuchsia-100/80 text-violet-700",
-    devBadge: "border-violet-300 bg-violet-100 text-violet-900",
-    proBadgeActive: "bg-amber-100 text-amber-900 ring-1 ring-amber-300",
-    proBadgeLocked: "bg-amber-50 text-amber-800 ring-1 ring-amber-300",
-    regBadgeActive: "bg-fuchsia-100 text-fuchsia-900 ring-1 ring-fuchsia-300",
-    regBadgeLocked: "bg-fuchsia-50 text-fuchsia-800 ring-1 ring-fuchsia-300",
-    standaloneDivider: "border-fuchsia-200/80",
-    footerDivider: "border-fuchsia-200/80",
-    tierCard: "border-fuchsia-200/90 bg-white/85 shadow-xs",
-    tierLabel: "text-slate-700",
-    refreshBtn: "text-violet-700 hover:bg-fuchsia-100 hover:text-violet-950",
-    logoutBtn: "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100",
-    useLightBadges: true,
+      "border-fuchsia-300/30 bg-[linear-gradient(180deg,#4c1d95_0%,#7e22ce_48%,#be185d_100%)] text-white shadow-[4px_0_28px_rgba(109,40,217,0.28)]",
+    headerDivider: "border-white/20",
+    identityCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    avatar: "bg-gradient-to-tr from-amber-300 to-amber-500 text-violet-950 shadow-sm",
+    schoolName: "text-white",
+    roleText: "text-fuchsia-100",
+    closeBtn: "text-fuchsia-100 hover:bg-white/15 hover:text-white",
+    dashboardActive: "bg-white text-violet-950 shadow-md shadow-violet-950/25",
+    dashboardActiveIcon: "bg-fuchsia-100 text-violet-800",
+    dashboardInactive: "text-fuchsia-50/95 hover:bg-white/15 hover:text-white",
+    dashboardInactiveIcon: "bg-white/15 text-fuchsia-100",
+    sectionLabel: "text-fuchsia-200/80",
+    groupButton: "text-white hover:bg-white/15 hover:text-white",
+    groupIcon: "bg-white/15 text-fuchsia-100",
+    groupBorder: "border-fuchsia-300/30",
+    itemActive: "border border-white/80 bg-white text-violet-950 shadow-sm",
+    itemActiveIcon: "bg-gradient-to-br from-violet-700 to-fuchsia-600 text-white shadow-xs",
+    itemInactive: "text-fuchsia-50/90 hover:bg-white/15 hover:text-white",
+    itemLocked: "text-fuchsia-100/70 hover:bg-white/10 hover:text-white",
+    itemIcon: "bg-white/15 text-fuchsia-100",
+    proBadgeActive: "bg-amber-300/30 text-amber-50 ring-1 ring-amber-200/70",
+    proBadgeLocked: "bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/50",
+    regBadgeActive: "bg-fuchsia-300/25 text-fuchsia-50 ring-1 ring-fuchsia-200/60",
+    regBadgeLocked: "bg-fuchsia-400/20 text-fuchsia-100 ring-1 ring-fuchsia-200/45",
+    standaloneDivider: "border-white/20",
+    footerDivider: "border-white/20",
+    tierCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    tierLabel: "text-fuchsia-100",
+    refreshBtn: "text-amber-200 hover:bg-white/15 hover:text-white",
+    logoutBtn: "border-rose-300/40 bg-rose-500/20 text-rose-50 hover:bg-rose-500/35",
     headerSchoolPill: "bg-fuchsia-100/90 text-violet-950",
     headerAvatar: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
     headerMenuBtn: "hover:bg-fuchsia-100 text-violet-900",
@@ -384,7 +387,6 @@ const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
     itemInactive: "text-slate-300 hover:bg-slate-800/70 hover:text-white",
     itemLocked: "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
     itemIcon: "bg-slate-800/80 text-slate-400",
-    devBadge: "border-sky-400/30 bg-sky-500/15 text-sky-200",
     proBadgeActive: "bg-amber-400/20 text-amber-200",
     proBadgeLocked: "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/30",
     regBadgeActive: "bg-cyan-400/20 text-cyan-200",
@@ -395,7 +397,6 @@ const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
     tierLabel: "text-slate-300",
     refreshBtn: "text-amber-300 hover:bg-slate-800 hover:text-amber-200",
     logoutBtn: "border-rose-500/25 bg-rose-950/30 text-rose-300 hover:bg-rose-950/55",
-    useLightBadges: false,
     headerSchoolPill: "bg-transparent px-0 text-white",
     headerAvatar:
       "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]",
@@ -763,7 +764,6 @@ export function SchoolHome() {
   const planStyle = PLAN_BADGE_STYLES[plan];
   const effectiveMode: SandboxMode = isDeveloper ? sandboxMode : "client";
   const effectiveRole: SandboxRole = isDeveloper ? sandboxRole : "ADMIN";
-  const showDevMenus = isDeveloper && effectiveMode === "dev";
 
   const visibleMasterItems = masterItems;
   const visibleAcademicItems = academicItems;
@@ -774,7 +774,7 @@ export function SchoolHome() {
   if (status === "loading") return <PortalSpinner label="Memuat portal sekolah" />;
   if (status !== "ready") return <main className="school-dashboard min-h-screen bg-slate-950 p-8 text-white">{error || "Sesi tidak tersedia. Muat ulang halaman."}</main>;
 
-  return <TenantThemeProvider scope="sekolah" initialTheme={cachedTheme}><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
+  return <TenantThemeProvider scope="sekolah" initialTheme={cachedTheme} plan={plan} onRequireUpgrade={openUpgradePrompt}><main className="dashboard-canvas glass-area min-h-screen text-slate-800">
     {isDeveloper && effectiveRole !== "ADMIN" ? (
       <DevSandboxLmsPreview
         role={effectiveRole}
@@ -867,13 +867,20 @@ export function SchoolHome() {
               onOpenClasses={() => selectView("kelas")}
             />
           )}
-          {isDevelopmentModule(view) && (
-            <ModulePlaceholderView
-              moduleId={view}
-              icon={MENU_ICON_MAP.get(view) ?? Layers}
-              onBackToDashboard={() => selectView("dashboard")}
-            />
-          )}
+          {view === "modul-kesetaraan" && hasPlanAccess(plan, "reguler") && <ModulKesetaraanView />}
+          {view === "agenda-mengajar" && <AgendaMengajarView />}
+          {view === "cek-raport" && hasPlanAccess(plan, "reguler") && <CekRaportView />}
+          {view === "cbt-bank-soal" && hasPlanAccess(plan, "reguler") && <CbtBankSoalView />}
+          {view === "cbt-jadwal" && hasPlanAccess(plan, "reguler") && <CbtJadwalView />}
+          {view === "cbt-monitoring" && hasPlanAccess(plan, "reguler") && <CbtMonitoringView />}
+          {view === "cbt-pengaturan" && hasPlanAccess(plan, "reguler") && <CbtPengaturanView />}
+          {view === "akreditasi-snp" && hasPlanAccess(plan, "pro") && <AkreditasiSnpView />}
+          {view === "keuangan-spp" && hasPlanAccess(plan, "pro") && <KeuanganSppView />}
+          {view === "kartu-digital-qr" && hasPlanAccess(plan, "pro") && <KartuDigitalQrView />}
+          {view === "data-alumni" && hasPlanAccess(plan, "reguler") && <DataAlumniView />}
+          {view === "asisten-ai" && hasPlanAccess(plan, "pro") && <AsistenAiView />}
+          {view === "manajemen-aset" && hasPlanAccess(plan, "pro") && <ManajemenAsetView />}
+          {view === "ruang-diskusi" && <RuangDiskusiView />}
           <SchoolData
             slug={slug}
             kind={dataKind}
@@ -963,7 +970,7 @@ function SchoolSidebar({
 }) {
   const theme = useTenantTheme();
   const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
-  const badgeClass = palette.useLightBadges ? planStyle.headerClass : planStyle.sidebarClass;
+  const badgeClass = planStyle.sidebarClass;
 
   function renderMenuItem(item: SchoolMenuItem) {
     const Icon = item.icon;
@@ -974,12 +981,13 @@ function SchoolSidebar({
         key={item.target}
         type="button"
         title={item.label}
+        data-sidebar-nav="true"
         aria-current={active ? "page" : undefined}
         onMouseEnter={() => {
-          if (!locked && !item.inDevelopment) prefetchForView(item.target);
+          if (!locked) prefetchForView(item.target);
         }}
         onClick={() => onSelectView(item.target, item.requiredPlan, item.label)}
-        className={`flex w-full items-center justify-between gap-1.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
+        className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
           active ? palette.itemActive : locked ? palette.itemLocked : palette.itemInactive
         }`}
       >
@@ -991,34 +999,22 @@ function SchoolSidebar({
           >
             <Icon size={14} />
           </span>
-          <span className="truncate">{item.label}</span>
+          <span className="leading-snug">{item.label}</span>
         </span>
-        {(item.inDevelopment || item.requiredPlan) && (
-          <span className="flex shrink-0 items-center gap-1">
-            {item.inDevelopment && (
-              <span
-                title="Modul dalam tahap pengembangan"
-                className={`inline-flex items-center rounded border px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${palette.devBadge}`}
-              >
-                DEV
-              </span>
-            )}
-            {item.requiredPlan && (
-              <span
-                className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[7px] font-extrabold uppercase tracking-wider ${
-                  item.requiredPlan === "pro"
-                    ? locked
-                      ? palette.proBadgeLocked
-                      : palette.proBadgeActive
-                    : locked
-                      ? palette.regBadgeLocked
-                      : palette.regBadgeActive
-                }`}
-              >
-                {locked && <Lock size={8} aria-hidden="true" />}
-                {item.requiredPlan === "pro" ? "PRO" : "REG"}
-              </span>
-            )}
+        {item.requiredPlan && (
+          <span
+            className={`inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${
+              item.requiredPlan === "pro"
+                ? locked
+                  ? palette.proBadgeLocked
+                  : palette.proBadgeActive
+                : locked
+                  ? palette.regBadgeLocked
+                  : palette.regBadgeActive
+            }`}
+          >
+            {locked && <Lock size={8} aria-hidden="true" />}
+            {item.requiredPlan === "pro" ? "PRO" : "REG"}
           </span>
         )}
       </button>
@@ -1027,7 +1023,7 @@ function SchoolSidebar({
 
   return (
     <aside
-      className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r p-3.5 transition-colors duration-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 ${palette.aside}`}
+      className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-72 flex-col border-r p-3.5 transition-colors duration-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 ${palette.aside}`}
     >
       <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
         <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
@@ -1052,6 +1048,7 @@ function SchoolSidebar({
       <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
         <button
           type="button"
+          data-sidebar-nav="true"
           aria-current={view === "dashboard" ? "page" : undefined}
           onMouseEnter={() => prefetchForView("dashboard")}
           onClick={() => onSelectView("dashboard")}
@@ -1192,7 +1189,7 @@ function SchoolPortalHeader({
   const theme = useTenantTheme();
   const isDark = theme === "dark";
   const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
-  const headerBadgeClass = palette.useLightBadges ? planStyle.headerClass : planStyle.sidebarClass;
+  const headerBadgeClass = isDark ? planStyle.sidebarClass : planStyle.headerClass;
   return (
     <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
       <button

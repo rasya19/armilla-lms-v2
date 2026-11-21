@@ -34,6 +34,8 @@ function createMockPrisma(): PrismaClient {
     createMany: async () => ({ count: 0 }),
     update: async (d?: { data?: unknown }) => d?.data ?? {},
     updateMany: async () => ({ count: 0 }),
+    upsert: async (d?: { create?: unknown; update?: unknown }) => d?.create ?? d?.update ?? {},
+    aggregate: async () => ({ _avg: {}, _count: { _all: 0 }, _sum: {} }),
     delete: async () => ({}),
     deleteMany: async () => ({ count: 0 }),
   };

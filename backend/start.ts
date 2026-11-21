@@ -15,6 +15,11 @@ if (fs.existsSync(frontendDist)) {
   });
 }
 
-const port = Number(process.env.PORT || 3000);
+const rawPort = process.env.PORT;
+const port = Number(
+  rawPort && rawPort !== process.env.NGINX_PORT
+    ? rawPort
+    : process.env.DEFAULT_APP_PORT || 3000,
+);
 const host = process.env.HOST || "0.0.0.0";
 app.listen(port, host, () => console.log(`Server berjalan di http://${host}:${port}`));

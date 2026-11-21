@@ -870,7 +870,7 @@ export function SchoolHome() {
               onOpenClasses={() => selectView("kelas")}
             />
           )}
-          {showDevMenus && isDevelopmentModule(view) && (
+          {isDevelopmentModule(view) && (
             <ModulePlaceholderView
               moduleId={view}
               icon={MENU_ICON_MAP.get(view) ?? Layers}

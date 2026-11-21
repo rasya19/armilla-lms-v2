@@ -183,7 +183,7 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
       return { error: "Data perubahan paket tidak valid." };
     }
     const input = body as Record<string, unknown>;
-    const cleanPlan = toCleanPlanCode(input.plan ?? input.paket ?? input.tier ?? input.planCode);
+    const cleanPlan = toCleanPlanCode(input.planTier ?? input.plan ?? input.paket ?? input.tier ?? input.planCode);
     if (!cleanPlan) {
       return { error: "Kode paket tidak valid. Gunakan basic, reguler, atau pro." };
     }
@@ -227,7 +227,7 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     ) {
       return true;
     }
-    const hasPlan = "plan" in input || "paket" in input || "tier" in input || "planCode" in input;
+    const hasPlan = "planTier" in input || "plan" in input || "paket" in input || "tier" in input || "planCode" in input;
     const hasTarget = "npsn" in input || "slug" in input || "subdomain" in input || "sekolahId" in input || "tenantId" in input;
     const hasCreationFields = "institutionName" in input || "adminEmail" in input || "expiresAt" in input;
     return hasPlan && hasTarget && !hasCreationFields;

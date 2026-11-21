@@ -724,9 +724,6 @@ export function SchoolHome() {
   function handleSandboxModeChange(nextMode: SandboxMode) {
     if (!isDeveloper) return;
     setSandboxMode(nextMode);
-    if (nextMode === "client" && isDevelopmentModule(view)) {
-      setView("dashboard");
-    }
   }
 
   function handleSandboxRoleChange(nextRole: SandboxRole) {
@@ -768,10 +765,10 @@ export function SchoolHome() {
   const effectiveRole: SandboxRole = isDeveloper ? sandboxRole : "ADMIN";
   const showDevMenus = isDeveloper && effectiveMode === "dev";
 
-  const visibleMasterItems = masterItems.filter((item) => !item.inDevelopment || showDevMenus);
-  const visibleAcademicItems = academicItems.filter((item) => !item.inDevelopment || showDevMenus);
-  const visibleCbtItems = cbtItems.filter((item) => !item.inDevelopment || showDevMenus);
-  const visibleStandaloneItems = standaloneItems.filter((item) => !item.inDevelopment || showDevMenus);
+  const visibleMasterItems = masterItems;
+  const visibleAcademicItems = academicItems;
+  const visibleCbtItems = cbtItems;
+  const visibleStandaloneItems = standaloneItems;
 
   if (status === "unauthorized") return <Navigate to="/login" replace />;
   if (status === "loading") return <PortalSpinner label="Memuat portal sekolah" />;

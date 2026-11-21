@@ -169,7 +169,18 @@ export default function App() {
         }
         if (!response.ok) throw new Error("Gagal memeriksa sekolah.");
         const data: unknown = await response.json();
-        if (typeof data !== "object" || data === null || !("kind" in data) || data.kind !== "school") {
+        const root = typeof data === "object" && data !== null && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
+        const nested =
+          root && typeof root.data === "object" && root.data !== null && !Array.isArray(root.data)
+            ? (root.data as Record<string, unknown>)
+            : root && typeof root.school === "object" && root.school !== null && !Array.isArray(root.school)
+              ? (root.school as Record<string, unknown>)
+              : root;
+        const isSchoolContext =
+          nested !== null &&
+          nested.kind !== "main" &&
+          (nested.kind === "school" || (typeof nested.id === "string" && typeof nested.slug === "string"));
+        if (!isSchoolContext) {
           throw new Error("Respons sekolah tidak valid.");
         }
         setContextWarning("");

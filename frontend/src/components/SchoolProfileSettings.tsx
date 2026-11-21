@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { KopSurat } from "./KopSurat";
-import { isSchoolProfile, type SchoolProfile } from "./schoolProfile";
+import { parseSchoolProfile, type SchoolProfile } from "./schoolProfile";
 
 const fields: { key: Exclude<keyof SchoolProfile, "logoUrl">; label: string; type?: string; max: number }[] = [
   { key: "namaYayasan", label: "Nama yayasan", max: 200 },
@@ -28,8 +28,9 @@ export function SchoolProfileSettings() {
     fetch("/api/sekolah/profil", { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("Profil belum dapat dimuat.");
       const body: unknown = await response.json();
-      if (!isSchoolProfile(body)) throw new Error("Respons profil tidak valid.");
-      setProfile(body);
+      const parsed = parseSchoolProfile(body);
+      if (!parsed) throw new Error("Respons profil tidak valid.");
+      setProfile(parsed);
     }).catch((failure: unknown) => { if (!controller.signal.aborted) { console.error("Gagal memuat profil:", failure); setError(failure instanceof Error ? failure.message : "Profil belum dapat dimuat."); } });
     return () => controller.abort();
   }, []);
@@ -61,8 +62,9 @@ export function SchoolProfileSettings() {
       const response = await fetch("/api/sekolah/profil", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) });
       const data: unknown = await response.json();
       if (!response.ok) throw new Error(typeof data === "object" && data !== null && "error" in data && typeof data.error === "string" ? data.error : "Profil belum dapat disimpan.");
-      if (!isSchoolProfile(data)) throw new Error("Respons profil tidak valid. Muat ulang untuk memeriksa hasil.");
-      setProfile(data); setNotice("Profil lembaga berhasil disimpan.");
+      const parsed = parseSchoolProfile(data);
+      if (!parsed) throw new Error("Respons profil tidak valid. Muat ulang untuk memeriksa hasil.");
+      setProfile(parsed); setNotice("Profil lembaga berhasil disimpan.");
     } catch (failure) { console.error("Gagal menyimpan profil:", failure); setError(failure instanceof TypeError ? "Koneksi terputus. Muat ulang untuk memeriksa hasil." : failure instanceof Error ? failure.message : "Profil belum dapat disimpan."); }
     finally { setBusy(false); }
   }

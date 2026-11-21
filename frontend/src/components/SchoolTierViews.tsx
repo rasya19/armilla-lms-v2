@@ -20,7 +20,7 @@ import { ClassPromotion } from "./ClassPromotion";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { SchoolModal } from "./SchoolModal";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
-import { dispatchTenantThemeChange, isThemeKey, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
+import { isThemeKey, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { ensureStandardClasses } from "./standardClasses";
 import { getPlanBySlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
@@ -586,6 +586,12 @@ const THEME_OPTIONS: Array<{
     swatch: "from-sky-700 via-blue-700 to-amber-500",
   },
   {
+    key: "violet",
+    label: "Royal Violet",
+    description: "Ungu indigo elegan berpadu aksen lavender lembut.",
+    swatch: "from-indigo-700 via-indigo-600 to-violet-600",
+  },
+  {
     key: "emerald",
     label: "Emerald Fresh",
     description: "Segar dan menenangkan dengan aksen hijau zamrud dan teal.",
@@ -634,7 +640,6 @@ export function SchoolThemeIdentityView() {
     show_news: initialIdentity?.settings.show_news ?? true,
   }));
   const [loading, setLoading] = useState(!initialIdentity);
-  const [themeBusy, setThemeBusy] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -700,40 +705,6 @@ export function SchoolThemeIdentityView() {
     return () => controller.abort();
   }, []);
 
-  async function applyTheme(themeKey: ThemeKey) {
-    setThemeBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      const res = await fetchWithTimeout("/api/sekolah/tema", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ themeKey }),
-      });
-      const body: unknown = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
-            ? body.error
-            : "Tema gagal diperbarui."
-        );
-      }
-      setSelectedTheme(themeKey);
-      invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
-      dispatchTenantThemeChange(themeKey);
-      const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
-      const slugKey = cached?.sekolah.slug || deriveTenantSlugFromHost();
-      if (slugKey && cached) {
-        saveCachedTenantProfile(slugKey, { nama: cached.sekolah.nama, slug: slugKey, themeKey });
-      }
-      setMessage("Tema dashboard sekolah dan LMS siswa/guru berhasil diperbarui.");
-    } catch (failure: unknown) {
-      setError(describeFetchError(failure, "Tema gagal diperbarui."));
-    } finally {
-      setThemeBusy(false);
-    }
-  }
-
   async function saveIdentity(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormBusy(true);
@@ -781,9 +752,9 @@ export function SchoolThemeIdentityView() {
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
+        eyebrow="TAMPILAN & BRANDING"
         title="Tema & Identitas Sekolah"
-        description="Sesuaikan tema visual portal Admin & LMS serta lengkapi identitas lembaga PKBM Anda."
-        badge="Paket Pro"
+        description="Seluruh paket menggunakan tema platform seragam dari Master Admin, serta kustomisasi identitas lembaga PKBM Anda."
       />
 
       {error && (
@@ -802,36 +773,43 @@ export function SchoolThemeIdentityView() {
       ) : (
         <div className="mt-5 space-y-6">
           <div className={panelClass}>
-            <div className="flex items-center gap-2">
-              <Palette size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
-              <div>
-                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Tema Visual Portal Sekolah &amp; LMS</h3>
-                <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                  Perubahan tema langsung diterapkan untuk Admin Sekolah, Guru, dan Siswa pada subdomain lembaga Anda.
-                </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Palette size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+                <div>
+                  <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Tema Global Platform Aktif</h3>
+                  <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    Dikelola terpusat oleh Master Admin dan diterapkan seragam untuk seluruh paket (Basic, Reguler, maupun Pro).
+                  </p>
+                </div>
               </div>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ${
+                  isDark ? "bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/35" : "bg-indigo-100 text-indigo-900"
+                }`}
+              >
+                <Check size={13} aria-hidden="true" />
+                {THEME_OPTIONS.find((item) => item.key === selectedTheme)?.label ?? selectedTheme}
+              </span>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {THEME_OPTIONS.map((option) => {
                 const active = selectedTheme === option.key;
                 return (
-                  <button
+                  <div
                     key={option.key}
-                    type="button"
-                    disabled={themeBusy}
-                    onClick={() => applyTheme(option.key)}
                     className={`rounded-2xl border p-3.5 text-left transition ${
                       active
                         ? isDark
                           ? "border-amber-400/70 bg-amber-500/12 ring-2 ring-amber-400/30"
                           : "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/30"
                         : isDark
-                          ? "border-slate-700/70 bg-slate-950/60 hover:border-amber-400/40"
-                          : "border-slate-200 bg-white hover:border-indigo-300"
+                          ? "border-slate-700/70 bg-slate-950/60 opacity-75"
+                          : "border-slate-200 bg-white opacity-75"
                     }`}
                   >
-                    <div className={`h-12 w-full rounded-xl bg-gradient-to-r ${option.swatch}`} />
+                    <div className={`h-11 w-full rounded-xl bg-gradient-to-r ${option.swatch}`} />
                     <div className="mt-3 flex items-center justify-between gap-2">
                       <span className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{option.label}</span>
                       {active && (
@@ -848,7 +826,7 @@ export function SchoolThemeIdentityView() {
                       )}
                     </div>
                     <p className={`mt-1 text-xs leading-5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{option.description}</p>
-                  </button>
+                  </div>
                 );
               })}
             </div>

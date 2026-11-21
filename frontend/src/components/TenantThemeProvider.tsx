@@ -3,7 +3,7 @@ import { canAccessFeature, isPlanTier, type PlanTier } from "../utils/planAccess
 import { deriveTenantSlugFromHost, getCachedTenantProfile, saveCachedTenantProfile } from "./authSessionCache";
 import { fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
-export type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
+export type ThemeKey = "ocean" | "emerald" | "sunset" | "violet" | "dark";
 
 export const TENANT_THEME_EVENT = "armilla:tenant-theme-changed";
 const PREFERRED_THEME_STORAGE_KEY = "armilla:preferred-theme";
@@ -29,7 +29,15 @@ export function useTenantPlan(): TenantPlanContextValue {
 }
 
 export function isThemeKey(value: unknown): value is ThemeKey {
-  return value === "ocean" || value === "emerald" || value === "sunset" || value === "dark";
+  return value === "ocean" || value === "emerald" || value === "sunset" || value === "violet" || value === "dark";
+}
+
+export function normalizeThemeKey(value: unknown, fallback: ThemeKey = "ocean"): ThemeKey {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (isThemeKey(normalized)) return normalized;
+  }
+  return fallback;
 }
 
 export function savePreferredTheme(themeKey: ThemeKey) {
@@ -41,7 +49,7 @@ export function savePreferredTheme(themeKey: ThemeKey) {
   }
 }
 
-export function getPreferredTheme(fallback: ThemeKey = "dark"): ThemeKey {
+export function getPreferredTheme(fallback: ThemeKey = "ocean"): ThemeKey {
   if (typeof window !== "undefined") {
     try {
       const stored = window.localStorage.getItem(PREFERRED_THEME_STORAGE_KEY);
@@ -104,7 +112,16 @@ export function TenantThemeProvider({
     const controller = new AbortController();
     fetchWithTimeout(`/api/tenant/theme?scope=${scope}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) return;
+        if (!response.ok) {
+          const publicRes = await fetchWithTimeout("/api/public/tema", { signal: controller.signal, cache: "no-store" }).catch(() => null);
+          if (!publicRes || !publicRes.ok) return;
+          const pubData: unknown = await publicRes.json();
+          if (typeof pubData === "object" && pubData !== null && "themeKey" in pubData && isThemeKey(pubData.themeKey)) {
+            setTheme(pubData.themeKey);
+            savePreferredTheme(pubData.themeKey);
+          }
+          return;
+        }
         const data: unknown = await response.json();
         if (typeof data !== "object" || data === null || !("themeKey" in data) || !isThemeKey(data.themeKey)) return;
         setTheme(data.themeKey);

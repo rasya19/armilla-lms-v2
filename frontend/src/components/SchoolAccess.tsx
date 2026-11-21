@@ -49,7 +49,8 @@ import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { CardGridSkeleton, DashboardHero, PortalSpinner } from "./DashboardUI";
 import { Classroom } from "./Classroom";
-import { isThemeKey, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
+import { isThemeKey, normalizeThemeKey, savePreferredTheme, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
+import { unwrapSchoolPayload } from "./schoolProfile";
 import { getCached, invalidateCache, prefetchCoreSchoolData, prefetchForView, setCached, setCacheScope } from "./schoolCache";
 import { resetStandardClassesCache } from "./standardClasses";
 import {
@@ -181,7 +182,7 @@ const standaloneItems: SchoolMenuItem[] = [
   { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
   { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
   { label: "Asisten Belajar AI", icon: Bot, target: "asisten-ai", requiredPlan: "pro" },
-  { label: "Tema & Identitas Sekolah", icon: Palette, target: "tema-identitas", requiredPlan: "pro" },
+  { label: "Tema & Identitas Sekolah", icon: Palette, target: "tema-identitas" },
   { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro" },
   { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "pro" },
   { label: "Ganti Password", icon: KeyRound, target: "password" },
@@ -362,6 +363,45 @@ const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
     mobileAccentBg: "bg-fuchsia-100/90",
     mobileFab: "bg-gradient-to-br from-violet-600 to-fuchsia-500",
   },
+  violet: {
+    aside:
+      "border-indigo-300/30 bg-[linear-gradient(180deg,#312e81_0%,#4338ca_50%,#6d28d9_100%)] text-white shadow-[4px_0_28px_rgba(67,56,202,0.28)]",
+    headerDivider: "border-white/20",
+    identityCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    avatar: "bg-gradient-to-tr from-amber-300 to-amber-500 text-indigo-950 shadow-sm",
+    schoolName: "text-white",
+    roleText: "text-indigo-100",
+    closeBtn: "text-indigo-100 hover:bg-white/15 hover:text-white",
+    dashboardActive: "bg-white text-indigo-950 shadow-md shadow-indigo-950/25",
+    dashboardActiveIcon: "bg-indigo-100 text-indigo-800",
+    dashboardInactive: "text-indigo-50/95 hover:bg-white/15 hover:text-white",
+    dashboardInactiveIcon: "bg-white/15 text-indigo-100",
+    sectionLabel: "text-indigo-200/80",
+    groupButton: "text-white hover:bg-white/15 hover:text-white",
+    groupIcon: "bg-white/15 text-indigo-100",
+    groupBorder: "border-indigo-300/30",
+    itemActive: "border border-white/80 bg-white text-indigo-950 shadow-sm",
+    itemActiveIcon: "bg-gradient-to-br from-indigo-700 to-violet-600 text-white shadow-xs",
+    itemInactive: "text-indigo-50/90 hover:bg-white/15 hover:text-white",
+    itemLocked: "text-indigo-100/70 hover:bg-white/10 hover:text-white",
+    itemIcon: "bg-white/15 text-indigo-100",
+    proBadgeActive: "bg-amber-300/30 text-amber-50 ring-1 ring-amber-200/70",
+    proBadgeLocked: "bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/50",
+    regBadgeActive: "bg-violet-300/25 text-violet-50 ring-1 ring-violet-200/60",
+    regBadgeLocked: "bg-violet-400/20 text-violet-100 ring-1 ring-violet-200/45",
+    standaloneDivider: "border-white/20",
+    footerDivider: "border-white/20",
+    tierCard: "border-white/25 bg-white/12 shadow-xs backdrop-blur-md",
+    tierLabel: "text-indigo-100",
+    refreshBtn: "text-amber-200 hover:bg-white/15 hover:text-white",
+    logoutBtn: "border-rose-300/40 bg-rose-500/20 text-rose-50 hover:bg-rose-500/35",
+    headerSchoolPill: "bg-indigo-100/90 text-indigo-950",
+    headerAvatar: "bg-gradient-to-br from-indigo-600 to-violet-600",
+    headerMenuBtn: "hover:bg-indigo-100 text-indigo-900",
+    mobileAccentText: "text-indigo-700",
+    mobileAccentBg: "bg-indigo-100/90",
+    mobileFab: "bg-gradient-to-br from-indigo-600 to-violet-600",
+  },
   dark: {
     aside:
       "border-slate-800/80 bg-[#080f1e]/92 text-slate-200 shadow-[4px_0_32px_rgba(2,6,23,0.6)] backdrop-blur-2xl",
@@ -414,6 +454,7 @@ export function SchoolLogin() {
   const initialProfile = hostSlug ? getCachedTenantProfile(hostSlug) : null;
   const [schoolName, setSchoolName] = useState<string>(() => initialProfile?.nama ?? formatSlugDisplayName(hostSlug));
   const [logoUrl, setLogoUrl] = useState<string | null>(() => initialProfile?.logoUrl ?? null);
+  const [theme, setTheme] = useState<ThemeKey>(() => normalizeThemeKey(initialProfile?.themeKey, "ocean"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -426,25 +467,32 @@ export function SchoolLogin() {
   useEffect(() => {
     const controller = new AbortController();
     const endpoint = hostSlug ? `/api/public/sekolah/${encodeURIComponent(hostSlug)}` : "/api/public/sekolah";
-    fetchWithTimeout(endpoint, { signal: controller.signal })
+    fetchWithTimeout(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return;
-        const data = (await response.json()) as {
-          nama?: string;
-          slug?: string;
-          logoUrl?: string | null;
-          themeKey?: string;
-          plan?: string;
-        };
-        if (typeof data.nama === "string" && data.nama.trim()) {
-          setSchoolName(data.nama);
-          setLogoUrl(typeof data.logoUrl === "string" && data.logoUrl ? data.logoUrl : null);
-          saveCachedTenantProfile(data.slug || hostSlug, {
-            nama: data.nama,
-            slug: data.slug || hostSlug,
-            logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : null,
-            themeKey: data.themeKey,
-            plan: data.plan,
+        const raw: unknown = await response.json();
+        const data = unwrapSchoolPayload(raw);
+        if (!data) return;
+        const resolvedName =
+          typeof data.nama === "string" && data.nama.trim()
+            ? data.nama.trim()
+            : typeof data.name === "string" && data.name.trim()
+              ? data.name.trim()
+              : "";
+        const resolvedSlug = typeof data.slug === "string" && data.slug ? data.slug : hostSlug;
+        const resolvedLogo = typeof data.logoUrl === "string" && data.logoUrl ? data.logoUrl : null;
+        const resolvedTheme = normalizeThemeKey(data.themeKey, "ocean");
+        setTheme(resolvedTheme);
+        savePreferredTheme(resolvedTheme);
+        if (resolvedName) {
+          setSchoolName(resolvedName);
+          setLogoUrl(resolvedLogo);
+          saveCachedTenantProfile(resolvedSlug, {
+            nama: resolvedName,
+            slug: resolvedSlug,
+            logoUrl: resolvedLogo,
+            themeKey: resolvedTheme,
+            plan: typeof data.plan === "string" ? data.plan : undefined,
           });
         }
       })
@@ -527,7 +575,7 @@ export function SchoolLogin() {
     }
   }
 
-  return <main className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
+  return <main data-tenant-theme={theme} className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
     <div className="flex items-center gap-3">
       {logoUrl ? (
         <img src={logoUrl} alt={`Logo ${schoolName}`} className="h-11 w-11 rounded-xl border border-white/20 object-cover shadow-sm" />
@@ -603,22 +651,32 @@ export function SchoolHome() {
         return;
       }
       if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
-      const data: unknown = await response.json();
-      if (typeof data !== "object" || data === null || !("sekolah" in data) || typeof data.sekolah !== "string" || !("slug" in data) || typeof data.slug !== "string") {
+      const rawData: unknown = await response.json();
+      const data = unwrapSchoolPayload(rawData);
+      const resolvedSchoolName =
+        data && typeof data.sekolah === "string" && data.sekolah.trim()
+          ? data.sekolah.trim()
+          : data && typeof data.nama === "string" && data.nama.trim()
+            ? data.nama.trim()
+            : data && typeof data.name === "string" && data.name.trim()
+              ? data.name.trim()
+              : "";
+      const resolvedSlug = data && typeof data.slug === "string" && data.slug.trim() ? data.slug.trim() : fallbackSlug;
+      if (!data || !resolvedSchoolName || !resolvedSlug) {
         throw new Error("Respons sesi tidak valid.");
       }
       const rawOrNormalized =
-        ("plan" in data && typeof data.plan === "string" ? data.plan : null) ??
-        ("rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null);
+        (typeof data.plan === "string" ? data.plan : null) ??
+        (typeof data.rawPlan === "string" ? data.rawPlan : null);
       const resolvedPlan = resolvePlanSlug(rawOrNormalized);
       const devFlag =
-        ("isDeveloper" in data && data.isDeveloper === true) ||
-        ("email" in data && typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
-      const themeKeyValue = "themeKey" in data && typeof data.themeKey === "string" ? data.themeKey : undefined;
+        data.isDeveloper === true ||
+        (typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
+      const themeKeyValue = typeof data.themeKey === "string" ? data.themeKey : undefined;
 
-      setSchool(data.sekolah);
-      setSlug(data.slug);
-      setCacheScope(data.slug);
+      setSchool(resolvedSchoolName);
+      setSlug(resolvedSlug);
+      setCacheScope(resolvedSlug);
       setPlan((prevPlan) => {
         if (prevPlan !== resolvedPlan) {
           invalidateCache([
@@ -640,19 +698,19 @@ export function SchoolHome() {
       }
       saveAuthCache<SchoolAuthCache>("sekolah", {
         token: initialAuth?.token,
-        nama: "nama" in data && typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
-        email: "email" in data && typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
+        nama: typeof data.nama === "string" ? data.nama : initialAuth?.nama ?? "Admin",
+        email: typeof data.email === "string" ? data.email : initialAuth?.email ?? null,
         isDeveloper: devFlag,
-        sekolah: data.sekolah,
-        slug: data.slug,
+        sekolah: resolvedSchoolName,
+        slug: resolvedSlug,
         plan: resolvedPlan,
-        rawPlan: "rawPlan" in data && typeof data.rawPlan === "string" ? data.rawPlan : null,
+        rawPlan: typeof data.rawPlan === "string" ? data.rawPlan : null,
         themeKey: themeKeyValue,
         updatedAt: Date.now(),
       });
-      saveCachedTenantProfile(data.slug, {
-        nama: data.sekolah,
-        slug: data.slug,
+      saveCachedTenantProfile(resolvedSlug, {
+        nama: resolvedSchoolName,
+        slug: resolvedSlug,
         themeKey: themeKeyValue,
         plan: resolvedPlan,
       });
@@ -858,12 +916,10 @@ export function SchoolHome() {
           {view === "rekap-akademik" && hasPlanAccess(plan, "reguler") && (
             <SchoolAcademicRecap mode="rekap" onOpenClassroom={() => selectView("ruang-kbm")} />
           )}
-          {view === "tema-identitas" && hasPlanAccess(plan, "pro") && (
-            <SchoolThemeIdentityView />
-          )}
+          {view === "tema-identitas" && <SchoolThemeIdentityView />}
           {view === "pengaturan-lanjutan" && hasPlanAccess(plan, "pro") && (
             <SchoolAdvancedSettingsView
-              onOpenTheme={() => selectView("tema-identitas", "pro", "Tema & Identitas Sekolah")}
+              onOpenTheme={() => selectView("tema-identitas")}
               onOpenClasses={() => selectView("kelas")}
             />
           )}
@@ -1268,7 +1324,7 @@ function SchoolMobileNav({
       className={
         isDark
           ? "fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md items-center justify-around gap-1 rounded-full border border-slate-700/60 bg-slate-900/90 px-2 py-1.5 shadow-[0_14px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl md:hidden"
-          : "fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
+          : "fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-white/85 bg-white/90 px-1 pt-2 shadow-[0_-8px_30px_rgba(15,76,129,0.08)] backdrop-blur-xl md:hidden"
       }
       style={isDark ? undefined : { paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
@@ -1729,7 +1785,7 @@ function SchoolOverview({
                 <ul className="mt-5 space-y-2.5 text-xs">
                   <li
                     className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
-                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/90 text-slate-800"
                     }`}
                   >
                     <span>Total warga belajar aktif &amp; rombel berjalan</span>
@@ -1739,7 +1795,7 @@ function SchoolOverview({
                   </li>
                   <li
                     className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
-                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/90 text-slate-800"
                     }`}
                   >
                     <span>Antrean seleksi PPDB menunggu tinjauan</span>
@@ -1749,7 +1805,7 @@ function SchoolOverview({
                   </li>
                   <li
                     className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
-                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/80 text-slate-800"
+                      isDark ? "border-slate-700/50 bg-slate-950/55 text-slate-300" : "border-white bg-white/90 text-slate-800"
                     }`}
                   >
                     <span>Aktivitas materi ajar, tugas KBM, &amp; presensi</span>
@@ -1793,7 +1849,7 @@ function SchoolOverview({
 
                 <dl
                   className={`mt-5 space-y-2.5 rounded-xl border p-4 text-xs ${
-                    isDark ? "border-slate-700/50 bg-slate-950/55" : "border-white bg-white/80"
+                    isDark ? "border-slate-700/50 bg-slate-950/55" : "border-white bg-white/90"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -1825,7 +1881,7 @@ function SchoolOverview({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => onRequireUpgrade("Tema & Identitas Sekolah", "pro")}
+                    onClick={() => onRequireUpgrade("Pengaturan Lanjutan Tenant", "pro")}
                     className="master-primary flex-1 rounded-xl py-2.5"
                   >
                     Lihat Fitur Paket Pro

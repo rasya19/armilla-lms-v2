@@ -759,3 +759,9 @@ model SiteStat {
   visitors  Int      @default(0)
   updatedAt DateTime @updatedAt
 }
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

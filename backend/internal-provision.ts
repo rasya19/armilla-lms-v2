@@ -5,9 +5,10 @@ import { generateTemporaryPassword, hashPassword } from "./password.js";
 import { parseRegistration } from "./school-registration.js";
 import { toCleanPlanCode } from "./lms-plan-sync.js";
 import type { TenantPlan } from "./plan-utils.js";
+import { getGlobalTheme, isGlobalThemeKey, type GlobalThemeKey } from "./global-theme.js";
 
 type Status = "ACTIVE" | "SUSPENDED";
-type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
+type ThemeKey = GlobalThemeKey;
 type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date };
 type PlanUpdate = { sekolahId?: string | null; npsn: string | null; slug: string | null; plan: TenantPlan };
 type UpdatedTenantPlan = { id: string; nama: string; slug: string; npsn: string | null; plan: string | null };
@@ -45,6 +46,7 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
   return {
     async provision(data, passwordHash) {
       try {
+        const globalTheme = await getGlobalTheme(prisma);
         return await prisma.$transaction(async (tx) => {
           const [dupNpsn, dupSlug, dupEmail] = await Promise.all([
             tx.sekolah.findUnique({ where: { npsn: data.npsn }, select: { id: true } }),
@@ -54,7 +56,18 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
           if (dupNpsn) throw new ProvisionConflict("NPSN sudah terdaftar.");
           if (dupSlug) throw new ProvisionConflict("Subdomain sudah terdaftar.");
           if (dupEmail) throw new ProvisionConflict("Email admin sudah terdaftar.");
-          const school = await tx.sekolah.create({ data: { nama: data.institutionName, npsn: data.npsn, slug: data.subdomain, status: "ACTIVE", expiresAt: data.expiresAt, plan: data.plan, adminPhone: data.adminPhone } });
+          const school = await tx.sekolah.create({
+            data: {
+              nama: data.institutionName,
+              npsn: data.npsn,
+              slug: data.subdomain,
+              status: "ACTIVE",
+              expiresAt: data.expiresAt,
+              plan: data.plan,
+              adminPhone: data.adminPhone,
+              themeKey: globalTheme,
+            },
+          });
           await tx.akun.create({ data: { sekolahId: school.id, nama: data.adminName, email: data.adminEmail, passwordHash, peran: "ADMIN" } });
           await tx.pendaftaranSekolah.updateMany({
             where: { npsn: data.npsn, status: "MENUNGGU", sekolahId: null },
@@ -160,7 +173,7 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     const all = input.applyToAll;
     const validId = typeof id === "string" && id.length > 0 && id.length <= 100 && id === id.trim();
     const validNpsn = typeof npsn === "string" && /^(?:\d{8}|[PK]\d{7})$/.test(npsn);
-    if ((themeKey !== "ocean" && themeKey !== "emerald" && themeKey !== "sunset" && themeKey !== "dark") || !((all === true && id === undefined && npsn === undefined) || (all === undefined && ((validId && npsn === undefined) || (id === undefined && validNpsn))))) return res.status(400).json({ error: "Tema atau target sekolah tidak valid." });
+    if (!isGlobalThemeKey(themeKey) || !((all === true && id === undefined && npsn === undefined) || (all === undefined && ((validId && npsn === undefined) || (id === undefined && validNpsn))))) return res.status(400).json({ error: "Tema atau target sekolah tidak valid." });
     try {
       const count = await store.updateTheme(themeKey, validId ? id : null, validNpsn ? npsn : undefined);
       if (all !== true && count === 0) return res.status(404).json({ error: "Sekolah tidak ditemukan." });

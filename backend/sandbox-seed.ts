@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { hashPassword } from "./password.js";
+import { getGlobalTheme } from "./global-theme.js";
 
 export const SANDBOX_SLUG = "sandbox";
 export const SANDBOX_ADMIN_EMAIL = "ismantoj88@gmail.com";
@@ -115,6 +116,7 @@ async function createSandboxSchoolRecord(prisma: PrismaClient): Promise<Resolved
     npsnTaken = false;
   }
 
+  const resolvedTheme = await getGlobalTheme(prisma, "ocean");
   try {
     const created = await prisma.sekolah.create({
       data: {
@@ -124,7 +126,7 @@ async function createSandboxSchoolRecord(prisma: PrismaClient): Promise<Resolved
         plan: "pro",
         status: "ACTIVE",
         expiresAt: null,
-        themeKey: "ocean",
+        themeKey: resolvedTheme,
         kelasStandarDibuat: true,
         kabupatenKota: "Kabupaten Bandung",
         izinVervalDinas: true,

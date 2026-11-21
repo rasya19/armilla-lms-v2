@@ -66,7 +66,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     badge: 'Hemat 2 Bulan',
     features: [
       'Seluruh fitur Paket Reguler',
-      'Kustomisasi tema dashboard lembaga terpusat',
+      'Kustomisasi identitas & branding portal lembaga',
       'Pendampingan onboarding & migrasi data lembaga',
       'Dukungan teknis prioritas & konsultasi berkala',
     ],

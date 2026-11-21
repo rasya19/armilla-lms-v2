@@ -2,23 +2,43 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { KopSurat } from "./KopSurat";
 import { RegistrationReceipt, type RegistrationData } from "./RegistrationReceipt";
-import { isSchoolProfile, type SchoolProfile } from "./schoolProfile";
-import { canAccessFeature, isPlanTier, type PlanTier } from "../utils/planAccess";
+import { parseSchoolProfile, unwrapSchoolPayload, type SchoolProfile } from "./schoolProfile";
+import { canAccessFeature, type PlanTier } from "../utils/planAccess";
+import { resolvePlanSlug } from "./subscriptionPlans";
+import { normalizeThemeKey, type ThemeKey } from "./TenantThemeProvider";
 
 export const RESERVED_SLUGS = new Set(["login", "admin", "dashboard", "ppdb", "ujian", "api", "assets", "daftar", "register", "master", "sekolah", "lms", "www"]);
-type ThemeKey = "ocean" | "emerald" | "sunset" | "dark";
 type PublicProfile = SchoolProfile & { themeKey: ThemeKey; planTier: PlanTier };
 const slugValid = (slug: string) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug) && !RESERVED_SLUGS.has(slug);
-function isPublicProfile(data: unknown): data is PublicProfile {
-  return isSchoolProfile(data) && "themeKey" in data && (data.themeKey === "ocean" || data.themeKey === "emerald" || data.themeKey === "sunset" || data.themeKey === "dark") && "planTier" in data && isPlanTier(data.planTier);
+function parsePublicProfile(data: unknown): PublicProfile | null {
+  const record = unwrapSchoolPayload(data);
+  if (!record) return null;
+  const profile = parseSchoolProfile(record);
+  if (!profile) return null;
+  const rawPlan =
+    typeof record.planTier === "string"
+      ? record.planTier
+      : typeof record.plan === "string"
+        ? record.plan
+        : typeof record.rawPlan === "string"
+          ? record.rawPlan
+          : typeof record.paket === "string"
+            ? record.paket
+            : null;
+  return {
+    ...profile,
+    themeKey: normalizeThemeKey(record.themeKey, "ocean"),
+    planTier: resolvePlanSlug(rawPlan),
+  };
 }
 async function loadProfile(slug: string, signal: AbortSignal): Promise<PublicProfile> {
   if (!slugValid(slug)) throw new Error("Sekolah tidak ditemukan.");
   const response = await fetch(`/api/public/sekolah/${encodeURIComponent(slug)}`, { signal });
   if (!response.ok) throw new Error(response.status === 404 ? "Sekolah tidak ditemukan atau tidak aktif." : "Portal sekolah belum dapat dimuat.");
   const data: unknown = await response.json();
-  if (!isPublicProfile(data)) throw new Error("Respons profil sekolah tidak valid.");
-  return data;
+  const parsed = parsePublicProfile(data);
+  if (!parsed) throw new Error("Respons profil sekolah tidak valid.");
+  return parsed;
 }
 function whatsapp(phone: string | null, message: string): string | null {
   if (!phone) return null;

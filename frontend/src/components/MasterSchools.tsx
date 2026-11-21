@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, CheckCircle2, Landmark, Loader2, MapPin, Plus, RefreshCw, X } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Landmark, Loader2, MapPin, Palette, Plus, RefreshCw, X } from "lucide-react";
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
+import { dispatchTenantThemeChange, isThemeKey, type ThemeKey } from "./TenantThemeProvider";
 
 type School = {
   id: string;
@@ -232,15 +233,17 @@ export function MasterSchools() {
   }
 
   return (
-    <section className="master-section p-6 text-slate-900">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold">Kelola Tenant</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Atur paket langganan tenant dan sinkronkan langsung ke server LMS (<code className="font-mono text-xs text-indigo-800">pkbm.siput.id</code>).
-          </p>
+    <div className="space-y-6">
+      <MasterGlobalThemePanel />
+      <section className="master-section p-6 text-slate-900">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">Kelola Tenant</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Atur paket langganan tenant dan sinkronkan langsung ke server LMS (<code className="font-mono text-xs text-indigo-800">pkbm.siput.id</code>).
+            </p>
+          </div>
         </div>
-      </div>
 
       {toast && (
         <div
@@ -449,6 +452,192 @@ export function MasterSchools() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+    </section>
+    </div>
+  );
+}
+
+type GlobalThemeOption = {
+  key: ThemeKey;
+  label: string;
+  description: string;
+  swatches: [string, string, string];
+};
+
+const FALLBACK_GLOBAL_THEMES: GlobalThemeOption[] = [
+  {
+    key: "ocean",
+    label: "Ocean & Gold",
+    description: "Biru laut segar dengan aksen emas modern (bawaan platform)",
+    swatches: ["#0369a1", "#0284c7", "#eab308"],
+  },
+  {
+    key: "violet",
+    label: "Royal Violet",
+    description: "Ungu indigo elegan berpadu aksen lavender lembut",
+    swatches: ["#4338ca", "#6366f1", "#a855f7"],
+  },
+  {
+    key: "emerald",
+    label: "Emerald Nusantara",
+    description: "Hijau zamrud asri dan nuansa pendidikan ramah lingkungan",
+    swatches: ["#047857", "#10b981", "#f59e0b"],
+  },
+  {
+    key: "sunset",
+    label: "Sunset Warm",
+    description: "Oranye terakota hangat penuh energi dan optimisme",
+    swatches: ["#c2410c", "#f97316", "#facc15"],
+  },
+  {
+    key: "dark",
+    label: "Midnight Slate",
+    description: "Mode gelap profesional dengan kontras tinggi",
+    swatches: ["#0f172a", "#334155", "#38bdf8"],
+  },
+];
+
+export function MasterGlobalThemePanel() {
+  const [activeTheme, setActiveTheme] = useState<ThemeKey>("ocean");
+  const [themes, setThemes] = useState<GlobalThemeOption[]>(FALLBACK_GLOBAL_THEMES);
+  const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState<ThemeKey | null>(null);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchWithTimeout("/api/master/tema", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const body = (await response.json().catch(() => null)) as {
+          themeKey?: unknown;
+          themes?: GlobalThemeOption[];
+          error?: string;
+        } | null;
+        if (!response.ok) {
+          throw new Error(body?.error || "Tema global belum dapat dimuat.");
+        }
+        if (body && isThemeKey(body.themeKey)) {
+          setActiveTheme(body.themeKey);
+        }
+        if (body && Array.isArray(body.themes) && body.themes.length > 0) {
+          setThemes(body.themes.filter((item) => isThemeKey(item.key)));
+        }
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          setError(describeFetchError(failure, "Gagal memuat konfigurasi tema global."));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  async function selectGlobalTheme(nextTheme: ThemeKey) {
+    if (busyKey) return;
+    setBusyKey(nextTheme);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetchWithTimeout("/api/master/tema", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ themeKey: nextTheme }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        themeKey?: unknown;
+        message?: string;
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(body?.error || "Gagal menyimpan tema global platform.");
+      }
+      const resolved = isThemeKey(body?.themeKey) ? body.themeKey : nextTheme;
+      setActiveTheme(resolved);
+      dispatchTenantThemeChange(resolved);
+      setNotice(body?.message || "Tema global platform berhasil diperbarui untuk seluruh paket & tenant.");
+    } catch (failure: unknown) {
+      setError(describeFetchError(failure, "Tema global belum dapat diperbarui."));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  return (
+    <section className="master-section p-6 text-slate-900">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-800">
+            <Palette size={20} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="master-eyebrow">TEMA GLOBAL PLATFORM</p>
+            <h2 className="mt-1 text-lg font-bold">Tema Tampilan Seragam Semua Paket</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Tema yang dipilih di sini berlaku otomatis dan seragam untuk seluruh akun Paket Basic, Reguler, Pro, portal sekolah, dan halaman utama.
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-extrabold text-indigo-900">
+          Aktif: {themes.find((item) => item.key === activeTheme)?.label ?? activeTheme}
+        </span>
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-800">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
+          {notice}
+        </p>
+      )}
+
+      {loading ? (
+        <TableSkeleton rows={2} columns={5} />
+      ) : (
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {themes.map((option) => {
+            const isCurrent = activeTheme === option.key;
+            const isSaving = busyKey === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                disabled={busyKey !== null}
+                onClick={() => void selectGlobalTheme(option.key)}
+                className={`rounded-2xl border p-3.5 text-left transition disabled:opacity-60 ${
+                  isCurrent
+                    ? "border-indigo-600 bg-indigo-50/80 ring-2 ring-indigo-500/30"
+                    : "border-slate-200 bg-white/90 hover:border-indigo-400 hover:bg-white"
+                }`}
+              >
+                <div
+                  className="h-11 w-full rounded-xl shadow-inner"
+                  style={{
+                    background: `linear-gradient(120deg, ${option.swatches[0]} 0%, ${option.swatches[1]} 58%, ${option.swatches[2]} 100%)`,
+                  }}
+                />
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-slate-900">{option.label}</span>
+                  {isSaving ? (
+                    <Loader2 size={14} className="animate-spin text-indigo-700" aria-hidden="true" />
+                  ) : isCurrent ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-700 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                      <Check size={11} aria-hidden="true" />
+                      Aktif
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs leading-5 text-slate-600">{option.description}</p>
+              </button>
+            );
+          })}
         </div>
       )}
     </section>

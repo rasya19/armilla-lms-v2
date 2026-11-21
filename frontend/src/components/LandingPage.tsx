@@ -20,6 +20,7 @@ import { fetchWithTimeout, isCallerAborted } from './fetchWithTimeout';
 import {
   getPreferredTheme,
   isThemeKey,
+  savePreferredTheme,
   TENANT_THEME_EVENT,
   type ThemeKey,
 } from './TenantThemeProvider';
@@ -239,6 +240,44 @@ const LANDING_THEMES: Record<ThemeKey, LandingThemeStyles> = {
     planNote: 'text-violet-900',
     footerDot: 'text-fuchsia-600',
   },
+  violet: {
+    logoBg: 'bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/25',
+    brandSub: 'text-indigo-700',
+    navLink: 'text-slate-700 hover:text-indigo-950',
+    mobileMenuBtn: 'text-indigo-950 hover:bg-indigo-100',
+    mobileDrawer: 'border-t border-indigo-200/70 bg-white/95 text-indigo-950',
+    mobileCta: 'text-indigo-800',
+    themeBarWrap: 'border-b border-indigo-200/70 bg-white/70 backdrop-blur-xl',
+    themeBarLabel: 'text-indigo-800',
+    themeBtnActive: 'border-indigo-600 bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm',
+    themeBtnInactive: 'border-indigo-200 bg-white/80 text-slate-700 hover:border-indigo-400 hover:text-indigo-950',
+    ringBorder: 'border-indigo-400/25',
+    eyebrow: 'text-indigo-800',
+    eyebrowLine: 'bg-indigo-600',
+    heading: 'text-indigo-950',
+    bodyText: 'text-slate-700',
+    mutedText: 'text-slate-600',
+    statCard: 'border-white/90 bg-white/75 backdrop-blur-md',
+    statLabel: 'text-indigo-800',
+    statIcon: 'text-indigo-700',
+    statValue: 'text-indigo-950',
+    sparkleIcon: 'text-violet-700',
+    heroArtShell: 'bg-indigo-100',
+    heroArtGradient: 'bg-gradient-to-br from-[#e0e7ff] via-[#c7d2fe] to-[#ede9fe]',
+    heroArtCircle: 'border-white/35',
+    heroArtCaption: 'text-indigo-900',
+    heroArtBadgeText: 'text-slate-700',
+    heroArrowCircle: 'border-indigo-900/20 text-indigo-900',
+    stripAccent: 'text-indigo-800',
+    divider: 'border-indigo-200/80',
+    featureIcon: 'text-indigo-700',
+    planPopularRing: 'ring-2 ring-indigo-500/85',
+    planPopularBadge: 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white',
+    planDefaultBadge: 'bg-indigo-100 text-indigo-900',
+    planCheckWrap: 'bg-indigo-100 text-indigo-700',
+    planNote: 'text-indigo-900',
+    footerDot: 'text-indigo-600',
+  },
 };
 
 export const LandingPage: React.FC = () => {
@@ -273,6 +312,21 @@ export const LandingPage: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
+    fetchWithTimeout('/api/public/tema', { signal: controller.signal, cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data: unknown = await response.json();
+        if (typeof data === 'object' && data !== null && 'themeKey' in data && isThemeKey(data.themeKey)) {
+          setTheme(data.themeKey);
+          savePreferredTheme(data.themeKey);
+        }
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          // Keep default/preferred theme silently
+        }
+      });
+
     fetchWithTimeout('/api/public/stats', { method: 'POST', signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) return;

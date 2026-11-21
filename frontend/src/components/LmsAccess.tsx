@@ -3,7 +3,8 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { TeacherPasswordReset } from "./TeacherPasswordReset";
 import { LmsSchedule } from "./LmsSchedule";
 import { Classroom } from "./Classroom";
-import { TenantThemeProvider, useTenantTheme } from "./TenantThemeProvider";
+import { normalizeThemeKey, savePreferredTheme, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
+import { unwrapSchoolPayload } from "./schoolProfile";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation } from "./LoginNavigation";
 import { DashboardHero, PortalSpinner } from "./DashboardUI";
@@ -51,6 +52,7 @@ export function LmsLogin() {
   const initialProfile = hostSlug ? getCachedTenantProfile(hostSlug) : null;
   const [schoolName, setSchoolName] = useState<string>(() => initialProfile?.nama ?? formatSlugDisplayName(hostSlug));
   const [logoUrl, setLogoUrl] = useState<string | null>(() => initialProfile?.logoUrl ?? null);
+  const [theme, setTheme] = useState<ThemeKey>(() => normalizeThemeKey(initialProfile?.themeKey, "ocean"));
   const [peran, setPeran] = useState<"SISWA" | "GURU">("SISWA");
   const [identitas, setIdentitas] = useState("");
   const [password, setPassword] = useState("");
@@ -62,19 +64,32 @@ export function LmsLogin() {
   useEffect(() => {
     const controller = new AbortController();
     const endpoint = hostSlug ? `/api/public/sekolah/${encodeURIComponent(hostSlug)}` : "/api/public/sekolah";
-    fetchWithTimeout(endpoint, { signal: controller.signal })
+    fetchWithTimeout(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return;
-        const data = (await response.json()) as { nama?: string; slug?: string; logoUrl?: string | null; themeKey?: string; plan?: string };
-        if (typeof data.nama === "string" && data.nama.trim()) {
-          setSchoolName(data.nama);
-          setLogoUrl(typeof data.logoUrl === "string" && data.logoUrl ? data.logoUrl : null);
-          saveCachedTenantProfile(data.slug || hostSlug, {
-            nama: data.nama,
-            slug: data.slug || hostSlug,
-            logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : null,
-            themeKey: data.themeKey,
-            plan: data.plan,
+        const raw: unknown = await response.json();
+        const data = unwrapSchoolPayload(raw);
+        if (!data) return;
+        const resolvedName =
+          typeof data.nama === "string" && data.nama.trim()
+            ? data.nama.trim()
+            : typeof data.name === "string" && data.name.trim()
+              ? data.name.trim()
+              : "";
+        const resolvedSlug = typeof data.slug === "string" && data.slug ? data.slug : hostSlug;
+        const resolvedLogo = typeof data.logoUrl === "string" && data.logoUrl ? data.logoUrl : null;
+        const resolvedTheme = normalizeThemeKey(data.themeKey, "ocean");
+        setTheme(resolvedTheme);
+        savePreferredTheme(resolvedTheme);
+        if (resolvedName) {
+          setSchoolName(resolvedName);
+          setLogoUrl(resolvedLogo);
+          saveCachedTenantProfile(resolvedSlug, {
+            nama: resolvedName,
+            slug: resolvedSlug,
+            logoUrl: resolvedLogo,
+            themeKey: resolvedTheme,
+            plan: typeof data.plan === "string" ? data.plan : undefined,
           });
         }
       })
@@ -117,7 +132,7 @@ export function LmsLogin() {
     }
   }
 
-  return <main className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
+  return <main data-tenant-theme={theme} className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
     <div className="flex items-center gap-3">
       {logoUrl ? (
         <img src={logoUrl} alt={`Logo ${schoolName}`} className="h-10 w-10 rounded-xl border border-white/20 object-cover shadow-sm" />
@@ -286,7 +301,7 @@ function LmsPortalShell({
             className={`rounded-full border px-4 py-2 text-xs font-bold transition disabled:opacity-50 sm:text-sm ${
               isDark
                 ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/50 hover:text-amber-300"
-                : "rounded-xl border-indigo-200 bg-white/70 text-indigo-700"
+                : "rounded-xl border-indigo-200 bg-white/90 text-indigo-700 backdrop-blur-md hover:bg-white"
             }`}
           >
             Keluar
@@ -399,7 +414,7 @@ function LmsPortalShell({
           className={
             isDark
               ? "fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-md justify-around gap-1 rounded-full border border-slate-700/60 bg-slate-900/90 px-2 py-1.5 shadow-[0_14px_40px_rgba(2,6,23,0.75)] backdrop-blur-2xl md:hidden"
-              : "fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-white/70 bg-white/80 px-1 pt-2 shadow-[0_-8px_30px_rgba(79,70,229,0.08)] backdrop-blur-xl md:hidden"
+              : "fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-white/85 bg-white/90 px-1 pt-2 shadow-[0_-8px_30px_rgba(15,76,129,0.08)] backdrop-blur-xl md:hidden"
           }
           style={isDark ? undefined : { paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         >

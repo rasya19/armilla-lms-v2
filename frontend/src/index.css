@@ -158,29 +158,44 @@
 .dashboard-canvas {
   position: relative;
   isolation: isolate;
-  background-color: #eefaff;
+  background-color: #e0f2fe;
   background-image:
-    radial-gradient(rgba(3, 105, 161, 0.16) 1.3px, transparent 1.3px),
-    linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%);
-  background-size: 20px 20px, 100% 100%;
+    radial-gradient(rgba(15, 76, 129, 0.14) 1.3px, transparent 1.3px),
+    radial-gradient(circle at 52% 68%, rgba(254, 240, 138, 0.55) 0%, rgba(254, 249, 195, 0.25) 36%, transparent 65%),
+    linear-gradient(125deg, #e0f2fe 0%, #bae6fd 52%, #7dd3fc 85%, #60a5fa 100%);
+  background-size: 18px 18px, 100% 100%, 100% 100%;
+  background-attachment: scroll, fixed, fixed;
 }
-.dashboard-canvas::before { content: ""; position: fixed; z-index: -1; inset: 0; pointer-events: none; background: radial-gradient(circle at 15% 20%, rgba(129,140,248,.35), transparent 34%), radial-gradient(circle at 85% 32%, rgba(34,211,238,.3), transparent 32%), radial-gradient(circle at 52% 85%, rgba(192,132,252,.25), transparent 35%); filter: blur(48px); }
+.dashboard-canvas::before { content: ""; position: fixed; z-index: -1; inset: 0; pointer-events: none; background: none; filter: blur(48px); }
 .dashboard-hero { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; overflow: hidden; border-radius: 20px; padding: 26px; color: white; background: linear-gradient(115deg, #4338ca, #1d4ed8 60%, #063c55); box-shadow: 0 16px 35px rgba(37, 99, 235, .2); }
 .dashboard-hero::after { content: ""; pointer-events: none; position: absolute; right: -35px; top: -110px; width: 250px; height: 250px; border: 35px solid rgba(255,255,255,.09); border-radius: 50%; box-shadow: 0 0 0 35px rgba(255,255,255,.06); }
 .dashboard-hero-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; background: white; padding: 11px 15px; color: #3730a3; font-size: 13px; font-weight: 800; box-shadow: 0 8px 20px rgba(30, 58, 138, .2); }
 .dashboard-hero-action:hover { background: #eef2ff; }
 .dashboard-hero-secondary { border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.2); color: white; backdrop-filter: blur(12px); }
 .dashboard-hero-secondary:hover { background: rgba(255,255,255,.3); }
-.dashboard-glass, .dashboard-header, .dashboard-canvas.glass-area section, .dashboard-canvas.glass-area article { border-color: rgba(255,255,255,.8); background: rgba(255,255,255,.65); box-shadow: 0 8px 32px rgba(31,38,135,.07); backdrop-filter: blur(24px); }
-.dashboard-glass { border: 1px solid rgba(255,255,255,.8); border-radius: 1rem; }
-.dashboard-canvas table tbody tr:hover { background-color: rgba(255,255,255,.7); }
-[data-tenant-theme="ocean"] .dashboard-canvas {
-  background-color: #eefaff;
-  background-image:
-    radial-gradient(rgba(3, 105, 161, 0.16) 1.3px, transparent 1.3px),
-    linear-gradient(135deg, #eefaff 0%, #dceffa 52%, #edf5ff 100%);
-  background-size: 20px 20px, 100% 100%;
+.dashboard-glass, .dashboard-header, .dashboard-canvas.glass-area section, .dashboard-canvas.glass-area article {
+  border-color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 32px rgba(15, 76, 129, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(22px);
 }
+.dashboard-glass { border: 1px solid rgba(255, 255, 255, 0.92); border-radius: 1rem; }
+:where(.dashboard-canvas.glass-area section section, .dashboard-canvas.glass-area section article, .dashboard-canvas.glass-area .dashboard-glass article) {
+  border-color: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 20px rgba(15, 76, 129, 0.06);
+}
+.dashboard-canvas table tbody tr:hover { background-color: rgba(255, 255, 255, 0.84); }
+[data-tenant-theme="ocean"] .dashboard-canvas {
+  background-color: #e0f2fe;
+  background-image:
+    radial-gradient(rgba(15, 76, 129, 0.14) 1.3px, transparent 1.3px),
+    radial-gradient(circle at 52% 68%, rgba(254, 240, 138, 0.55) 0%, rgba(254, 249, 195, 0.25) 36%, transparent 65%),
+    linear-gradient(125deg, #e0f2fe 0%, #bae6fd 52%, #7dd3fc 85%, #60a5fa 100%);
+  background-size: 18px 18px, 100% 100%, 100% 100%;
+  background-attachment: scroll, fixed, fixed;
+}
+[data-tenant-theme="ocean"] .dashboard-canvas::before { background: none; }
 [data-tenant-theme="ocean"] .dashboard-hero { background: linear-gradient(115deg, #075985, #0369a1 60%, #164e63); }
 [data-tenant-theme="ocean"] .master-primary { background: linear-gradient(120deg, #fbbf24, #f59e0b); color: #422006; }
 [data-tenant-theme="emerald"] .dashboard-canvas {
@@ -189,6 +204,7 @@
     radial-gradient(rgba(4, 120, 87, 0.15) 1.3px, transparent 1.3px),
     linear-gradient(135deg, #ecfdf5 0%, #d7f5eb 52%, #e6fffa 100%);
   background-size: 20px 20px, 100% 100%;
+  background-attachment: scroll, fixed;
 }
 [data-tenant-theme="emerald"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(52,211,153,.4), transparent 34%), radial-gradient(circle at 85% 32%, rgba(45,212,191,.35), transparent 32%), radial-gradient(circle at 52% 85%, rgba(110,231,183,.36), transparent 35%); }
 [data-tenant-theme="emerald"] .dashboard-hero, [data-tenant-theme="emerald"] .master-primary { background: linear-gradient(115deg, #047857, #0f766e 60%, #155e75); }
@@ -198,15 +214,28 @@
     radial-gradient(rgba(109, 40, 217, 0.14) 1.3px, transparent 1.3px),
     linear-gradient(135deg, #faf5ff 0%, #fdf2f8 52%, #fff1ed 100%);
   background-size: 20px 20px, 100% 100%;
+  background-attachment: scroll, fixed;
 }
 [data-tenant-theme="sunset"] .dashboard-canvas::before { background: radial-gradient(circle at 15% 20%, rgba(167,139,250,.42), transparent 34%), radial-gradient(circle at 85% 32%, rgba(232,121,249,.36), transparent 32%), radial-gradient(circle at 52% 85%, rgba(251,146,120,.32), transparent 35%); }
 [data-tenant-theme="sunset"] .dashboard-hero, [data-tenant-theme="sunset"] .master-primary { background: linear-gradient(115deg, #6d28d9, #a21caf 60%, #be4557); }
+[data-tenant-theme="violet"] .dashboard-canvas {
+  background-color: #eef2ff;
+  background-image:
+    radial-gradient(rgba(67, 56, 202, 0.14) 1.3px, transparent 1.3px),
+    radial-gradient(circle at 52% 68%, rgba(233, 213, 255, 0.55) 0%, rgba(243, 232, 255, 0.25) 36%, transparent 65%),
+    linear-gradient(125deg, #eef2ff 0%, #e0e7ff 52%, #c7d2fe 85%, #a5b4fc 100%);
+  background-size: 18px 18px, 100% 100%, 100% 100%;
+  background-attachment: scroll, fixed, fixed;
+}
+[data-tenant-theme="violet"] .dashboard-canvas::before { background: none; }
+[data-tenant-theme="violet"] .dashboard-hero, [data-tenant-theme="violet"] .master-primary { background: linear-gradient(115deg, #3730a3, #4f46e5 60%, #7c3aed); }
 [data-tenant-theme="dark"] .dashboard-canvas {
   background-color: #07111f;
   background-image:
     linear-gradient(to right, rgba(148, 163, 184, 0.065) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(148, 163, 184, 0.065) 1px, transparent 1px);
   background-size: 24px 24px;
+  background-attachment: scroll;
   color: #e2e8f0;
 }
 [data-tenant-theme="dark"] .dashboard-canvas::before {
@@ -589,6 +618,34 @@ html[data-tenant-theme="dark"] .glass-dialog input[type="radio"] {
   background: rgba(255, 255, 255, 0.72);
 }
 .landing-page[data-tenant-theme="sunset"] .landing-secondary:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+.landing-page[data-tenant-theme="violet"] {
+  background-color: #eef2ff;
+  background-image:
+    linear-gradient(to right, rgba(67, 56, 202, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(67, 56, 202, 0.06) 1px, transparent 1px),
+    linear-gradient(135deg, #eef2ff, #e0e7ff 52%, #f3e8ff);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  color: #1e1b4b;
+}
+.landing-page[data-tenant-theme="violet"]::before {
+  background:
+    radial-gradient(circle at 12% 14%, rgba(129, 140, 248, 0.32), transparent 36%),
+    radial-gradient(circle at 86% 24%, rgba(168, 85, 247, 0.24), transparent 36%),
+    radial-gradient(circle at 52% 88%, rgba(99, 102, 241, 0.2), transparent 38%);
+}
+.landing-page[data-tenant-theme="violet"] .landing-primary {
+  background: linear-gradient(120deg, #4338ca, #6366f1 55%, #7c3aed);
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.28);
+}
+.landing-page[data-tenant-theme="violet"] .landing-secondary {
+  color: #3730a3;
+  border: 1px solid rgba(99, 102, 241, 0.32);
+  background: rgba(255, 255, 255, 0.72);
+}
+.landing-page[data-tenant-theme="violet"] .landing-secondary:hover {
   background: rgba(255, 255, 255, 0.96);
 }
 .landing-page:not([data-tenant-theme="dark"]) .glass-panel, .school-dashboard .glass-panel, .school-dashboard.glass-area section,

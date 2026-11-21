@@ -3,8 +3,7 @@ import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { hasPlanAccess, normalizeTenantPlan, type TenantPlan } from "./plan-utils.js";
-
-const VALID_THEMES = new Set(["ocean", "emerald", "sunset", "dark"]);
+import { getGlobalTheme } from "./global-theme.js";
 
 function isSafeLogoUrl(value: string): boolean {
   if (!value) return true;
@@ -31,6 +30,12 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
       sekolahId,
       plan: normalizeTenantPlan(school?.plan),
     };
+  }
+
+  async function requireSchoolSession(req: Request): Promise<{ ok: true; sekolahId: string; plan: TenantPlan } | { ok: false; status: number; error: string }> {
+    const ctx = await resolveSchoolContext(req);
+    if (!ctx) return { ok: false, status: 401, error: "Sesi tidak valid." };
+    return { ok: true, ...ctx };
   }
 
   async function requirePlan(req: Request, required: TenantPlan): Promise<{ ok: true; sekolahId: string; plan: TenantPlan } | { ok: false; status: number; error: string }> {
@@ -143,34 +148,23 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
   });
 
   router.patch("/tema", async (req, res) => {
-    try {
-      const gate = await requirePlan(req, "pro");
-      if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
-      const themeKey = req.body?.themeKey;
-      if (typeof themeKey !== "string" || !VALID_THEMES.has(themeKey)) {
-        return res.status(400).json({ error: "Pilihan tema tidak valid." });
-      }
-      const updated = await prisma.sekolah.update({
-        where: { id: gate.sekolahId },
-        data: { themeKey },
-        select: { themeKey: true },
-      });
-      return res.json({ themeKey: updated.themeKey, message: "Tema dashboard sekolah berhasil diperbarui." });
-    } catch (error) {
-      console.error("Gagal memperbarui tema sekolah:", error);
-      return res.status(503).json({ error: "Tema sekolah belum dapat diperbarui." });
-    }
+    const auth = await requireSchoolSession(req);
+    if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+    return res.status(403).json({
+      error: "Tema tampilan platform dikelola secara terpusat oleh Master Admin agar seragam di seluruh paket.",
+    });
   });
 
   router.get("/identitas", async (req, res) => {
     try {
-      const gate = await requirePlan(req, "pro");
+      const gate = await requireSchoolSession(req);
       if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
       const school = await prisma.sekolah.findUnique({
         where: { id: gate.sekolahId },
         select: { nama: true, slug: true, npsn: true, themeKey: true },
       });
       if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+      const resolvedTheme = await getGlobalTheme(prisma, school.themeKey);
 
       let settings: {
         primary_color: string;
@@ -201,7 +195,10 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
       }
 
       return res.json({
-        sekolah: school,
+        sekolah: {
+          ...school,
+          themeKey: resolvedTheme,
+        },
         settings: settings ?? {
           primary_color: "#4f46e5",
           logo_url: null,
@@ -220,7 +217,7 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
 
   router.patch("/identitas", async (req, res) => {
     try {
-      const gate = await requirePlan(req, "pro");
+      const gate = await requireSchoolSession(req);
       if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
 
       const body = req.body;
@@ -319,10 +316,12 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
         prisma.tahunAjaran.count({ where: { sekolahId } }),
       ]);
       if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+      const resolvedTheme = await getGlobalTheme(prisma, school.themeKey);
 
       return res.json({
         sekolah: {
           ...school,
+          themeKey: resolvedTheme,
           normalizedPlan: normalizeTenantPlan(school.plan),
         },
         statistik: {

@@ -21,6 +21,7 @@ import { schoolManagementRoutes } from "./school-management-routes.js";
 import { normalizeTenantPlan } from "./plan-utils.js";
 import { schoolTierRoutes } from "./school-tier-routes.js";
 import { syncTenantPlanToLms, toCleanPlanCode } from "./lms-plan-sync.js";
+import { getGlobalTheme, GLOBAL_THEME_OPTIONS, isGlobalThemeKey, setGlobalTheme } from "./global-theme.js";
 import {
   ensureSandboxDinasAccount,
   ensureSandboxTenant,
@@ -167,6 +168,12 @@ app.post("/api/public/stats", async (_req, res) => {
   return res.json({ totalVisitors, totalSchools });
 });
 
+app.get("/api/public/tema", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const themeKey = await getGlobalTheme(prisma);
+  return res.json({ themeKey });
+});
+
 async function handlePublicSchoolLookup(req: express.Request, res: express.Response, explicitSlug?: string) {
   res.setHeader("Cache-Control", "no-store");
   const querySlug = typeof req.query.slug === "string" ? req.query.slug.trim().toLowerCase() : "";
@@ -192,6 +199,7 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
     } catch {
       logoUrl = null;
     }
+    const themeKey = await getGlobalTheme(prisma, school.themeKey);
     return res.json({
       id: school.id,
       nama: school.nama,
@@ -199,7 +207,7 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
       npsn: school.npsn ?? null,
       plan: normalizeTenantPlan(school.plan),
       status: school.status,
-      themeKey: school.themeKey ?? "ocean",
+      themeKey,
       logoUrl,
     });
   } catch (error) {
@@ -438,6 +446,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
           .catch(() => null),
       ]);
       if (!token) return { kind: "failure" };
+      const themeKey = await getGlobalTheme(prisma, schoolInfo?.themeKey);
       return {
         kind: "success",
         value: {
@@ -449,7 +458,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
           slug: schoolInfo?.slug ?? (req.tenant?.kind === "school" ? req.tenant.slug : ""),
           plan: normalizeTenantPlan(schoolInfo?.plan),
           rawPlan: schoolInfo?.plan ?? null,
-          themeKey: schoolInfo?.themeKey ?? "ocean",
+          themeKey,
         },
       };
     });
@@ -490,6 +499,7 @@ async function buildSchoolProfilePayload(req: express.Request) {
     select: { nama: true, slug: true, plan: true, themeKey: true },
   });
   if (!school) return null;
+  const themeKey = await getGlobalTheme(prisma, school.themeKey);
   return {
     nama: session.akun.nama,
     email: session.akun.email ?? null,
@@ -498,7 +508,7 @@ async function buildSchoolProfilePayload(req: express.Request) {
     slug: school.slug,
     plan: normalizeTenantPlan(school.plan),
     rawPlan: school.plan ?? null,
-    themeKey: school.themeKey ?? "ocean",
+    themeKey,
   };
 }
 
@@ -736,7 +746,8 @@ app.get("/api/tenant/theme", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const school = await prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { themeKey: true } });
     if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
-    return res.json({ themeKey: school.themeKey });
+    const themeKey = await getGlobalTheme(prisma, school.themeKey);
+    return res.json({ themeKey });
   } catch (error) {
     console.error("Gagal memuat tema sekolah:", error);
     return res.status(503).json({ error: "Tema sekolah belum dapat dimuat." });
@@ -1507,6 +1518,40 @@ app.get("/api/master/summary", async (req, res) => {
   } catch (error) {
     console.error("Gagal memuat ringkasan master:", error);
     return res.status(503).json({ error: "Ringkasan tidak tersedia. Coba lagi nanti." });
+  }
+});
+
+app.get("/api/master/tema", async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const themeKey = await getGlobalTheme(prisma);
+    return res.json({ themeKey, themes: GLOBAL_THEME_OPTIONS });
+  } catch (error) {
+    console.error("Gagal memuat tema global:", error);
+    return res.status(503).json({ error: "Tema global belum dapat dimuat." });
+  }
+});
+
+app.patch("/api/master/tema", async (req, res) => {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const rawTheme = req.body?.themeKey;
+    if (!isGlobalThemeKey(rawTheme)) {
+      return res.status(400).json({ error: "Pilihan tema tidak valid. Gunakan ocean, violet, emerald, sunset, atau dark." });
+    }
+    const result = await setGlobalTheme(prisma, rawTheme);
+    const label = GLOBAL_THEME_OPTIONS.find((item) => item.key === result.themeKey)?.label ?? result.themeKey;
+    return res.json({
+      success: true,
+      themeKey: result.themeKey,
+      updated: result.updatedSchools,
+      message: `Tema global platform berhasil diubah ke ${label} untuk seluruh paket & tenant.`,
+    });
+  } catch (error) {
+    console.error("Gagal memperbarui tema global:", error);
+    return res.status(503).json({ error: "Tema global belum dapat diperbarui." });
   }
 });
 

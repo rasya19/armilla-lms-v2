@@ -262,7 +262,6 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
       }
       return res.json({
         success: true,
-        plan: parsed.plan,
         updated: 1,
         plan: parsed.plan,
         planTier: parsed.plan,

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { LockKeyhole } from "lucide-react";
 import { LandingPage } from "./components/LandingPage";
+import { PublicSchoolPortal } from "./components/PublicSchoolPortal";
 import { MasterDashboard } from "./components/MasterDashboard";
 import { SchoolRegistration } from "./components/SchoolRegistration";
 import { SchoolHome, SchoolLogin } from "./components/SchoolAccess";
@@ -153,6 +154,7 @@ export default function App() {
   );
   const mainDomain = !!matchedBase && (hostname === matchedBase || hostname === `www.${matchedBase}`);
   const schoolDomain = !!matchedBase && !mainDomain;
+  const subdomainSlug = schoolDomain && matchedBase ? hostname.slice(0, -(matchedBase.length + 1)) : "";
   const [status, setStatus] = useState<"ready" | "missing">("ready");
   const [contextWarning, setContextWarning] = useState("");
 
@@ -193,7 +195,7 @@ export default function App() {
           </div>
         )}
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<PublicSchoolPortal slug={subdomainSlug} />} />
           <Route path="/login" element={<SchoolLogin />} />
           <Route path="/sekolah" element={<SchoolHome />} />
           <Route path="/lms/login" element={<LmsLogin />} />

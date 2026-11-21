@@ -147,6 +147,14 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     if (!body || typeof body !== "object" || Array.isArray(body)) return res.status(400).json({ error: "Permintaan tema tidak valid." });
     const input = body as Record<string, unknown>;
     const themeKey = input.themeKey;
+    if (themeKey === undefined && isPlanUpdateRequest(input)) {
+      return handlePlanUpdate(req, res);
+    }
+    const rawPlanInTheme = input.planTier ?? input.plan ?? input.paket ?? input.tier ?? input.planCode;
+    const cleanPlanInTheme = rawPlanInTheme !== undefined ? toCleanPlanCode(rawPlanInTheme) : null;
+    if (rawPlanInTheme !== undefined && !cleanPlanInTheme) {
+      return res.status(400).json({ error: "Kode paket tidak valid. Gunakan basic, reguler, atau pro." });
+    }
     const id = input.sekolahId;
     const npsn = input.npsn;
     const all = input.applyToAll;

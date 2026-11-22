@@ -439,10 +439,13 @@ model MateriAjar {
   tautan        String?
   berkasId      String?
   berkas        Berkas?     @relation(fields: [berkasId], references: [id])
+  visibility    String      @default("PRIVATE")
+  sourceSchoolName String?  @map("source_school_name")
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@index([sekolahId, kelasId, mapelId])
+  @@index([visibility])
 }
 
 model Tugas {
@@ -511,12 +514,15 @@ model Ujian {
   tampilNilai        Boolean          @default(true)
   toleransiKeluarTab Int              @default(3)
   dipublikasikan     Boolean          @default(false)
+  visibility         String           @default("PRIVATE")
+  originSchoolName   String?          @map("origin_school_name")
   createdAt          DateTime         @default(now())
   soal               SoalUjian[]
   percobaan          PercobaanUjian[]
 
   @@unique([sekolahId, kode])
   @@index([sekolahId, kelasId, mulai])
+  @@index([visibility])
 }
 
 model SoalUjian {

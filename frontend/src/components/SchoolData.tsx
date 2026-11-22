@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, FileSpreadsheet, Plus, Search, Users } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, Search, Users } from "lucide-react";
 import { StudentImport } from "./StudentImport";
 import type { StudentImportResult } from "./StudentImport";
 import { ReviewPPDB, SchoolPersonEditor, TeacherForm } from "./SchoolForms";
@@ -18,7 +18,7 @@ import { Lock } from "lucide-react";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
 
-type Row = { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null };
+type Row = { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; username?: string; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null };
 type SelectedStudent = { id: string; nama: string; nisn: string; kelasId: string | null };
 type Result = { rows: Row[]; page: number; pageSize?: number; hasNext: boolean; total?: number };
 export type SchoolDataKind = "siswa" | "guru" | "ppdb" | "kelas" | "mapel" | "akademik";
@@ -76,7 +76,11 @@ export function SchoolData({
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
   const [accountBusy, setAccountBusy] = useState(false);
-  const [credential, setCredential] = useState<{ nama: string; password: string } | null>(null);
+  const [accountModal, setAccountModal] = useState<{ row: Row; role: "siswa" | "guru"; reset: boolean } | null>(null);
+  const [accountPasswordInput, setAccountPasswordInput] = useState("123456");
+  const [showAccountPassword, setShowAccountPassword] = useState(false);
+  const [accountModalError, setAccountModalError] = useState("");
+  const [credential, setCredential] = useState<{ nama: string; username: string; password: string; role: "siswa" | "guru"; reset: boolean } | null>(null);
   const [copiedCredential, setCopiedCredential] = useState(false);
   const [accountError, setAccountError] = useState("");
   const [teacherOpen, setTeacherOpen] = useState(false);
@@ -143,16 +147,34 @@ export function SchoolData({
     if (selectAll.current) selectAll.current.indeterminate = selectedOnPageCount > 0 && selectedOnPageCount < activeRows.length;
   }, [selectedOnPageCount, activeRows.length]);
   const chosen = Array.from(selected.values());
-  async function manageAccount(row: Row, role: "siswa" | "guru", reset: boolean) {
-    const confirmText = reset
-      ? `Reset password akun ${row.nama} ke password default 123456? Semua sesi akun akan berakhir.`
-      : `Buat akun ${role} untuk ${row.nama} dengan password default 123456?`;
-    if (credential || !await confirm(confirmText)) return;
-    setAccountBusy(true); setAccountError("");
+  function openAccountModal(row: Row, role: "siswa" | "guru", reset: boolean) {
+    setAccountError("");
+    setAccountModalError("");
+    setAccountPasswordInput("123456");
+    setShowAccountPassword(false);
+    setAccountModal({ row, role, reset });
+  }
+
+  async function submitAccountModal(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accountModal) return;
+    const { row, role, reset } = accountModal;
+    const passwordToSend = accountPasswordInput.trim() || "123456";
+    if (passwordToSend.length < 6) {
+      setAccountModalError("Kata sandi minimal 6 karakter.");
+      return;
+    }
+    setAccountBusy(true);
+    setAccountError("");
+    setAccountModalError("");
     try {
-      const response = await fetchWithTimeout(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/${reset ? "reset-password" : "akun"}`, { method: "POST" });
+      const response = await fetchWithTimeout(`/api/sekolah/${role}/${encodeURIComponent(row.id)}/${reset ? "reset-password" : "akun"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: passwordToSend }),
+      });
       if (!response.ok) {
-        let message = "Akun belum dapat dibuat.";
+        let message = reset ? "Password belum dapat direset." : "Akun belum dapat dibuat.";
         if (response.headers.get("content-type")?.includes("application/json")) {
           const body: unknown = await response.json();
           if (typeof body === "object" && body !== null && "error" in body && typeof body.error === "string") message = body.error;
@@ -160,14 +182,38 @@ export function SchoolData({
         throw new Error(message);
       }
       const body: unknown = await response.json();
-      if (typeof body !== "object" || body === null || !("temporaryPassword" in body) || typeof body.temporaryPassword !== "string" || !/^(?:123456|[A-Za-z0-9_-]{24})$/.test(body.temporaryPassword)) throw new Error("Respons tidak valid. Muat ulang daftar dan reset password untuk memperoleh password baru.");
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("temporaryPassword" in body) ||
+        typeof body.temporaryPassword !== "string" ||
+        body.temporaryPassword.length < 6
+      ) {
+        throw new Error("Respons tidak valid. Muat ulang daftar dan coba kembali.");
+      }
+      const returnedUsername =
+        "username" in body && typeof body.username === "string" && body.username.trim()
+          ? body.username.trim()
+          : role === "siswa"
+            ? (row.username || row.keterangan)
+            : (row.email || row.keterangan);
       invalidateCache(`/api/sekolah/${role}`);
       setCopiedCredential(false);
-      setCredential({ nama: row.nama, password: body.temporaryPassword });
+      setAccountModal(null);
+      setCredential({
+        nama: row.nama,
+        username: returnedUsername,
+        password: body.temporaryPassword,
+        role,
+        reset,
+      });
+      setToast(reset ? `Password ${row.nama} berhasil direset.` : `Akun ${row.nama} berhasil dibuat.`);
       setVersion((value) => value + 1);
     } catch (failure) {
-      setAccountError(describeFetchError(failure, "Akun belum dapat diproses."));
-    } finally { setAccountBusy(false); }
+      setAccountModalError(describeFetchError(failure, "Akun belum dapat diproses."));
+    } finally {
+      setAccountBusy(false);
+    }
   }
   async function changeStatus(row: Row, role: "siswa" | "guru") {
     const active = row.status !== "Aktif";
@@ -204,7 +250,125 @@ export function SchoolData({
     {toast && <div role="status" className="fixed bottom-5 right-5 z-50 max-w-sm rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-lg">{toast}</div>}
     {accountError && <p role="alert" className="mt-4 text-sm text-rose-500">{accountError}</p>}
     {kind === "siswa" && importResult && <div role="status" className={`mt-4 rounded-xl border p-4 text-sm ${isDark ? "border-emerald-500/35 bg-emerald-950/50 text-emerald-200" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}><div className="flex items-start justify-between gap-3"><p className="font-semibold">Impor selesai: {importResult.created} siswa baru, {importResult.updated} siswa diperbarui; {importResult.skipped.length} siswa tanpa NISN dilewati.</p><button type="button" onClick={() => setImportResult(null)} className="shrink-0 font-bold underline">Tutup</button></div>{importResult.skipped.length > 0 && <><ul className="mt-2 list-inside list-disc">{importResult.skipped.map((row) => <li key={row.number}>Baris {row.number}: {row.nama || "(nama kosong)"}</li>)}</ul><p className="mt-2">Lengkapi NISN di file sebelum mengimpor siswa tersebut.</p></>}</div>}
-    {credential && <div role="status" className={`mt-4 rounded-xl border p-4 text-sm shadow-sm ${isDark ? "border-amber-400/40 bg-amber-950/50 text-amber-100" : "border-amber-400 bg-amber-100/95 text-amber-950"}`}><p className={`font-bold ${isDark ? "text-amber-300" : "text-amber-950"}`}>Password sementara untuk {credential.nama}</p><div className="mt-2 flex flex-wrap items-center gap-2"><code className={`break-all rounded-lg border px-3 py-1.5 font-mono text-base font-bold tracking-wider ${isDark ? "border-amber-400/40 bg-slate-950/80 text-amber-300" : "border-amber-300 bg-amber-200/80 text-slate-950"}`}>{credential.password}</code><button type="button" onClick={() => { if (navigator.clipboard?.writeText) { void navigator.clipboard.writeText(credential.password).then(() => { setCopiedCredential(true); window.setTimeout(() => setCopiedCredential(false), 2500); }).catch(() => {}); } }} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold shadow-xs transition ${isDark ? "border-amber-400/40 bg-amber-400 text-slate-950 hover:bg-amber-300" : "border-amber-400 bg-white text-slate-950 hover:bg-amber-50"}`}>{copiedCredential ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copiedCredential ? "Tersalin" : "Salin"}</button></div><p className="mt-2 leading-relaxed">Hanya ditampilkan sekarang. Sampaikan langsung melalui cara yang aman; pengguna wajib menggantinya saat masuk. Jika hilang, reset kembali.</p><button type="button" onClick={() => { setCredential(null); setCopiedCredential(false); }} className={`mt-3 inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-bold underline transition ${isDark ? "border-amber-400/40 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30" : "border-amber-400 bg-amber-200/75 text-amber-950 hover:bg-amber-200"}`}>Saya sudah menyimpan dengan aman</button></div>}
+    {credential && (
+      <div role="status" className={`mt-4 rounded-xl border p-4 text-sm shadow-sm ${isDark ? "border-emerald-400/40 bg-emerald-950/50 text-emerald-100" : "border-emerald-300 bg-emerald-50 text-emerald-950"}`}>
+        <p className={`font-extrabold ${isDark ? "text-emerald-300" : "text-emerald-900"}`}>
+          {credential.reset ? `Password baru untuk ${credential.nama}` : `Akun login baru untuk ${credential.nama}`}
+        </p>
+        <div className="mt-2.5 flex flex-wrap items-center gap-3">
+          <div className={`rounded-lg border px-3 py-1.5 text-xs ${isDark ? "border-emerald-400/30 bg-slate-950/80 text-slate-200" : "border-emerald-200 bg-white text-slate-800"}`}>
+            <span className="font-semibold opacity-75">{credential.role === "siswa" ? "NISN / Username:" : "Email:"}</span>{" "}
+            <code className="font-mono text-sm font-bold">{credential.username}</code>
+          </div>
+          <div className={`rounded-lg border px-3 py-1.5 text-xs ${isDark ? "border-emerald-400/30 bg-slate-950/80 text-amber-300" : "border-emerald-200 bg-white text-slate-900"}`}>
+            <span className="font-semibold opacity-75">Kata Sandi:</span>{" "}
+            <code className="font-mono text-sm font-bold tracking-wider">{credential.password}</code>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const info = `${credential.nama}\n${credential.role === "siswa" ? "NISN/Username" : "Email"}: ${credential.username}\nKata Sandi: ${credential.password}`;
+              if (navigator.clipboard?.writeText) {
+                void navigator.clipboard.writeText(info).then(() => {
+                  setCopiedCredential(true);
+                  window.setTimeout(() => setCopiedCredential(false), 2500);
+                }).catch(() => {});
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold shadow-xs transition ${isDark ? "border-emerald-400/40 bg-emerald-400 text-slate-950 hover:bg-emerald-300" : "border-emerald-400 bg-white text-emerald-950 hover:bg-emerald-100"}`}
+          >
+            {copiedCredential ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+            {copiedCredential ? "Info Login Tersalin" : "Salin Info Login"}
+          </button>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed opacity-90">
+          {credential.role === "siswa"
+            ? "Akun langsung aktif untuk login di Portal Siswa. Bagikan username dan kata sandi ini ke warga belajar."
+            : "Sampaikan kredensial ini ke guru terkait. Guru akan diminta mengganti password saat pertama masuk."}
+        </p>
+        <button
+          type="button"
+          onClick={() => { setCredential(null); setCopiedCredential(false); }}
+          className={`mt-3 inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-bold underline transition ${isDark ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30" : "border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100"}`}
+        >
+          Tutup Info Kredensial
+        </button>
+      </div>
+    )}
+    {accountModal && (
+      <SchoolModal
+        title={accountModal.reset ? `Reset Password ${accountModal.row.nama}` : `Buat Akun ${accountModal.role === "siswa" ? "Siswa" : "Guru"}`}
+        titleIcon={<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-600"><KeyRound size={20} aria-hidden="true" /></span>}
+        busy={accountBusy}
+        onClose={() => { if (!accountBusy) setAccountModal(null); }}
+      >
+        <form onSubmit={(e) => void submitAccountModal(e)} className="mt-4 space-y-4 text-sm">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
+            <p className="font-bold text-slate-900">{accountModal.row.nama}</p>
+            <p className="mt-1">
+              {accountModal.role === "siswa"
+                ? accountModal.row.username || accountModal.row.keterangan
+                  ? <>Login menggunakan NISN/Username: <strong className="font-mono">{accountModal.row.username || accountModal.row.keterangan}</strong></>
+                  : "NISN belum diisi — sistem akan membuatkan username otomatis berbasis nama siswa."
+                : <>Email login: <strong className="font-mono">{accountModal.row.email}</strong></>}
+            </p>
+          </div>
+          <div>
+            <label htmlFor="school-account-password" className="block text-xs font-bold text-slate-700">
+              {accountModal.reset ? "Kata Sandi Baru (default: 123456)" : "Kata Sandi Awal (default: 123456)"}
+            </label>
+            <div className="relative mt-1.5">
+              <input
+                id="school-account-password"
+                type={showAccountPassword ? "text" : "password"}
+                value={accountPasswordInput}
+                onChange={(e) => setAccountPasswordInput(e.target.value)}
+                minLength={6}
+                maxLength={100}
+                required
+                placeholder="Minimal 6 karakter (default 123456)"
+                className="glass-input w-full rounded-xl py-2.5 pl-3.5 pr-11 font-mono text-sm"
+              />
+              <button
+                type="button"
+                aria-label={showAccountPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                onClick={() => setShowAccountPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-800"
+              >
+                {showAccountPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              {accountModal.reset
+                ? "Semua sesi login aktif milik pengguna akan dicabut dan kata sandi baru langsung aktif."
+                : "Anda dapat langsung menggunakan 123456 atau mengetik kata sandi khusus minimal 6 karakter."}
+            </p>
+          </div>
+          {accountModalError && (
+            <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+              {accountModalError}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={accountBusy}
+              onClick={() => setAccountModal(null)}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={accountBusy}
+              className="master-primary px-4 py-2 text-xs disabled:opacity-50"
+            >
+              {accountBusy ? "Menyimpan..." : accountModal.reset ? "Simpan Password Baru" : "Buat Akun Sekarang"}
+            </button>
+          </div>
+        </form>
+      </SchoolModal>
+    )}
     {kind === "kelas" ? <SchoolClasses plan={plan} onRequireUpgrade={onRequireUpgrade} /> : kind === "mapel" || kind === "akademik" ? <SchoolAcademics mode={kind} /> : <>
     {kind === "siswa" && importOpen && <SchoolModal title="Impor Siswa dari Excel" titleIcon={<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400"><FileSpreadsheet size={22} aria-hidden="true" /></span>} busy={importBusy} onClose={() => setImportOpen(false)}><StudentImport onBusyChange={setImportBusy} onImported={(result) => { invalidateCache(["/api/sekolah/siswa", "/api/sekolah/ringkasan", "/api/verval"]); setImportOpen(false); setImportResult(result); setPagination({ kind: "siswa", page: 1, term: "" }); setVersion((value) => value + 1); }} /></SchoolModal>}
     {kind === "siswa" && studentOpen && <SchoolModal title="Tambah Siswa" wide busy={studentBusy} onClose={() => setStudentOpen(false)}><StudentEditor onCancel={() => setStudentOpen(false)} onBusyChange={setStudentBusy} onSaved={() => { invalidateCache(["/api/sekolah/siswa", "/api/sekolah/kelas", "/api/sekolah/ringkasan", "/api/verval"]); setStudentOpen(false); setPagination({ kind: "siswa", page: 1, term: "" }); setVersion((value) => value + 1); setToast("Data siswa tersimpan. Akun siswa belum dibuat."); }} /></SchoolModal>}
@@ -212,7 +376,7 @@ export function SchoolData({
     {editing && visible && editing.kind === kind && <SchoolModal title={editing.kind === "siswa" ? "Edit Siswa" : "Edit guru"} wide={editing.kind === "siswa"} busy={editing.kind === "siswa" ? studentBusy : teacherBusy} onClose={() => setEditing(null)}>{editing.kind === "siswa" ? <StudentEditor id={editing.id} onCancel={() => setEditing(null)} onBusyChange={setStudentBusy} onSaved={() => { invalidateCache(["/api/sekolah/siswa", "/api/sekolah/kelas", "/api/sekolah/ringkasan", "/api/verval"]); setEditing(null); setVersion((value) => value + 1); setToast("Data berhasil diperbarui. Sesi pengguna terkait telah berakhir."); }} /> : <SchoolPersonEditor id={editing.id} onBusyChange={setTeacherBusy} onSaved={() => { invalidateCache(["/api/sekolah/guru", "/api/sekolah/kelas", "/api/sekolah/akademik"]); setEditing(null); setVersion((value) => value + 1); setToast("Data berhasil diperbarui. Sesi pengguna terkait telah berakhir."); }} />}</SchoolModal>}
     {kind === "ppdb" && <div className={`mt-4 rounded-xl border p-4 text-sm ${isDark ? "border-amber-400/25 bg-slate-900/75 text-slate-200" : "border-transparent bg-[#f8f6ef]"}`}><p>Tautan PPDB:</p><a className={`break-all font-semibold underline ${isDark ? "text-amber-300" : "text-[#80643a]"}`} href={`/ppdb/${encodeURIComponent(slug)}`}>{`${window.location.origin}/ppdb/${encodeURIComponent(slug)}`}</a><p className={`mt-2 ${isDark ? "text-slate-400" : ""}`}>Penerimaan hanya mencatat keputusan; akun dan data siswa belum dibuat otomatis.</p></div>}
     {error ? <p role="alert" className="mt-4 text-sm text-rose-500">{error}</p> : !data ? (kind === "ppdb" ? <CardGridSkeleton count={3} columns={3} /> : <TableSkeleton rows={6} columns={kind === "siswa" ? 6 : 5} />) : <>
-      {data.rows.length === 0 ? <EmptyState title={kind === "guru" && term ? "Guru tidak ditemukan" : "Belum ada data"} description={kind === "guru" && term ? "Coba kata kunci lain." : "Data yang tersedia akan ditampilkan di sini."} action={kind === "guru" && !term ? <button type="button" className="master-primary" onClick={() => setTeacherOpen(true)}>Tambah Guru</button> : kind === "siswa" ? <button type="button" className="master-primary" onClick={() => setStudentOpen(true)}>Tambah Siswa</button> : undefined} /> : kind === "ppdb" ? <div className="mt-4 space-y-3">{data.rows.map((row) => <article key={row.id} className={`rounded-xl border p-4 ${isDark ? "border-slate-700/60" : "border-[#e6dfd0]"}`}><h3 className="font-bold">{row.nama}</h3><p className="mt-2 break-all text-sm">No. {row.keterangan} · {row.status}</p><p className="mt-1 break-words text-sm text-slate-600">Email: {row.email} · Telepon: {row.telepon}</p><p className="mt-1 break-words text-sm text-slate-600">Jenjang: {row.jenjang} · Alamat: {row.alamat}</p>{row.catatan && <p className="mt-1 break-words text-sm">Catatan: {row.catatan}</p>}{row.status === "Pending" && <ReviewPPDB id={row.id} nama={row.nama} onSaved={() => { invalidateCache(["/api/sekolah/ppdb", "/api/sekolah/ringkasan"]); setVersion((value) => value + 1); }} />}</article>)}</div> : <div className={`dashboard-glass mt-5 overflow-x-auto ${chosen.length ? "mb-36 md:mb-24" : ""}`}><table className="w-full min-w-[48rem] text-left text-sm"><thead className={isDark ? "bg-slate-900/70 text-[11px] font-bold uppercase tracking-wider text-slate-400" : "bg-slate-50 text-xs uppercase text-slate-500"}><tr>{kind === "siswa" && <th className="p-4"><input ref={selectAll} type="checkbox" aria-label="Pilih semua siswa aktif di halaman ini" disabled={!activeRows.length} checked={activeRows.length > 0 && selectedOnPageCount === activeRows.length} onChange={(event) => setSelected((previous) => { const next = new Map(previous); if (event.target.checked) { for (const row of activeRows) { if (!next.has(row.id) && next.size < 50) next.set(row.id, { id: row.id, nama: row.nama, nisn: row.keterangan, kelasId: row.kelasId ?? null }); } } else { for (const row of activeRows) next.delete(row.id); } return next; })} className="h-4 w-4 rounded accent-amber-500" /></th>}<th className="p-4">{kind === "siswa" ? "Nama Siswa" : "Nama"}</th><th className="p-4">{kind === "siswa" ? "NISN" : "NUPTK / Email"}</th>{kind === "siswa" && <th className="p-4">Kelas Saat Ini</th>}<th className="p-4">Status</th><th className="p-4">Akun LMS</th><th className="p-4">Aksi</th></tr></thead><tbody>{data.rows.map((row) => { const classNameText = row.kelasId ? classes.find((item) => item.id === row.kelasId)?.nama ?? "Kelas tidak ditemukan" : null; return <tr key={row.id} className={`border-t transition ${isDark ? "border-slate-800/70 hover:bg-slate-800/45" : "border-slate-100 hover:bg-indigo-50/60"}`}>{kind === "siswa" && <td className="p-4"><input type="checkbox" aria-label={`Pilih ${row.nama} (${row.keterangan})`} disabled={row.status !== "Aktif" || (!selected.has(row.id) && selected.size >= 50)} checked={selected.has(row.id)} onChange={(event) => setSelected((previous) => { const next = new Map(previous); if (event.target.checked) { if (next.size < 50) next.set(row.id, { id: row.id, nama: row.nama, nisn: row.keterangan, kelasId: row.kelasId ?? null }); } else { next.delete(row.id); } return next; })} className="h-4 w-4 rounded accent-amber-500" /></td>}<td className={`p-4 font-bold ${isDark ? "text-white" : ""}`}>{row.nama}</td><td className={`p-4 font-mono tabular-nums ${isDark ? "text-slate-400" : ""}`}>{row.keterangan}{kind === "guru" && <p className={`mt-1 font-sans text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{row.email}</p>}</td>{kind === "siswa" && <td className="p-4">{classNameText ? <span className={isDark ? "inline-flex rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300" : "inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800"}>{classNameText}</span> : <span className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>Belum ditempatkan</span>}</td>}<td className="p-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${row.status === "Aktif" ? (isDark ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300" : "border-transparent bg-emerald-50 text-emerald-700") : (isDark ? "border-slate-700 bg-slate-800/80 text-slate-400" : "border-transparent bg-slate-100 text-slate-600")}`}>{row.status}</span></td><td className="p-4">{row.status !== "Aktif" ? <span className="text-xs text-slate-500">Data tidak aktif</span> : <div className="flex flex-wrap items-center gap-2"><span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{row.punyaAkun ? "Akun tersedia" : "Belum ada akun"}</span><button disabled={accountBusy || !!credential} type="button" onClick={() => manageAccount(row, kind, !!row.punyaAkun)} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${isDark ? "border-slate-700/80 bg-slate-800/75 text-slate-200 hover:border-amber-400/50 hover:text-amber-300" : "border-indigo-200 text-indigo-700 hover:bg-indigo-50"}`}>{row.punyaAkun ? "Reset password" : "Buat akun"}</button></div>}</td><td className="p-4"><div className="flex gap-2"><button type="button" disabled={accountBusy} onClick={() => setEditing({ kind, id: row.id })} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${isDark ? "border-slate-700/80 bg-slate-800/75 text-slate-200 hover:border-amber-400/50 hover:text-amber-300" : "border-indigo-200 text-indigo-700"}`}>Edit</button><button type="button" disabled={accountBusy} onClick={() => changeStatus(row, kind)} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${isDark ? "border-rose-500/30 bg-rose-950/35 text-rose-300 hover:bg-rose-950/60" : "border-rose-200 text-rose-700"}`}>{row.status === "Aktif" ? "Nonaktifkan" : "Aktifkan"}</button></div></td></tr>; })}</tbody></table></div>}
+      {data.rows.length === 0 ? <EmptyState title={kind === "guru" && term ? "Guru tidak ditemukan" : "Belum ada data"} description={kind === "guru" && term ? "Coba kata kunci lain." : "Data yang tersedia akan ditampilkan di sini."} action={kind === "guru" && !term ? <button type="button" className="master-primary" onClick={() => setTeacherOpen(true)}>Tambah Guru</button> : kind === "siswa" ? <button type="button" className="master-primary" onClick={() => setStudentOpen(true)}>Tambah Siswa</button> : undefined} /> : kind === "ppdb" ? <div className="mt-4 space-y-3">{data.rows.map((row) => <article key={row.id} className={`rounded-xl border p-4 ${isDark ? "border-slate-700/60" : "border-[#e6dfd0]"}`}><h3 className="font-bold">{row.nama}</h3><p className="mt-2 break-all text-sm">No. {row.keterangan} · {row.status}</p><p className="mt-1 break-words text-sm text-slate-600">Email: {row.email} · Telepon: {row.telepon}</p><p className="mt-1 break-words text-sm text-slate-600">Jenjang: {row.jenjang} · Alamat: {row.alamat}</p>{row.catatan && <p className="mt-1 break-words text-sm">Catatan: {row.catatan}</p>}{row.status === "Pending" && <ReviewPPDB id={row.id} nama={row.nama} onSaved={() => { invalidateCache(["/api/sekolah/ppdb", "/api/sekolah/ringkasan"]); setVersion((value) => value + 1); }} />}</article>)}</div> : <div className={`dashboard-glass mt-5 overflow-x-auto ${chosen.length ? "mb-36 md:mb-24" : ""}`}><table className="w-full min-w-[48rem] text-left text-sm"><thead className={isDark ? "bg-slate-900/70 text-[11px] font-bold uppercase tracking-wider text-slate-400" : "bg-slate-50 text-xs uppercase text-slate-500"}><tr>{kind === "siswa" && <th className="p-4"><input ref={selectAll} type="checkbox" aria-label="Pilih semua siswa aktif di halaman ini" disabled={!activeRows.length} checked={activeRows.length > 0 && selectedOnPageCount === activeRows.length} onChange={(event) => setSelected((previous) => { const next = new Map(previous); if (event.target.checked) { for (const row of activeRows) { if (!next.has(row.id) && next.size < 50) next.set(row.id, { id: row.id, nama: row.nama, nisn: row.keterangan, kelasId: row.kelasId ?? null }); } } else { for (const row of activeRows) next.delete(row.id); } return next; })} className="h-4 w-4 rounded accent-amber-500" /></th>}<th className="p-4">{kind === "siswa" ? "Nama Siswa" : "Nama"}</th><th className="p-4">{kind === "siswa" ? "NISN" : "NUPTK / Email"}</th>{kind === "siswa" && <th className="p-4">Kelas Saat Ini</th>}<th className="p-4">Status</th><th className="p-4">Akun LMS</th><th className="p-4">Aksi</th></tr></thead><tbody>{data.rows.map((row) => { const classNameText = row.kelasId ? classes.find((item) => item.id === row.kelasId)?.nama ?? "Kelas tidak ditemukan" : null; return <tr key={row.id} className={`border-t transition ${isDark ? "border-slate-800/70 hover:bg-slate-800/45" : "border-slate-100 hover:bg-indigo-50/60"}`}>{kind === "siswa" && <td className="p-4"><input type="checkbox" aria-label={`Pilih ${row.nama} (${row.keterangan})`} disabled={row.status !== "Aktif" || (!selected.has(row.id) && selected.size >= 50)} checked={selected.has(row.id)} onChange={(event) => setSelected((previous) => { const next = new Map(previous); if (event.target.checked) { if (next.size < 50) next.set(row.id, { id: row.id, nama: row.nama, nisn: row.keterangan, kelasId: row.kelasId ?? null }); } else { next.delete(row.id); } return next; })} className="h-4 w-4 rounded accent-amber-500" /></td>}<td className={`p-4 font-bold ${isDark ? "text-white" : ""}`}>{row.nama}</td><td className={`p-4 font-mono tabular-nums ${isDark ? "text-slate-400" : ""}`}>{row.keterangan || row.username || "—"}{kind === "guru" && <p className={`mt-1 font-sans text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{row.email}</p>}</td>{kind === "siswa" && <td className="p-4">{classNameText ? <span className={isDark ? "inline-flex rounded-full border border-emerald-500/35 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300" : "inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800"}>{classNameText}</span> : <span className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>Belum ditempatkan</span>}</td>}<td className="p-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${row.status === "Aktif" ? (isDark ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300" : "border-transparent bg-emerald-50 text-emerald-700") : (isDark ? "border-slate-700 bg-slate-800/80 text-slate-400" : "border-transparent bg-slate-100 text-slate-600")}`}>{row.status}</span></td><td className="p-4">{row.status !== "Aktif" ? <span className="text-xs text-slate-500">Data tidak aktif</span> : <div className="flex flex-wrap items-center gap-2"><span className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{row.punyaAkun ? "Akun tersedia" : "Belum ada akun"}</span><button disabled={accountBusy} type="button" onClick={() => openAccountModal(row, kind, !!row.punyaAkun)} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${isDark ? "border-slate-700/80 bg-slate-800/75 text-slate-200 hover:border-amber-400/50 hover:text-amber-300" : "border-indigo-200 text-indigo-700 hover:bg-indigo-50"}`}>{row.punyaAkun ? "Reset Password" : "Buat akun"}</button></div>}</td><td className="p-4"><div className="flex gap-2"><button type="button" disabled={accountBusy} onClick={() => setEditing({ kind, id: row.id })} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${isDark ? "border-slate-700/80 bg-slate-800/75 text-slate-200 hover:border-amber-400/50 hover:text-amber-300" : "border-indigo-200 text-indigo-700"}`}>Edit</button><button type="button" disabled={accountBusy} onClick={() => changeStatus(row, kind)} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${isDark ? "border-rose-500/30 bg-rose-950/35 text-rose-300 hover:bg-rose-950/60" : "border-rose-200 text-rose-700"}`}>{row.status === "Aktif" ? "Nonaktifkan" : "Aktifkan"}</button></div></td></tr>; })}</tbody></table></div>}
       {kind === "siswa" && chosen.length > 0 && <BulkPlacementAction floating students={chosen} classes={classes} onFinished={(notice) => { invalidateCache(["/api/sekolah/siswa", "/api/sekolah/kelas"]); setSelected(new Map()); setPlacementNotice(notice); setVersion((value) => value + 1); }} />}
       {(() => {
         const totalItems = data.total ?? data.rows.length;

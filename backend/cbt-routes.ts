@@ -18,6 +18,61 @@ import {
   parseBulkTasks,
 } from "./cbt-import.js";
 
+export type BankVisibility = "PRIVATE" | "PUBLIC" | "ARCHIVED";
+export type BankJenjang = "PAKET_A" | "PAKET_B" | "PAKET_C" | "LAINNYA";
+export type PublicBankKategori = "LATIHAN" | "UTS" | "UAS" | "UJIAN_AKHIR";
+
+export const ARCHIVED_OR_UNAVAILABLE_ERROR =
+  "Bank soal ini sudah diarsipkan atau tidak tersedia untuk publik";
+
+export function parseBankVisibilityStrict(raw: unknown): BankVisibility | null {
+  if (typeof raw !== "string") return null;
+  const norm = raw.trim().toUpperCase();
+  if (norm === "PRIVATE" || norm === "PUBLIC" || norm === "ARCHIVED") return norm;
+  return null;
+}
+
+export function normalizeBankVisibility(raw: unknown, fallback: BankVisibility = "PRIVATE"): BankVisibility {
+  return parseBankVisibilityStrict(raw) ?? fallback;
+}
+
+export function isBankCloneable(bank: { visibility?: string | null } | null | undefined): boolean {
+  return Boolean(bank && bank.visibility === "PUBLIC");
+}
+
+export function detectBankJenjang(kelasNama: string, judul: string): BankJenjang {
+  const combined = `${kelasNama} ${judul}`.toLowerCase();
+  if (/\bpaket\s*a\b/.test(combined)) return "PAKET_A";
+  if (/\bpaket\s*b\b/.test(combined)) return "PAKET_B";
+  if (/\bpaket\s*c\b/.test(combined)) return "PAKET_C";
+  const gradeMatch = combined.match(/\b(?:kelas|kls|tingkat)\s*(\d{1,2})(?=[a-z]?\b)/);
+  if (gradeMatch) {
+    const grade = Number(gradeMatch[1]);
+    if (grade >= 1 && grade <= 6) return "PAKET_A";
+    if (grade >= 7 && grade <= 9) return "PAKET_B";
+    if (grade >= 10 && grade <= 12) return "PAKET_C";
+  }
+  if (/\bsd\b/.test(combined)) return "PAKET_A";
+  if (/\bsmp\b/.test(combined)) return "PAKET_B";
+  if (/\bsma\b|\bsmk\b/.test(combined)) return "PAKET_C";
+  return "LAINNYA";
+}
+
+export function detectPublicBankKategori(kode: string, judul: string): PublicBankKategori {
+  const k = kode.trim().toUpperCase();
+  const j = judul.trim().toUpperCase();
+  if (k.startsWith("UA-") || k.startsWith("UPK-") || /\b(?:UJIAN AKHIR|KELAS AKHIR|UPK|USBN|UNPK)\b/.test(j)) {
+    return "UJIAN_AKHIR";
+  }
+  if (k.startsWith("AS-") || k.startsWith("UAS-") || /\b(?:UAS|PAS|PAT|ASESMEN SUMATIF|SUMATIF AKHIR)\b/.test(j)) {
+    return "UAS";
+  }
+  if (k.startsWith("UTS-") || k.startsWith("PTS-") || /\b(?:UTS|PTS|TENGAH SEMESTER)\b/.test(j)) {
+    return "UTS";
+  }
+  return "LATIHAN";
+}
+
 function generateExamToken(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = randomBytes(6);
@@ -28,8 +83,669 @@ function generateExamToken(): string {
   return token;
 }
 
+async function resolveOrCreateSchoolYearShared(sekolahId: string, requestedId?: string): Promise<string | null> {
+  if (requestedId) {
+    const found = await prisma.tahunAjaran.findFirst({ where: { id: requestedId, sekolahId }, select: { id: true } });
+    if (found) return found.id;
+  }
+  const now = new Date();
+  const active = await prisma.tahunAjaran.findFirst({
+    where: { sekolahId, mulai: { lte: now }, selesai: { gte: now } },
+    select: { id: true },
+  });
+  if (active) return active.id;
+  const latest = await prisma.tahunAjaran.findFirst({ where: { sekolahId }, orderBy: { mulai: "desc" }, select: { id: true } });
+  if (latest) return latest.id;
+  const yearNow = now.getUTCFullYear();
+  const createdYear = await prisma.tahunAjaran.create({
+    data: {
+      sekolahId,
+      nama: `${yearNow}/${yearNow + 1}`,
+      semester: "Ganjil",
+      mulai: new Date(`${yearNow}-01-01T00:00:00.000Z`),
+      selesai: new Date(`${yearNow}-12-31T23:59:59.000Z`),
+    },
+    select: { id: true },
+  });
+  return createdYear.id;
+}
+
+export function cbtPublicBankRoutes(getSchoolSession: SchoolContextResolver) {
+  const router = Router();
+
+  function mapMasterKategori(raw: string): PublicBankKategori {
+    const norm = raw.trim().toUpperCase();
+    if (norm === "UTS") return "UTS";
+    if (norm === "UAS" || norm === "AS") return "UAS";
+    if (norm === "UJIAN_AKHIR" || norm === "UPK") return "UJIAN_AKHIR";
+    return "LATIHAN";
+  }
+
+  function mapMasterJenjang(raw: string): BankJenjang {
+    const norm = raw.trim().toUpperCase();
+    if (norm === "PAKET_A") return "PAKET_A";
+    if (norm === "PAKET_B") return "PAKET_B";
+    if (norm === "PAKET_C") return "PAKET_C";
+    return "LAINNYA";
+  }
+
+  function masterButirToOptions(item: {
+    tipe: string;
+    opsiA: string | null;
+    opsiB: string | null;
+    opsiC: string | null;
+    opsiD: string | null;
+    opsiE: string | null;
+    kunciJawaban: string;
+  }): Array<{ kode: string; teks: string; benar: boolean }> {
+    if (item.tipe.toUpperCase() === "ESAI") return [];
+    const key = item.kunciJawaban.trim().toUpperCase();
+    const pairs: Array<[string, string | null]> = [
+      ["A", item.opsiA],
+      ["B", item.opsiB],
+      ["C", item.opsiC],
+      ["D", item.opsiD],
+      ["E", item.opsiE],
+    ];
+    return pairs
+      .filter(([, text]) => Boolean(text && text.trim()))
+      .map(([kode, text]) => ({ kode, teks: text!.trim(), benar: kode === key }));
+  }
+
+  // GET /api/cbt/public-banks — Strictly PUBLIC school banks + active Master Admin banks (PRIVATE & ARCHIVED excluded)
+  router.get("/public-banks", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+
+      const rawJenjang = typeof req.query.jenjang === "string" ? req.query.jenjang.trim().toUpperCase() : "";
+      const rawMapel = typeof req.query.mapel === "string" ? req.query.mapel.trim().toLowerCase() : "";
+      const rawKategori = typeof req.query.kategori === "string" ? req.query.kategori.trim().toUpperCase() : "";
+      const rawQ = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+
+      const [schoolRows, masterRows] = await Promise.all([
+        prisma.ujian.findMany({
+          where: { visibility: "PUBLIC" },
+          select: {
+            id: true,
+            sekolahId: true,
+            kode: true,
+            judul: true,
+            durasiMenit: true,
+            kkm: true,
+            visibility: true,
+            originSchoolName: true,
+            createdAt: true,
+            sekolah: { select: { nama: true } },
+            kelas: { select: { nama: true } },
+            mapel: { select: { nama: true } },
+            guru: { select: { nama: true } },
+            _count: { select: { soal: true } },
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 300,
+        }),
+        prisma.masterBankSoal
+          .findMany({
+            where: { aktif: true },
+            select: {
+              id: true,
+              jenjang: true,
+              tingkatKelas: true,
+              mataPelajaran: true,
+              kategoriUjian: true,
+              judul: true,
+              durasiMenit: true,
+              kkm: true,
+              createdAt: true,
+              _count: { select: { butirSoal: true } },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 200,
+          })
+          .catch(() => []),
+      ]);
+
+      const mappedSchool = schoolRows.map((row) => {
+        const originName = row.originSchoolName || row.sekolah.nama;
+        return {
+          id: row.id,
+          kode: row.kode,
+          judul: row.judul,
+          durasiMenit: row.durasiMenit,
+          kkm: row.kkm,
+          visibility: "PUBLIC" as const,
+          createdAt: row.createdAt,
+          jumlahSoal: row._count.soal,
+          mataPelajaran: row.mapel.nama,
+          kelasAsal: row.kelas.nama,
+          jenjang: detectBankJenjang(row.kelas.nama, row.judul),
+          kategori: detectPublicBankKategori(row.kode, row.judul),
+          originSchoolName: originName,
+          sourceSchoolName: originName,
+          pembuatNama: row.guru.nama,
+          isOwnSchool: row.sekolahId === auth.session.sekolahId,
+          isMaster: false,
+        };
+      });
+
+      const mappedMaster = masterRows.map((row) => ({
+        id: `master:${row.id}`,
+        kode: `MASTER-${row.kategoriUjian}`,
+        judul: row.judul,
+        durasiMenit: row.durasiMenit,
+        kkm: row.kkm,
+        visibility: "PUBLIC" as const,
+        createdAt: row.createdAt,
+        jumlahSoal: row._count.butirSoal,
+        mataPelajaran: row.mataPelajaran,
+        kelasAsal: `${row.jenjang.replace("_", " ")} ${row.tingkatKelas}`.trim(),
+        jenjang: mapMasterJenjang(row.jenjang),
+        kategori: mapMasterKategori(row.kategoriUjian),
+        originSchoolName: "Pustaka Pusat (Master Admin)",
+        sourceSchoolName: "Pustaka Pusat (Master Admin)",
+        pembuatNama: "Tim Kurikulum Pusat",
+        isOwnSchool: false,
+        isMaster: true,
+      }));
+
+      const combined = [...mappedMaster, ...mappedSchool];
+
+      const mataPelajaranList = Array.from(new Set(combined.map((item) => item.mataPelajaran))).sort((a, b) =>
+        a.localeCompare(b, "id-ID"),
+      );
+
+      const filtered = combined.filter((item) => {
+        if (rawJenjang && rawJenjang !== "ALL" && item.jenjang !== rawJenjang) return false;
+        if (rawKategori && rawKategori !== "ALL" && item.kategori !== rawKategori) return false;
+        if (rawMapel && item.mataPelajaran.toLowerCase() !== rawMapel) return false;
+        if (rawQ) {
+          const haystack = `${item.judul} ${item.kode} ${item.mataPelajaran} ${item.kelasAsal} ${item.originSchoolName} ${item.pembuatNama}`.toLowerCase();
+          if (!haystack.includes(rawQ)) return false;
+        }
+        return true;
+      });
+
+      return res.json({
+        banks: filtered,
+        mataPelajaranList,
+        total: filtered.length,
+      });
+    } catch (error) {
+      if (isPrismaMissingSchema(error)) {
+        return res.status(503).json({ error: "Kolom visibilitas Bank Soal belum dimigrasi pada database." });
+      }
+      console.error("Gagal memuat katalog bank soal umum:", error);
+      return res.status(503).json({ error: "Katalog bank soal umum belum dapat dimuat." });
+    }
+  });
+
+  // GET /api/cbt/public-banks/:id/preview — Read-only question & options preview (rejects PRIVATE / ARCHIVED)
+  router.get("/public-banks/:id/preview", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+
+      const rawId = req.params.id;
+      if (rawId.startsWith("master:")) {
+        const masterId = rawId.slice("master:".length);
+        const master = await prisma.masterBankSoal.findUnique({
+          where: { id: masterId },
+          include: { butirSoal: { orderBy: { urutan: "asc" } } },
+        });
+        if (!master || !master.aktif) {
+          return res.status(404).json({ error: ARCHIVED_OR_UNAVAILABLE_ERROR });
+        }
+        return res.json({
+          bank: {
+            id: rawId,
+            kode: `MASTER-${master.kategoriUjian}`,
+            judul: master.judul,
+            durasiMenit: master.durasiMenit,
+            kkm: master.kkm,
+            mataPelajaran: master.mataPelajaran,
+            kelasAsal: `${master.jenjang.replace("_", " ")} ${master.tingkatKelas}`.trim(),
+            jenjang: mapMasterJenjang(master.jenjang),
+            kategori: mapMasterKategori(master.kategoriUjian),
+            originSchoolName: "Pustaka Pusat (Master Admin)",
+            pembuatNama: "Tim Kurikulum Pusat",
+            jumlahSoal: master.butirSoal.length,
+            isMaster: true,
+          },
+          soal: master.butirSoal.map((item) => ({
+            id: item.id,
+            urutan: item.urutan,
+            tipe: item.tipe === "ESAI" ? "ESAI" : "PG",
+            teks: item.teks,
+            bobot: item.bobot,
+            kunciEsai: item.tipe === "ESAI" ? item.kunciJawaban : null,
+            pembahasan: item.pembahasan,
+            opsi: masterButirToOptions(item),
+          })),
+        });
+      }
+
+      const source = await prisma.ujian.findUnique({
+        where: { id: rawId },
+        select: {
+          id: true,
+          kode: true,
+          judul: true,
+          durasiMenit: true,
+          kkm: true,
+          visibility: true,
+          originSchoolName: true,
+          sekolah: { select: { nama: true } },
+          kelas: { select: { nama: true } },
+          mapel: { select: { nama: true } },
+          guru: { select: { nama: true } },
+          soal: {
+            orderBy: { urutan: "asc" },
+            select: {
+              id: true,
+              urutan: true,
+              tipe: true,
+              teks: true,
+              bobot: true,
+              kunciEsai: true,
+              pembahasan: true,
+              opsi: {
+                orderBy: { kode: "asc" },
+                select: { id: true, kode: true, teks: true, benar: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!isBankCloneable(source) || !source) {
+        return res.status(404).json({ error: ARCHIVED_OR_UNAVAILABLE_ERROR });
+      }
+
+      const originName = source.originSchoolName || source.sekolah.nama;
+      return res.json({
+        bank: {
+          id: source.id,
+          kode: source.kode,
+          judul: source.judul,
+          durasiMenit: source.durasiMenit,
+          kkm: source.kkm,
+          mataPelajaran: source.mapel.nama,
+          kelasAsal: source.kelas.nama,
+          jenjang: detectBankJenjang(source.kelas.nama, source.judul),
+          kategori: detectPublicBankKategori(source.kode, source.judul),
+          originSchoolName: originName,
+          pembuatNama: source.guru.nama,
+          jumlahSoal: source.soal.length,
+          isMaster: false,
+        },
+        soal: source.soal,
+      });
+    } catch (error) {
+      if (isPrismaMissingSchema(error)) {
+        return res.status(503).json({ error: "Kolom visibilitas Bank Soal belum dimigrasi pada database." });
+      }
+      console.error("Gagal memuat pratinjau bank soal umum:", error);
+      return res.status(503).json({ error: "Pratinjau soal belum dapat dimuat." });
+    }
+  });
+
+  // Shared handler for POST /api/cbt/public-banks/:id/import and POST /api/cbt/public-banks/:id/clone
+  async function handleImportPublicBank(req: import("express").Request, res: import("express").Response) {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const rawId = req.params.id;
+      let sourceData: {
+        judul: string;
+        kode: string;
+        durasiMenit: number;
+        kkm: number;
+        kelasNama: string;
+        mapelNama: string;
+        mapelKkm: number;
+        originSchoolName: string;
+        category: PublicBankKategori;
+        jenjang: BankJenjang;
+        acakSoal: boolean;
+        acakOpsi: boolean;
+        tampilNilai: boolean;
+        toleransiKeluarTab: number;
+        soal: Array<{
+          tipe: string;
+          teks: string;
+          bobot: number;
+          kunciEsai: string | null;
+          pembahasan: string | null;
+          opsi: Array<{ kode: string; teks: string; benar: boolean }>;
+        }>;
+      } | null = null;
+
+      if (rawId.startsWith("master:")) {
+        const masterId = rawId.slice("master:".length);
+        const master = await prisma.masterBankSoal.findUnique({
+          where: { id: masterId },
+          include: { butirSoal: { orderBy: { urutan: "asc" } } },
+        });
+        if (!master || !master.aktif) {
+          return res.status(404).json({ error: ARCHIVED_OR_UNAVAILABLE_ERROR });
+        }
+        const jenjang = mapMasterJenjang(master.jenjang);
+        const jenjangTitle =
+          jenjang === "PAKET_A" ? "Paket A" : jenjang === "PAKET_B" ? "Paket B" : jenjang === "PAKET_C" ? "Paket C" : "Kesetaraan";
+        sourceData = {
+          judul: master.judul,
+          kode: `MASTER-${master.kategoriUjian}`,
+          durasiMenit: master.durasiMenit,
+          kkm: master.kkm,
+          kelasNama: `${jenjangTitle} ${master.tingkatKelas}`.trim(),
+          mapelNama: master.mataPelajaran,
+          mapelKkm: master.kkm,
+          originSchoolName: "Pustaka Pusat (Master Admin)",
+          category: mapMasterKategori(master.kategoriUjian),
+          jenjang,
+          acakSoal: true,
+          acakOpsi: true,
+          tampilNilai: true,
+          toleransiKeluarTab: 3,
+          soal: master.butirSoal.map((item) => ({
+            tipe: item.tipe === "ESAI" ? "ESAI" : "PG",
+            teks: item.teks,
+            bobot: item.bobot,
+            kunciEsai: item.tipe === "ESAI" ? item.kunciJawaban : null,
+            pembahasan: item.pembahasan,
+            opsi: masterButirToOptions(item),
+          })),
+        };
+      } else {
+        const source = await prisma.ujian.findUnique({
+          where: { id: rawId },
+          include: {
+            sekolah: { select: { nama: true } },
+            kelas: { select: { nama: true } },
+            mapel: { select: { nama: true, kkm: true } },
+            soal: {
+              orderBy: { urutan: "asc" },
+              include: { opsi: { orderBy: { kode: "asc" } } },
+            },
+          },
+        });
+        if (!isBankCloneable(source) || !source) {
+          return res.status(404).json({ error: ARCHIVED_OR_UNAVAILABLE_ERROR });
+        }
+        sourceData = {
+          judul: source.judul,
+          kode: source.kode,
+          durasiMenit: source.durasiMenit,
+          kkm: source.kkm,
+          kelasNama: source.kelas.nama,
+          mapelNama: source.mapel.nama,
+          mapelKkm: source.mapel.kkm,
+          originSchoolName: source.originSchoolName || source.sekolah.nama,
+          category: detectPublicBankKategori(source.kode, source.judul),
+          jenjang: detectBankJenjang(source.kelas.nama, source.judul),
+          acakSoal: source.acakSoal,
+          acakOpsi: source.acakOpsi,
+          tampilNilai: source.tampilNilai,
+          toleransiKeluarTab: source.toleransiKeluarTab,
+          soal: source.soal.map((item) => ({
+            tipe: item.tipe,
+            teks: item.teks,
+            bobot: item.bobot,
+            kunciEsai: item.kunciEsai,
+            pembahasan: item.pembahasan,
+            opsi: item.opsi.map((opt) => ({ kode: opt.kode, teks: opt.teks, benar: opt.benar })),
+          })),
+        };
+      }
+
+      const teacherScope = peran === "GURU" && sessionGuruId ? await resolveTeacherScope(sekolahId, sessionGuruId) : null;
+      const requestedKelasId = cleanText(req.body?.kelasId, 100);
+      const requestedMapelId = cleanText(req.body?.mapelId, 100);
+      let targetGuruId = peran === "GURU" && sessionGuruId ? sessionGuruId : cleanText(req.body?.guruId, 100);
+
+      if (!targetGuruId) {
+        const firstGuru = await prisma.guru.findFirst({ where: { sekolahId, status: "Aktif" }, select: { id: true } });
+        if (!firstGuru) {
+          return res.status(400).json({ error: "Tambahkan minimal satu guru aktif di sekolah Anda sebelum mengambil bank soal." });
+        }
+        targetGuruId = firstGuru.id;
+      } else {
+        const validGuru = await prisma.guru.findFirst({ where: { id: targetGuruId, sekolahId }, select: { id: true } });
+        if (!validGuru) {
+          return res.status(400).json({ error: "Guru target tidak ditemukan di sekolah Anda." });
+        }
+      }
+
+      // Resolve target Kelas in requesting school
+      let targetKelasId = "";
+      if (requestedKelasId) {
+        const foundKelas = await prisma.kelas.findFirst({ where: { id: requestedKelasId, sekolahId }, select: { id: true } });
+        if (!foundKelas) return res.status(400).json({ error: "Kelas tujuan tidak ditemukan di sekolah Anda." });
+        if (teacherScope && !teacherScope.isWaliKelas && !teacherScope.assignedKelasIds.includes(foundKelas.id)) {
+          return res.status(403).json({ error: "Anda hanya dapat menyalin ke kelas yang Anda ampu." });
+        }
+        targetKelasId = foundKelas.id;
+      } else {
+        const schoolClasses = await prisma.kelas.findMany({
+          where: {
+            sekolahId,
+            ...(teacherScope && !teacherScope.isWaliKelas && teacherScope.assignedKelasIds.length > 0
+              ? { id: { in: teacherScope.assignedKelasIds } }
+              : {}),
+          },
+          select: { id: true, nama: true },
+          orderBy: { nama: "asc" },
+          take: 200,
+        });
+        const exactKelas = schoolClasses.find((k) => normalizeLookupKey(k.nama) === normalizeLookupKey(sourceData.kelasNama));
+        const sameJenjangKelas =
+          sourceData.jenjang !== "LAINNYA"
+            ? schoolClasses.find((k) => detectBankJenjang(k.nama, "") === sourceData.jenjang)
+            : undefined;
+        if (exactKelas) {
+          targetKelasId = exactKelas.id;
+        } else if (sameJenjangKelas) {
+          targetKelasId = sameJenjangKelas.id;
+        } else if (schoolClasses[0]) {
+          targetKelasId = schoolClasses[0].id;
+        } else {
+          const kodeKelas = `KLS-${randomBytes(3).toString("hex").toUpperCase()}`;
+          const createdKelas = await prisma.kelas.create({
+            data: { sekolahId, kode: kodeKelas, nama: sourceData.kelasNama.slice(0, 80) },
+            select: { id: true },
+          });
+          targetKelasId = createdKelas.id;
+        }
+      }
+
+      // Resolve target Mapel in requesting school
+      let targetMapelId = "";
+      if (requestedMapelId) {
+        const foundMapel = await prisma.mapel.findFirst({ where: { id: requestedMapelId, sekolahId }, select: { id: true } });
+        if (!foundMapel) return res.status(400).json({ error: "Mata pelajaran tujuan tidak ditemukan di sekolah Anda." });
+        if (teacherScope && !teacherScope.isWaliKelas && !teacherScope.assignedMapelIds.includes(foundMapel.id)) {
+          return res.status(403).json({ error: "Anda hanya dapat menyalin ke mata pelajaran yang Anda ampu." });
+        }
+        targetMapelId = foundMapel.id;
+      } else {
+        const schoolMapels = await prisma.mapel.findMany({
+          where: { sekolahId },
+          select: { id: true, nama: true },
+          orderBy: { nama: "asc" },
+          take: 300,
+        });
+        const exactMapel = schoolMapels.find((m) => normalizeLookupKey(m.nama) === normalizeLookupKey(sourceData.mapelNama));
+        if (exactMapel) {
+          targetMapelId = exactMapel.id;
+        } else {
+          const kodeMapel = `${sourceData.mapelNama.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 6) || "MP"}-${randomBytes(2).toString("hex").toUpperCase()}`;
+          const createdMapel = await prisma.mapel.create({
+            data: {
+              sekolahId,
+              kode: kodeMapel,
+              nama: sourceData.mapelNama.slice(0, 120),
+              kkm: Math.round(sourceData.mapelKkm || sourceData.kkm || 75),
+            },
+            select: { id: true },
+          });
+          targetMapelId = createdMapel.id;
+        }
+      }
+
+      const tahunAjaranId = await resolveOrCreateSchoolYearShared(sekolahId);
+      if (!tahunAjaranId) return res.status(400).json({ error: "Tahun ajaran sekolah tidak tersedia." });
+
+      const settings = await prisma.cbtPengaturan.findUnique({ where: { sekolahId } }).catch(() => null);
+      const prefix =
+        sourceData.category === "UTS"
+          ? "UTS"
+          : sourceData.category === "UAS"
+            ? "AS"
+            : sourceData.category === "UJIAN_AKHIR"
+              ? "UA"
+              : "CBT";
+      const tokenKode = generateExamToken();
+      const tokenHash = createHash("sha256").update(tokenKode).digest("hex");
+      const kode = `${prefix}-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const now = new Date();
+      const selesai = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      const cloned = await prisma.$transaction(async (tx) => {
+        return tx.ujian.create({
+          data: {
+            sekolahId,
+            tahunAjaranId,
+            kelasId: targetKelasId,
+            mapelId: targetMapelId,
+            guruId: targetGuruId,
+            kode,
+            judul: sourceData.judul,
+            durasiMenit: sourceData.durasiMenit,
+            mulai: now,
+            selesai,
+            kkm: sourceData.kkm,
+            tokenKode,
+            tokenHash,
+            acakSoal: settings?.acakUrutanSoal ?? sourceData.acakSoal,
+            acakOpsi: settings?.acakOpsiJawaban ?? sourceData.acakOpsi,
+            tampilNilai: settings?.tampilkanNilaiLangsung ?? sourceData.tampilNilai,
+            toleransiKeluarTab: settings?.batasToleransiKeluarTab ?? sourceData.toleransiKeluarTab,
+            dipublikasikan: false,
+            visibility: "PRIVATE",
+            originSchoolName: sourceData.originSchoolName,
+            soal: {
+              create: sourceData.soal.map((item, idx) => ({
+                urutan: idx + 1,
+                tipe: item.tipe,
+                teks: item.teks,
+                bobot: item.bobot,
+                kunciEsai: item.kunciEsai,
+                pembahasan: item.pembahasan,
+                ...(item.opsi.length
+                  ? {
+                      opsi: {
+                        create: item.opsi.map((opt) => ({
+                          kode: opt.kode,
+                          teks: opt.teks,
+                          benar: opt.benar,
+                        })),
+                      },
+                    }
+                  : {}),
+              })),
+            },
+          },
+          include: {
+            kelas: { select: { id: true, nama: true } },
+            mapel: { select: { id: true, nama: true } },
+            guru: { select: { id: true, nama: true } },
+            _count: { select: { soal: true, percobaan: true } },
+          },
+        });
+      });
+
+      return res.status(201).json({
+        ujian: cloned,
+        copiedSoalCount: sourceData.soal.length,
+        message: `Bank soal "${sourceData.judul}" (${sourceData.soal.length} butir soal) dari ${sourceData.originSchoolName} berhasil diambil ke Bank Soal Sekolah Anda (Privat).`,
+      });
+    } catch (error) {
+      if (isPrismaMissingSchema(error)) {
+        return res.status(503).json({ error: "Kolom visibilitas Bank Soal belum dimigrasi pada database." });
+      }
+      console.error("Gagal mengambil bank soal umum:", error);
+      return res.status(503).json({ error: "Bank soal umum belum dapat diambil." });
+    }
+  }
+
+  router.post("/public-banks/:id/import", handleImportPublicBank);
+  router.post("/public-banks/:id/clone", handleImportPublicBank);
+
+  // PATCH /api/cbt/banks/:id/visibility — Creator or School Admin toggles PRIVATE | PUBLIC | ARCHIVED
+  router.patch("/banks/:id/visibility", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const nextVisibility = parseBankVisibilityStrict(req.body?.visibility);
+      if (!nextVisibility) {
+        return res.status(400).json({
+          error: "Status visibilitas tidak valid. Gunakan PRIVATE, PUBLIC, atau ARCHIVED.",
+        });
+      }
+
+      const existing = await prisma.ujian.findFirst({
+        where: { id: req.params.id, sekolahId },
+        select: { id: true, judul: true, guruId: true, visibility: true },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: "Paket bank soal tidak ditemukan." });
+      }
+
+      if (peran === "GURU" && sessionGuruId && existing.guruId !== sessionGuruId) {
+        return res.status(403).json({
+          error: "Hanya pembuat soal atau Admin Sekolah yang dapat mengubah status visibilitas paket ini.",
+        });
+      }
+
+      const updated = await prisma.ujian.update({
+        where: { id: existing.id },
+        data: { visibility: nextVisibility },
+        include: {
+          kelas: { select: { id: true, nama: true } },
+          mapel: { select: { id: true, nama: true } },
+          guru: { select: { id: true, nama: true } },
+          _count: { select: { soal: true, percobaan: true } },
+        },
+      });
+
+      const message =
+        nextVisibility === "PUBLIC"
+          ? `Bank soal "${existing.judul}" berhasil dibagikan ke Bank Soal Umum.`
+          : nextVisibility === "ARCHIVED"
+            ? `Bank soal "${existing.judul}" telah diarsipkan dan ditarik dari Bank Soal Umum.`
+            : `Bank soal "${existing.judul}" diubah menjadi Bank Soal Sekolah (Privat).`;
+
+      return res.json({ ujian: updated, message });
+    } catch (error) {
+      if (isPrismaMissingSchema(error)) {
+        return res.status(503).json({ error: "Kolom visibilitas Bank Soal belum dimigrasi pada database." });
+      }
+      console.error("Gagal mengubah status visibilitas bank soal:", error);
+      return res.status(503).json({ error: "Status visibilitas bank soal belum dapat diperbarui." });
+    }
+  });
+
+  return router;
+}
+
 export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
   const router = Router();
+  router.use("/cbt", cbtPublicBankRoutes(getSchoolSession));
 
   async function canTeacherAccessExam(
     session: { sekolahId: string; peran: "ADMIN" | "GURU" | "SISWA"; guruId?: string | null },
@@ -150,6 +866,7 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       const mulaiRaw = cleanText(req.body?.mulai, 40);
       const selesaiRaw = cleanText(req.body?.selesai, 40);
       const dipublikasikan = Boolean(req.body?.dipublikasikan);
+      const visibility = normalizeBankVisibility(req.body?.visibility, "PRIVATE");
 
       if (!judul || !kelasId || !mapelId) {
         return res.status(400).json({ error: "Judul ujian, kelas target, dan mata pelajaran wajib diisi." });
@@ -232,6 +949,7 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
           tampilNilai: settings?.tampilkanNilaiLangsung ?? true,
           toleransiKeluarTab: settings?.batasToleransiKeluarTab ?? 3,
           dipublikasikan,
+          visibility,
         },
         include: {
           kelas: { select: { id: true, nama: true } },
@@ -278,6 +996,13 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
         if (!Number.isNaN(selesai.getTime())) data.selesai = selesai;
       }
       if (typeof req.body?.dipublikasikan === "boolean") data.dipublikasikan = req.body.dipublikasikan;
+      if (req.body?.visibility !== undefined) {
+        const parsedVis = parseBankVisibilityStrict(req.body.visibility);
+        if (!parsedVis) {
+          return res.status(400).json({ error: "Status visibilitas harus PRIVATE, PUBLIC, atau ARCHIVED." });
+        }
+        data.visibility = parsedVis;
+      }
 
       const updated = await prisma.ujian.update({
         where: { id: existing.id },
@@ -579,6 +1304,7 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       const mulaiRaw = cleanText(req.body?.mulai, 40);
       const selesaiRaw = cleanText(req.body?.selesai, 40);
       const dipublikasikan = Boolean(req.body?.dipublikasikan);
+      const visibility = normalizeBankVisibility(req.body?.visibility, "PRIVATE");
 
       const rawKelasIds: unknown[] = Array.isArray(req.body?.kelasIds)
         ? req.body.kelasIds
@@ -670,6 +1396,7 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
               tampilNilai: settings?.tampilkanNilaiLangsung ?? true,
               toleransiKeluarTab: settings?.batasToleransiKeluarTab ?? 3,
               dipublikasikan,
+              visibility,
               soal: {
                 create: parsed.valid.map((item, idx) => ({
                   urutan: idx + 1,

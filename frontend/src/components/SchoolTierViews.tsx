@@ -20,6 +20,7 @@ import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ClassPromotion } from "./ClassPromotion";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { SchoolModal } from "./SchoolModal";
+import { SchoolAttendance } from "./SchoolAttendance";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
 import { isThemeKey, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
@@ -407,6 +408,10 @@ export function SchoolAcademicRecap({
   const cardSurface = isDark
     ? "rounded-2xl border border-slate-700/60 bg-slate-900/75 p-4 text-slate-100 shadow-lg"
     : "rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs";
+
+  if (isPresensiMode) {
+    return <SchoolAttendance role="ADMIN" onOpenClassroom={onOpenClassroom} />;
+  }
 
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">

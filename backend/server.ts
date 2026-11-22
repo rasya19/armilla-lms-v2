@@ -2,6 +2,14 @@ import express from "express";
 import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 import { loginPool, pool, prisma } from "./db.js";
 import { DEFAULT_ACCOUNT_PASSWORD, DEFAULT_STUDENT_PASSWORD, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
+import {
+  buildMonthlyCalendarSummary,
+  jakartaDate,
+  jakartaIsoDate,
+  parseRequestedAccountPassword,
+  recordStudentLoginAttendance,
+  resolveStudentLoginUsername,
+} from "./attendance-helpers.js";
 import { extractPaketFromNote, registrationRateLimit, registrationRoutes, saveRegistrationRecord } from "./registration-routes.js";
 import { formatPasswordFromBirthDate, normalizeClassKey, parseDapodikStudentImport, slugifyShortName } from "./student-import.js";
 import { parseApplicant, parseTeacher } from "./school-input.js";
@@ -33,9 +41,11 @@ import {
 import { vervalRoutes } from "./verval-routes.js";
 import { dinasRoutes, type DinasContext } from "./dinas-routes.js";
 import { tahap2AcademicRoutes } from "./academic-raport-routes.js";
-import { tahap2CbtRoutes } from "./cbt-routes.js";
+import { cbtPublicBankRoutes, tahap2CbtRoutes } from "./cbt-routes.js";
 import { tahap2ProRoutes } from "./pro-admin-routes.js";
 import { tahap2CollabRoutes } from "./collab-asset-routes.js";
+import { masterContentRoutes, schoolMasterContentRoutes } from "./master-content-routes.js";
+import { cloneMasterContentToSchool } from "./master-content-shared.js";
 import { resolveTeacherScope, type SchoolSessionInfo } from "./school-modules-shared.js";
 
 const app = express();
@@ -54,7 +64,8 @@ app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/verval", express.json({ limit: "4mb" }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "2mb" }));
-app.use("/api/school", express.json({ limit: "256kb" }));
+app.use("/api/master/pustaka-konten", express.json({ limit: "2mb" }));
+app.use("/api/school", express.json({ limit: "2mb" }));
 app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/diskusi", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/cbt", express.json({ limit: "2mb" }));
@@ -663,25 +674,63 @@ app.post("/api/sekolah/:jenis/:id/akun", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
     if (jenis !== "siswa" && jenis !== "guru") return res.status(404).json({ error: "Jenis akun tidak ditemukan." });
-    const temporaryPassword = DEFAULT_ACCOUNT_PASSWORD;
+    const parsedPassword = parseRequestedAccountPassword(req.body?.password, DEFAULT_ACCOUNT_PASSWORD);
+    if (!parsedPassword.ok) return res.status(400).json({ error: parsedPassword.error });
+    const temporaryPassword = parsedPassword.password;
     const passwordHash = await hashPassword(temporaryPassword);
-    await prisma.$transaction(async (tx) => {
+    const createdInfo = await prisma.$transaction(async (tx) => {
       if (jenis === "siswa") {
         await tx.$queryRaw`SELECT "id" FROM "Siswa" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
-        const siswa = await tx.siswa.findFirst({ where: { id: req.params.id, sekolahId, status: "Aktif" }, select: { id: true, nama: true, nisn: true } });
-        if (!siswa || !/^\d{10}$/.test(siswa.nisn)) throw new Error("INVALID_ENTITY");
-        await tx.akun.create({ data: { nama: siswa.nama, sekolahId, siswaId: siswa.id, peran: "SISWA", passwordHash, wajibGantiPassword: true } });
+        const siswa = await tx.siswa.findFirst({
+          where: { id: req.params.id, sekolahId, status: "Aktif" },
+          select: { id: true, nama: true, nisn: true, akun: { select: { id: true, aktif: true, email: true } } },
+        });
+        if (!siswa) throw new Error("INVALID_ENTITY");
+        if (siswa.akun?.aktif) throw new Error("ACCOUNT_EXISTS");
+        const { username, storeInAccountEmail } = resolveStudentLoginUsername(siswa, siswa.akun?.email);
+        if (siswa.akun) {
+          await tx.akun.update({
+            where: { id: siswa.akun.id },
+            data: {
+              nama: siswa.nama,
+              email: storeInAccountEmail,
+              aktif: true,
+              passwordHash,
+              wajibGantiPassword: false,
+            },
+          });
+        } else {
+          await tx.akun.create({
+            data: {
+              nama: siswa.nama,
+              email: storeInAccountEmail,
+              sekolahId,
+              siswaId: siswa.id,
+              peran: "SISWA",
+              passwordHash,
+              wajibGantiPassword: false,
+            },
+          });
+        }
+        return { nama: siswa.nama, username };
       } else {
         await tx.$queryRaw`SELECT "id" FROM "Guru" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
         const guru = await tx.guru.findFirst({ where: { id: req.params.id, sekolahId, status: "Aktif" }, select: { id: true, nama: true, email: true } });
         if (!guru || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guru.email.trim()) || guru.email.length > 254) throw new Error("INVALID_ENTITY");
-        await tx.akun.create({ data: { nama: guru.nama, email: guru.email.trim().toLowerCase(), sekolahId, guruId: guru.id, peran: "GURU", passwordHash, wajibGantiPassword: true } });
+        const email = guru.email.trim().toLowerCase();
+        await tx.akun.create({ data: { nama: guru.nama, email, sekolahId, guruId: guru.id, peran: "GURU", passwordHash, wajibGantiPassword: true } });
+        return { nama: guru.nama, username: email };
       }
     });
-    return res.status(201).json({ temporaryPassword });
+    return res.status(201).json({
+      temporaryPassword,
+      username: createdInfo.username,
+      nama: createdInfo.nama,
+    });
   } catch (error) {
-    if (error instanceof Error && error.message === "INVALID_ENTITY") return res.status(400).json({ error: "Data aktif tidak ditemukan atau NISN/email tidak valid." });
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return res.status(409).json({ error: "Akun atau email sudah terdaftar." });
+    if (error instanceof Error && error.message === "INVALID_ENTITY") return res.status(400).json({ error: "Data aktif tidak ditemukan atau identitas/email tidak valid." });
+    if (error instanceof Error && error.message === "ACCOUNT_EXISTS") return res.status(409).json({ error: "Akun siswa sudah terdaftar. Gunakan tombol Reset Password." });
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return res.status(409).json({ error: "Akun atau username sudah terdaftar." });
     console.error("Gagal membuat akun LMS:", error);
     return res.status(503).json({ error: "Akun belum dapat dibuat." });
   }
@@ -694,26 +743,38 @@ app.post("/api/sekolah/:jenis/:id/reset-password", async (req, res) => {
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
     const jenis = req.params.jenis;
     if (jenis !== "siswa" && jenis !== "guru") return res.status(404).json({ error: "Jenis akun tidak ditemukan." });
-    const temporaryPassword = DEFAULT_ACCOUNT_PASSWORD;
+    const parsedPassword = parseRequestedAccountPassword(req.body?.password, DEFAULT_ACCOUNT_PASSWORD);
+    if (!parsedPassword.ok) return res.status(400).json({ error: parsedPassword.error });
+    const temporaryPassword = parsedPassword.password;
     const passwordHash = await hashPassword(temporaryPassword);
-    const changed = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const account = await tx.akun.findFirst({
         where: jenis === "siswa"
           ? { sekolahId, peran: "SISWA", aktif: true, siswaId: req.params.id, guruId: null, siswa: { sekolahId, status: "Aktif" } }
           : { sekolahId, peran: "GURU", aktif: true, guruId: req.params.id, siswaId: null, guru: { sekolahId, status: "Aktif" } },
-        select: { id: true },
+        select: {
+          id: true,
+          nama: true,
+          email: true,
+          siswa: { select: { nisn: true, nama: true } },
+          guru: { select: { email: true, nama: true } },
+        },
       });
-      if (!account) return false;
+      if (!account) return null;
       const updated = await tx.akun.updateMany({
         where: { id: account.id, sekolahId, aktif: true },
-        data: { passwordHash, wajibGantiPassword: true },
+        data: { passwordHash, wajibGantiPassword: jenis === "guru" },
       });
-      if (updated.count !== 1) return false;
+      if (updated.count !== 1) return null;
       await tx.sesiAkun.updateMany({ where: { akunId: account.id, revokedAt: null }, data: { revokedAt: new Date() } });
-      return true;
+      const username =
+        jenis === "siswa"
+          ? (account.siswa?.nisn?.trim() || account.email || "")
+          : (account.guru?.email || account.email || "");
+      return { nama: account.siswa?.nama ?? account.guru?.nama ?? account.nama, username };
     });
-    if (!changed) return res.status(404).json({ error: "Akun aktif tidak ditemukan di sekolah ini." });
-    return res.json({ temporaryPassword });
+    if (!result) return res.status(404).json({ error: "Akun aktif tidak ditemukan di sekolah ini." });
+    return res.json({ temporaryPassword, username: result.username, nama: result.nama });
   } catch (error) {
     console.error("Gagal mereset password akun sekolah:", error);
     return res.status(503).json({ error: "Password belum dapat direset." });
@@ -758,28 +819,77 @@ app.post("/api/auth/lms/login", async (req, res) => {
   const { identitas, password, peran } = req.body || {};
   if (typeof identitas !== "string" || identitas.length > 254 || typeof password !== "string" || password.length > 1024 || (peran !== "SISWA" && peran !== "GURU")) return res.status(400).json({ error: "Periksa identitas, peran, dan kata sandi." });
   try {
-    const result = await limitLogin<{ token: string; nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean }>(loginIp(req), identitas, async () => {
+    const result = await limitLogin<{
+      token: string;
+      nama: string;
+      peran: "SISWA" | "GURU";
+      wajibGantiPassword: boolean;
+      sekolahId: string;
+      siswaId: string | null;
+      kelasId: string | null;
+    }>(loginIp(req), identitas, async () => {
       const identity = identitas.trim().toLowerCase();
       const account = peran === "SISWA"
-        ? await prisma.akun.findFirst({ where: { peran: "SISWA", siswa: { nisn: identity } }, include: { siswa: { select: { sekolahId: true, status: true } }, guru: { select: { sekolahId: true, status: true } } } })
-        : await prisma.akun.findUnique({ where: { email: identity }, include: { siswa: { select: { sekolahId: true, status: true } }, guru: { select: { sekolahId: true, status: true } } } });
+        ? await prisma.akun.findFirst({
+            where: {
+              peran: "SISWA",
+              ...(req.tenant?.kind === "school" ? { sekolahId: req.tenant.id } : {}),
+              OR: [{ siswa: { nisn: identity } }, { email: identity }],
+            },
+            include: {
+              siswa: { select: { sekolahId: true, status: true, kelasId: true } },
+              guru: { select: { sekolahId: true, status: true } },
+            },
+          })
+        : await prisma.akun.findUnique({
+            where: { email: identity },
+            include: {
+              siswa: { select: { sekolahId: true, status: true, kelasId: true } },
+              guru: { select: { sekolahId: true, status: true } },
+            },
+          });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       const related = account?.peran === "SISWA" ? account.siswa : account?.peran === "GURU" ? account.guru : null;
       if (!account || !valid || account.peran !== peran || !account.aktif || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id) || !related || related.sekolahId !== account.sekolahId || related.status !== "Aktif" || (peran === "SISWA" ? !!account.guruId : !!account.siswaId)) return { kind: "failure" };
       const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
       if (!token) return { kind: "failure" };
-      return { kind: "success", value: { token, nama: account.nama, peran: account.peran as "SISWA" | "GURU", wajibGantiPassword: account.wajibGantiPassword } };
+      return {
+        kind: "success",
+        value: {
+          token,
+          nama: account.nama,
+          peran: account.peran as "SISWA" | "GURU",
+          wajibGantiPassword: account.wajibGantiPassword,
+          sekolahId: account.sekolahId,
+          siswaId: account.siswaId ?? null,
+          kelasId: account.siswa?.kelasId ?? null,
+        },
+      };
     });
     if (result.kind === "limited") {
       res.setHeader("Retry-After", String(result.retryAfter));
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
     if (result.kind === "failure") return res.status(401).json({ error: "Identitas atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
+
+    let presensiHariIni = null;
+    if (result.value.peran === "SISWA" && result.value.siswaId) {
+      presensiHariIni = await recordStudentLoginAttendance(prisma, {
+        sekolahId: result.value.sekolahId,
+        siswaId: result.value.siswaId,
+        kelasId: result.value.kelasId,
+      }).catch((err) => {
+        console.error("Gagal mencatat presensi otomatis saat login siswa:", err);
+        return null;
+      });
+    }
+
     res.cookie(lmsCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({
       nama: result.value.nama,
       peran: result.value.peran,
       wajibGantiPassword: result.value.wajibGantiPassword,
+      presensiHariIni,
       token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
       user: {
         nama: result.value.nama,
@@ -797,7 +907,7 @@ app.get("/api/auth/lms/session", async (req, res) => {
   try {
     const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    const [school, guru] = await Promise.all([
+    const [school, guru, presensiHariIni] = await Promise.all([
       session.akun.sekolahId
         ? prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true, plan: true } })
         : null,
@@ -807,6 +917,16 @@ app.get("/api/auth/lms/session", async (req, res) => {
             select: { id: true, nama: true, email: true, nuptk: true, telepon: true, mapelUtama: true },
           })
         : null,
+      session.akun.peran === "SISWA" && session.akun.siswaId && session.akun.sekolahId
+        ? recordStudentLoginAttendance(prisma, {
+            sekolahId: session.akun.sekolahId,
+            siswaId: session.akun.siswaId,
+            kelasId: session.akun.siswa?.kelasId ?? null,
+          }).catch((err) => {
+            console.error("Gagal mencatat/memuat presensi otomatis siswa:", err);
+            return null;
+          })
+        : Promise.resolve(null),
     ]);
     return res.json({
       nama: guru?.nama ?? session.akun.nama,
@@ -820,6 +940,7 @@ app.get("/api/auth/lms/session", async (req, res) => {
       nuptk: guru?.nuptk ?? null,
       telepon: guru?.telepon ?? null,
       mapelUtama: guru?.mapelUtama ?? null,
+      presensiHariIni,
     });
   } catch (error) {
     console.error("Gagal memeriksa sesi LMS:", error);
@@ -883,11 +1004,7 @@ app.get("/api/lms/beranda", async (req, res) => {
   }
 });
 
-function jakartaDate(): Date {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-  const part = (type: string) => parts.find((item) => item.type === type)?.value;
-  return new Date(`${part("year")}-${part("month")}-${part("day")}T00:00:00.000Z`);
-}
+
 
 async function getDevSandboxLmsContext(req: express.Request): Promise<{
   sekolahId: string;
@@ -995,21 +1112,188 @@ app.get("/api/lms/jadwal", async (req, res) => {
   }
 });
 
+async function resolveTeacherManagedClasses(sekolahId: string, guruId: string) {
+  const [allClasses, schedules] = await Promise.all([
+    prisma.kelas.findMany({
+      where: { sekolahId },
+      select: { id: true, nama: true, waliGuruId: true },
+      orderBy: { nama: "asc" },
+      take: 300,
+    }),
+    prisma.jadwalPelajaran.findMany({
+      where: { sekolahId, guruId },
+      select: { kelasId: true },
+      take: 1000,
+    }),
+  ]);
+  const assignedSet = new Set<string>();
+  for (const k of allClasses) {
+    if (k.waliGuruId === guruId) assignedSet.add(k.id);
+  }
+  for (const j of schedules) {
+    assignedSet.add(j.kelasId);
+  }
+  // If teacher has specific wali/jadwal classes, scope strictly to them; otherwise allow school classes
+  const managedClasses = assignedSet.size > 0
+    ? allClasses.filter((k) => assignedSet.has(k.id))
+    : allClasses;
+  return {
+    managedClasses: managedClasses.map((k) => ({ id: k.id, nama: k.nama, isWali: k.waliGuruId === guruId })),
+    managedIds: managedClasses.map((k) => k.id),
+  };
+}
+
+app.get("/api/lms/guru/siswa", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId } = ctx;
+    const { managedClasses, managedIds } = await resolveTeacherManagedClasses(sekolahId, guruId);
+    const kelasParam = typeof req.query.kelasId === "string" ? req.query.kelasId.trim() : "";
+    const qParam = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
+
+    if (!managedIds.length) {
+      return res.json({ kelas: [], siswa: [] });
+    }
+    const targetKelasIds = kelasParam && managedIds.includes(kelasParam) ? [kelasParam] : managedIds;
+    const escapedTerm = qParam ? qParam.replace(/[\\%_]/g, "\\$&") : "";
+    const students = await prisma.siswa.findMany({
+      where: {
+        sekolahId,
+        status: "Aktif",
+        kelasId: { in: targetKelasIds },
+        ...(escapedTerm
+          ? {
+              OR: [
+                { nama: { contains: escapedTerm, mode: "insensitive" } },
+                { nisn: { contains: escapedTerm, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        nama: true,
+        nisn: true,
+        kelasId: true,
+        status: true,
+        akun: { select: { id: true, aktif: true, email: true } },
+      },
+      orderBy: [{ nama: "asc" }, { id: "asc" }],
+      take: 300,
+    });
+    const kelasNameById = new Map(managedClasses.map((k) => [k.id, k.nama]));
+    return res.json({
+      kelas: managedClasses,
+      siswa: students.map((s) => ({
+        id: s.id,
+        nama: s.nama,
+        nisn: s.nisn,
+        kelasId: s.kelasId,
+        kelasNama: s.kelasId ? kelasNameById.get(s.kelasId) ?? "" : "",
+        status: s.status,
+        punyaAkun: Boolean(s.akun?.aktif),
+        username: s.nisn.trim() || s.akun?.email || "",
+      })),
+    });
+  } catch (error) {
+    console.error("Gagal memuat daftar siswa guru:", error);
+    return res.status(503).json({ error: "Data siswa belum dapat dimuat." });
+  }
+});
+
+app.post("/api/lms/guru/siswa/:id/akun", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId } = ctx;
+    const parsedPassword = parseRequestedAccountPassword(req.body?.password, DEFAULT_STUDENT_PASSWORD);
+    if (!parsedPassword.ok) return res.status(400).json({ error: parsedPassword.error });
+    const temporaryPassword = parsedPassword.password;
+    const passwordHash = await hashPassword(temporaryPassword);
+    const { managedIds } = await resolveTeacherManagedClasses(sekolahId, guruId);
+    if (!managedIds.length) {
+      return res.status(403).json({ error: "Anda belum memiliki kelas yang diampu." });
+    }
+
+    const createdInfo = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Siswa" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
+      const siswa = await tx.siswa.findFirst({
+        where: { id: req.params.id, sekolahId, status: "Aktif", kelasId: { in: managedIds } },
+        select: { id: true, nama: true, nisn: true, akun: { select: { id: true, aktif: true, email: true } } },
+      });
+      if (!siswa) throw new Error("NOT_FOUND");
+      if (siswa.akun?.aktif) throw new Error("ACCOUNT_EXISTS");
+      const { username, storeInAccountEmail } = resolveStudentLoginUsername(siswa, siswa.akun?.email);
+      if (siswa.akun) {
+        await tx.akun.update({
+          where: { id: siswa.akun.id },
+          data: {
+            nama: siswa.nama,
+            email: storeInAccountEmail,
+            aktif: true,
+            passwordHash,
+            wajibGantiPassword: false,
+          },
+        });
+      } else {
+        await tx.akun.create({
+          data: {
+            nama: siswa.nama,
+            email: storeInAccountEmail,
+            sekolahId,
+            siswaId: siswa.id,
+            peran: "SISWA",
+            passwordHash,
+            wajibGantiPassword: false,
+          },
+        });
+      }
+      return { nama: siswa.nama, username };
+    });
+
+    return res.status(201).json({
+      temporaryPassword,
+      username: createdInfo.username,
+      nama: createdInfo.nama,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      return res.status(404).json({ error: "Siswa tidak ditemukan di kelas yang Anda ampu." });
+    }
+    if (error instanceof Error && error.message === "ACCOUNT_EXISTS") {
+      return res.status(409).json({ error: "Akun siswa sudah terdaftar. Gunakan tombol Reset Password." });
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ error: "Akun atau username sudah terdaftar." });
+    }
+    console.error("Gagal membuat akun siswa oleh guru:", error);
+    return res.status(503).json({ error: "Akun siswa belum dapat dibuat." });
+  }
+});
+
 app.get("/api/lms/guru/siswa-reset", async (req, res) => {
   try {
-    const session = await getLmsSession(req);
-    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    if (session.akun.peran !== "GURU" || session.akun.wajibGantiPassword || !session.akun.guruId || !session.akun.sekolahId) return res.status(403).json({ error: "Akses ditolak. Guru harus mengganti password awal." });
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi tidak valid." });
     const nisn = req.query.nisn;
-    if (typeof nisn !== "string" || !/^\d{10}$/.test(nisn)) return res.status(400).json({ error: "NISN harus terdiri dari 10 angka." });
-    const sekolahId = session.akun.sekolahId;
-    const today = jakartaDate();
-    const kelas = await prisma.kelas.findMany({
-      where: { sekolahId, jadwal: { some: { sekolahId, guruId: session.akun.guruId, tahunAjaran: { sekolahId, mulai: { lte: today }, selesai: { gte: today } } } } },
-      select: { id: true },
+    if (typeof nisn !== "string" || nisn.trim().length < 3 || nisn.trim().length > 64) {
+      return res.status(400).json({ error: "Masukkan NISN atau username siswa yang valid." });
+    }
+    const { sekolahId, guruId } = ctx;
+    const { managedIds } = await resolveTeacherManagedClasses(sekolahId, guruId);
+    const key = nisn.trim().toLowerCase();
+    const siswa = await prisma.siswa.findFirst({
+      where: {
+        sekolahId,
+        status: "Aktif",
+        kelasId: { in: managedIds },
+        OR: [{ nisn: key }, { akun: { is: { email: key } } }],
+        akun: { is: { aktif: true, peran: "SISWA", sekolahId, guruId: null } },
+      },
+      select: { id: true, nama: true, nisn: true },
     });
-    const siswa = await prisma.siswa.findFirst({ where: { nisn, sekolahId, status: "Aktif", kelasId: { in: kelas.map((item) => item.id) }, akun: { is: { aktif: true, peran: "SISWA", sekolahId, guruId: null } } }, select: { id: true, nama: true, nisn: true } });
-    if (!siswa) return res.status(404).json({ error: "Siswa tidak ditemukan atau tidak berada di kelas yang Anda ajar pada tahun ajaran aktif." });
+    if (!siswa) return res.status(404).json({ error: "Siswa tidak ditemukan atau tidak berada di kelas yang Anda ampu." });
     return res.json(siswa);
   } catch (error) {
     console.error("Gagal mencari siswa untuk reset password:", error);
@@ -1019,30 +1303,35 @@ app.get("/api/lms/guru/siswa-reset", async (req, res) => {
 
 app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
   try {
-    const session = await getLmsSession(req);
-    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    if (session.akun.peran !== "GURU" || session.akun.wajibGantiPassword || !session.akun.guruId || !session.akun.sekolahId) return res.status(403).json({ error: "Akses ditolak. Guru harus mengganti password awal." });
-    const sekolahId = session.akun.sekolahId;
-    const guruId = session.akun.guruId;
-    const temporaryPassword = DEFAULT_STUDENT_PASSWORD;
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi tidak valid." });
+    const { sekolahId, guruId } = ctx;
+    const parsedPassword = parseRequestedAccountPassword(req.body?.password, DEFAULT_STUDENT_PASSWORD);
+    if (!parsedPassword.ok) return res.status(400).json({ error: parsedPassword.error });
+    const temporaryPassword = parsedPassword.password;
     const passwordHash = await hashPassword(temporaryPassword);
-    const today = jakartaDate();
-    const changed = await prisma.$transaction(async (tx) => {
-      const kelas = await tx.kelas.findMany({
-        where: { sekolahId, jadwal: { some: { sekolahId, guruId, tahunAjaran: { sekolahId, mulai: { lte: today }, selesai: { gte: today } } } } },
-        select: { id: true },
+    const { managedIds } = await resolveTeacherManagedClasses(sekolahId, guruId);
+    const result = await prisma.$transaction(async (tx) => {
+      const student = await tx.siswa.findFirst({
+        where: { id: req.params.id, sekolahId, status: "Aktif", kelasId: { in: managedIds } },
+        select: { id: true, nama: true, nisn: true },
       });
-      const student = await tx.siswa.findFirst({ where: { id: req.params.id, sekolahId, status: "Aktif", kelasId: { in: kelas.map((item) => item.id) } }, select: { id: true } });
-      if (!student) return false;
-      const account = await tx.akun.findFirst({ where: { siswaId: student.id, sekolahId, peran: "SISWA", aktif: true, guruId: null }, select: { id: true } });
-      if (!account) return false;
-      const updated = await tx.akun.updateMany({ where: { id: account.id, sekolahId, siswaId: student.id, peran: "SISWA", aktif: true, guruId: null }, data: { passwordHash, wajibGantiPassword: true } });
-      if (updated.count !== 1) return false;
+      if (!student) return null;
+      const account = await tx.akun.findFirst({
+        where: { siswaId: student.id, sekolahId, peran: "SISWA", aktif: true, guruId: null },
+        select: { id: true, email: true },
+      });
+      if (!account) return null;
+      const updated = await tx.akun.updateMany({
+        where: { id: account.id, sekolahId, siswaId: student.id, peran: "SISWA", aktif: true, guruId: null },
+        data: { passwordHash, wajibGantiPassword: false },
+      });
+      if (updated.count !== 1) return null;
       await tx.sesiAkun.updateMany({ where: { akunId: account.id, revokedAt: null }, data: { revokedAt: new Date() } });
-      return true;
+      return { nama: student.nama, username: student.nisn.trim() || account.email || "" };
     });
-    if (!changed) return res.status(404).json({ error: "Siswa tidak ditemukan atau tidak berada di kelas yang Anda ajar pada tahun ajaran aktif." });
-    return res.json({ temporaryPassword });
+    if (!result) return res.status(404).json({ error: "Akun siswa aktif tidak ditemukan di kelas yang Anda ampu." });
+    return res.json({ temporaryPassword, username: result.username, nama: result.nama });
   } catch (error) {
     console.error("Gagal mereset password siswa:", error);
     return res.status(503).json({ error: "Password siswa belum dapat direset." });
@@ -1258,6 +1547,182 @@ app.get("/api/lms/guru/beranda", async (req, res) => {
   }
 });
 
+async function loadAttendanceSheetPayload(params: {
+  sekolahId: string;
+  kelasList: Array<{ id: string; nama: string; isWali: boolean }>;
+  requestedKelasId: string;
+  tanggalParam: string;
+  bulanParam: string;
+}) {
+  const todayIso = jakartaIsoDate();
+  const selectedKelas = params.kelasList.find((k) => k.id === params.requestedKelasId) ?? params.kelasList[0] ?? null;
+
+  if (!selectedKelas) {
+    return {
+      kelas: [],
+      selectedKelasId: null,
+      tanggal: params.tanggalParam,
+      bulan: params.bulanParam,
+      today: todayIso,
+      kalenderBulanan: {},
+      siswa: [],
+    };
+  }
+
+  const targetDate = new Date(`${params.tanggalParam}T00:00:00.000Z`);
+  const [yearNum, monthNum] = params.bulanParam.split("-").map(Number);
+  const monthStart = new Date(Date.UTC(yearNum, monthNum - 1, 1));
+  const monthEnd = new Date(Date.UTC(yearNum, monthNum, 0));
+
+  const [students, dailyRecords, monthlyRecords] = await Promise.all([
+    prisma.siswa.findMany({
+      where: { sekolahId: params.sekolahId, kelasId: selectedKelas.id, status: "Aktif" },
+      select: { id: true, nama: true, nisn: true },
+      orderBy: { nama: "asc" },
+    }),
+    prisma.presensi.findMany({
+      where: { sekolahId: params.sekolahId, kelasId: selectedKelas.id, tanggal: targetDate },
+      select: { siswaId: true, status: true, keterangan: true, waktuHadir: true },
+    }),
+    prisma.presensi.findMany({
+      where: { sekolahId: params.sekolahId, kelasId: selectedKelas.id, tanggal: { gte: monthStart, lte: monthEnd } },
+      select: { siswaId: true, status: true, tanggal: true },
+    }),
+  ]);
+
+  const dailyMap = new Map(dailyRecords.map((r) => [r.siswaId, r]));
+  const monthlyMap = new Map<string, { HADIR: number; IZIN: number; SAKIT: number; ALPA: number }>();
+  for (const r of monthlyRecords) {
+    const entry = monthlyMap.get(r.siswaId) ?? { HADIR: 0, IZIN: 0, SAKIT: 0, ALPA: 0 };
+    if (r.status in entry) entry[r.status as keyof typeof entry] += 1;
+    monthlyMap.set(r.siswaId, entry);
+  }
+
+  const kalenderBulanan = buildMonthlyCalendarSummary(monthlyRecords, students.length);
+
+  return {
+    kelas: params.kelasList,
+    selectedKelasId: selectedKelas.id,
+    tanggal: params.tanggalParam,
+    bulan: params.bulanParam,
+    today: todayIso,
+    kalenderBulanan,
+    siswa: students.map((s) => {
+      const daily = dailyMap.get(s.id);
+      const rekap = monthlyMap.get(s.id) ?? { HADIR: 0, IZIN: 0, SAKIT: 0, ALPA: 0 };
+      return {
+        id: s.id,
+        nama: s.nama,
+        nisn: s.nisn,
+        status: daily?.status ?? null,
+        keterangan: daily?.keterangan ?? "",
+        waktuHadir: daily?.waktuHadir ?? null,
+        rekapBulanan: rekap,
+      };
+    }),
+  };
+}
+
+async function resolveOrCreateAttendanceYear(sekolahId: string, targetDate: Date): Promise<string> {
+  let year =
+    (await prisma.tahunAjaran.findFirst({
+      where: { sekolahId, mulai: { lte: targetDate }, selesai: { gte: targetDate } },
+      select: { id: true },
+    })) ??
+    (await prisma.tahunAjaran.findFirst({
+      where: { sekolahId },
+      orderBy: { mulai: "desc" },
+      select: { id: true },
+    }));
+
+  if (!year) {
+    const y = targetDate.getUTCFullYear();
+    year = await prisma.tahunAjaran.create({
+      data: {
+        sekolahId,
+        nama: `${y}/${y + 1}`,
+        semester: "Ganjil",
+        mulai: new Date(`${y}-01-01T00:00:00.000Z`),
+        selesai: new Date(`${y}-12-31T23:59:59.000Z`),
+      },
+      select: { id: true },
+    });
+  }
+  return year.id;
+}
+
+async function saveAttendanceBatch(params: {
+  sekolahId: string;
+  kelasId: string;
+  tanggalStr: string;
+  entries: Array<{ siswaId: string; status: "HADIR" | "SAKIT" | "IZIN" | "ALPA"; keterangan?: string | null }>;
+}): Promise<{ savedCount: number }> {
+  const targetDate = new Date(`${params.tanggalStr}T00:00:00.000Z`);
+  const yearId = await resolveOrCreateAttendanceYear(params.sekolahId, targetDate);
+
+  const activeStudents = await prisma.siswa.findMany({
+    where: { sekolahId: params.sekolahId, kelasId: params.kelasId, status: "Aktif" },
+    select: { id: true },
+  });
+  const validStudentIds = new Set(activeStudents.map((s) => s.id));
+  const filteredEntries = params.entries.filter((e) => validStudentIds.has(e.siswaId));
+  if (!filteredEntries.length) return { savedCount: 0 };
+
+  const existingRows = await prisma.presensi.findMany({
+    where: {
+      sekolahId: params.sekolahId,
+      tanggal: targetDate,
+      siswaId: { in: filteredEntries.map((e) => e.siswaId) },
+    },
+    select: { siswaId: true, keterangan: true, waktuHadir: true },
+  });
+  const existingMap = new Map(existingRows.map((r) => [r.siswaId, r]));
+
+  const now = new Date();
+  await prisma.$transaction(
+    filteredEntries.map((entry) => {
+      const prior = existingMap.get(entry.siswaId);
+      const explicitNote = typeof entry.keterangan === "string" ? entry.keterangan.trim().slice(0, 160) : null;
+      const resolvedNote =
+        explicitNote !== null && explicitNote !== ""
+          ? explicitNote
+          : entry.status === "HADIR" && prior?.keterangan === "Login Daring"
+            ? "Login Daring"
+            : null;
+      const resolvedWaktu = entry.status === "HADIR" ? (prior?.waktuHadir ?? now) : null;
+
+      return prisma.presensi.upsert({
+        where: {
+          sekolahId_siswaId_tanggal: {
+            sekolahId: params.sekolahId,
+            siswaId: entry.siswaId,
+            tanggal: targetDate,
+          },
+        },
+        create: {
+          sekolahId: params.sekolahId,
+          tahunAjaranId: yearId,
+          kelasId: params.kelasId,
+          siswaId: entry.siswaId,
+          tanggal: targetDate,
+          status: entry.status,
+          keterangan: resolvedNote,
+          waktuHadir: resolvedWaktu,
+        },
+        update: {
+          kelasId: params.kelasId,
+          tahunAjaranId: yearId,
+          status: entry.status,
+          keterangan: resolvedNote,
+          waktuHadir: resolvedWaktu,
+        },
+      });
+    }),
+  );
+
+  return { savedCount: filteredEntries.length };
+}
+
 app.get("/api/lms/guru/presensi", async (req, res) => {
   try {
     const ctx = await resolveTeacherPortalContext(req);
@@ -1266,7 +1731,7 @@ app.get("/api/lms/guru/presensi", async (req, res) => {
     const scope = await resolveTeacherScope(sekolahId, guruId);
     const restrictToAssigned = !scope.isWaliKelas;
 
-    const kelasList = await prisma.kelas.findMany({
+    const kelasRaw = await prisma.kelas.findMany({
       where: {
         sekolahId,
         ...(restrictToAssigned ? { id: { in: scope.assignedKelasIds } } : {}),
@@ -1276,76 +1741,23 @@ app.get("/api/lms/guru/presensi", async (req, res) => {
       take: 200,
     });
 
-    const todayDate = jakartaDate();
-    const todayIso = todayDate.toISOString().slice(0, 10);
+    const todayIso = jakartaIsoDate();
     const tanggalParam = typeof req.query.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.tanggal)
       ? req.query.tanggal
       : todayIso;
     const bulanParam = typeof req.query.bulan === "string" && /^\d{4}-\d{2}$/.test(req.query.bulan)
       ? req.query.bulan
       : tanggalParam.slice(0, 7);
-
     const requestedKelasId = typeof req.query.kelasId === "string" ? req.query.kelasId : "";
-    const selectedKelas = kelasList.find((k) => k.id === requestedKelasId) ?? kelasList[0] ?? null;
 
-    if (!selectedKelas) {
-      return res.json({
-        kelas: [],
-        selectedKelasId: null,
-        tanggal: tanggalParam,
-        bulan: bulanParam,
-        siswa: [],
-      });
-    }
-
-    const targetDate = new Date(`${tanggalParam}T00:00:00.000Z`);
-    const [yearNum, monthNum] = bulanParam.split("-").map(Number);
-    const monthStart = new Date(Date.UTC(yearNum, monthNum - 1, 1));
-    const monthEnd = new Date(Date.UTC(yearNum, monthNum, 0));
-
-    const [students, dailyRecords, monthlyRecords] = await Promise.all([
-      prisma.siswa.findMany({
-        where: { sekolahId, kelasId: selectedKelas.id, status: "Aktif" },
-        select: { id: true, nama: true, nisn: true },
-        orderBy: { nama: "asc" },
-      }),
-      prisma.presensi.findMany({
-        where: { sekolahId, kelasId: selectedKelas.id, tanggal: targetDate },
-        select: { siswaId: true, status: true, keterangan: true, waktuHadir: true },
-      }),
-      prisma.presensi.findMany({
-        where: { sekolahId, kelasId: selectedKelas.id, tanggal: { gte: monthStart, lte: monthEnd } },
-        select: { siswaId: true, status: true },
-      }),
-    ]);
-
-    const dailyMap = new Map(dailyRecords.map((r) => [r.siswaId, r]));
-    const monthlyMap = new Map<string, { HADIR: number; IZIN: number; SAKIT: number; ALPA: number }>();
-    for (const r of monthlyRecords) {
-      const entry = monthlyMap.get(r.siswaId) ?? { HADIR: 0, IZIN: 0, SAKIT: 0, ALPA: 0 };
-      if (r.status in entry) entry[r.status as keyof typeof entry] += 1;
-      monthlyMap.set(r.siswaId, entry);
-    }
-
-    return res.json({
-      kelas: kelasList.map((k) => ({ id: k.id, nama: k.nama, isWali: k.waliGuruId === guruId })),
-      selectedKelasId: selectedKelas.id,
-      tanggal: tanggalParam,
-      bulan: bulanParam,
-      siswa: students.map((s) => {
-        const daily = dailyMap.get(s.id);
-        const rekap = monthlyMap.get(s.id) ?? { HADIR: 0, IZIN: 0, SAKIT: 0, ALPA: 0 };
-        return {
-          id: s.id,
-          nama: s.nama,
-          nisn: s.nisn,
-          status: daily?.status ?? null,
-          keterangan: daily?.keterangan ?? "",
-          waktuHadir: daily?.waktuHadir ?? null,
-          rekapBulanan: rekap,
-        };
-      }),
+    const payload = await loadAttendanceSheetPayload({
+      sekolahId,
+      kelasList: kelasRaw.map((k) => ({ id: k.id, nama: k.nama, isWali: k.waliGuruId === guruId })),
+      requestedKelasId,
+      tanggalParam,
+      bulanParam,
     });
+    return res.json(payload);
   } catch (error) {
     console.error("Gagal memuat presensi guru:", error);
     return res.status(503).json({ error: "Data presensi siswa belum dapat dimuat." });
@@ -1362,7 +1774,7 @@ app.patch("/api/lms/guru/presensi", async (req, res) => {
     const siswaId = typeof req.body?.siswaId === "string" ? req.body.siswaId.trim() : "";
     const tanggalStr = typeof req.body?.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.tanggal)
       ? req.body.tanggal
-      : jakartaDate().toISOString().slice(0, 10);
+      : jakartaIsoDate();
     const status = req.body?.status;
     const keterangan = typeof req.body?.keterangan === "string" ? req.body.keterangan.trim().slice(0, 160) : null;
 
@@ -1382,34 +1794,13 @@ app.patch("/api/lms/guru/presensi", async (req, res) => {
     if (!student) return res.status(404).json({ error: "Siswa aktif pada kelas tersebut tidak ditemukan." });
 
     const targetDate = new Date(`${tanggalStr}T00:00:00.000Z`);
-    let year = await prisma.tahunAjaran.findFirst({
-      where: { sekolahId, mulai: { lte: targetDate }, selesai: { gte: targetDate } },
-      select: { id: true },
-    }) ?? await prisma.tahunAjaran.findFirst({
-      where: { sekolahId },
-      orderBy: { mulai: "desc" },
-      select: { id: true },
-    });
-
-    if (!year) {
-      const y = new Date().getUTCFullYear();
-      year = await prisma.tahunAjaran.create({
-        data: {
-          sekolahId,
-          nama: `${y}/${y + 1}`,
-          semester: "Ganjil",
-          mulai: new Date(`${y}-07-01T00:00:00.000Z`),
-          selesai: new Date(`${y + 1}-06-30T00:00:00.000Z`),
-        },
-        select: { id: true },
-      });
-    }
+    const yearId = await resolveOrCreateAttendanceYear(sekolahId, targetDate);
 
     const saved = await prisma.presensi.upsert({
       where: { sekolahId_siswaId_tanggal: { sekolahId, siswaId, tanggal: targetDate } },
       create: {
         sekolahId,
-        tahunAjaranId: year.id,
+        tahunAjaranId: yearId,
         kelasId,
         siswaId,
         tanggal: targetDate,
@@ -1419,7 +1810,7 @@ app.patch("/api/lms/guru/presensi", async (req, res) => {
       },
       update: {
         kelasId,
-        tahunAjaranId: year.id,
+        tahunAjaranId: yearId,
         status,
         keterangan: keterangan || null,
         waktuHadir: status === "HADIR" ? new Date() : null,
@@ -1430,6 +1821,184 @@ app.patch("/api/lms/guru/presensi", async (req, res) => {
     return res.json({ presensi: saved, message: "Presensi siswa disimpan." });
   } catch (error) {
     console.error("Gagal menyimpan presensi guru:", error);
+    return res.status(503).json({ error: "Presensi siswa belum dapat disimpan." });
+  }
+});
+
+app.post("/api/lms/guru/presensi/batch", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId } = ctx;
+
+    const kelasId = typeof req.body?.kelasId === "string" ? req.body.kelasId.trim() : "";
+    const tanggalStr = typeof req.body?.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.tanggal)
+      ? req.body.tanggal
+      : jakartaIsoDate();
+    const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : null;
+
+    if (!kelasId || !rawEntries || rawEntries.length === 0 || rawEntries.length > 200) {
+      return res.status(400).json({ error: "Daftar presensi kelas tidak valid." });
+    }
+
+    const scope = await resolveTeacherScope(sekolahId, guruId);
+    if (!scope.isWaliKelas && !scope.assignedKelasIds.includes(kelasId)) {
+      return res.status(403).json({ error: "Anda tidak memiliki akses presensi untuk kelas ini." });
+    }
+
+    const entries: Array<{ siswaId: string; status: "HADIR" | "SAKIT" | "IZIN" | "ALPA"; keterangan?: string | null }> = [];
+    for (const item of rawEntries) {
+      if (!item || typeof item !== "object") continue;
+      const siswaId = typeof item.siswaId === "string" ? item.siswaId.trim() : "";
+      const status = item.status;
+      if (!siswaId || !["HADIR", "SAKIT", "IZIN", "ALPA"].includes(status)) {
+        return res.status(400).json({ error: "Terdapat status presensi yang tidak valid." });
+      }
+      entries.push({
+        siswaId,
+        status,
+        keterangan: typeof item.keterangan === "string" ? item.keterangan.trim().slice(0, 160) : null,
+      });
+    }
+
+    const { savedCount } = await saveAttendanceBatch({ sekolahId, kelasId, tanggalStr, entries });
+    return res.json({ savedCount, message: `Presensi ${savedCount} siswa berhasil disimpan.` });
+  } catch (error) {
+    console.error("Gagal menyimpan presensi massal guru:", error);
+    return res.status(503).json({ error: "Presensi siswa belum dapat disimpan." });
+  }
+});
+
+app.get("/api/sekolah/presensi", async (req, res) => {
+  try {
+    const session = await getSession(req, "ADMIN");
+    const sekolahId = session?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+
+    const kelasRaw = await prisma.kelas.findMany({
+      where: { sekolahId },
+      select: { id: true, nama: true },
+      orderBy: { nama: "asc" },
+      take: 300,
+    });
+
+    const todayIso = jakartaIsoDate();
+    const tanggalParam = typeof req.query.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.tanggal)
+      ? req.query.tanggal
+      : todayIso;
+    const bulanParam = typeof req.query.bulan === "string" && /^\d{4}-\d{2}$/.test(req.query.bulan)
+      ? req.query.bulan
+      : tanggalParam.slice(0, 7);
+    const requestedKelasId = typeof req.query.kelasId === "string" ? req.query.kelasId : "";
+
+    const payload = await loadAttendanceSheetPayload({
+      sekolahId,
+      kelasList: kelasRaw.map((k) => ({ id: k.id, nama: k.nama, isWali: false })),
+      requestedKelasId,
+      tanggalParam,
+      bulanParam,
+    });
+    return res.json(payload);
+  } catch (error) {
+    console.error("Gagal memuat presensi sekolah:", error);
+    return res.status(503).json({ error: "Data presensi siswa belum dapat dimuat." });
+  }
+});
+
+app.patch("/api/sekolah/presensi", async (req, res) => {
+  try {
+    const session = await getSession(req, "ADMIN");
+    const sekolahId = session?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+
+    const kelasId = typeof req.body?.kelasId === "string" ? req.body.kelasId.trim() : "";
+    const siswaId = typeof req.body?.siswaId === "string" ? req.body.siswaId.trim() : "";
+    const tanggalStr = typeof req.body?.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.tanggal)
+      ? req.body.tanggal
+      : jakartaIsoDate();
+    const status = req.body?.status;
+    const keterangan = typeof req.body?.keterangan === "string" ? req.body.keterangan.trim().slice(0, 160) : null;
+
+    if (!kelasId || !siswaId || !["HADIR", "SAKIT", "IZIN", "ALPA"].includes(status)) {
+      return res.status(400).json({ error: "Data presensi tidak lengkap atau status tidak valid." });
+    }
+
+    const student = await prisma.siswa.findFirst({
+      where: { id: siswaId, sekolahId, kelasId, status: "Aktif" },
+      select: { id: true },
+    });
+    if (!student) return res.status(404).json({ error: "Siswa aktif pada kelas tersebut tidak ditemukan." });
+
+    const targetDate = new Date(`${tanggalStr}T00:00:00.000Z`);
+    const yearId = await resolveOrCreateAttendanceYear(sekolahId, targetDate);
+
+    const saved = await prisma.presensi.upsert({
+      where: { sekolahId_siswaId_tanggal: { sekolahId, siswaId, tanggal: targetDate } },
+      create: {
+        sekolahId,
+        tahunAjaranId: yearId,
+        kelasId,
+        siswaId,
+        tanggal: targetDate,
+        status,
+        keterangan: keterangan || null,
+        waktuHadir: status === "HADIR" ? new Date() : null,
+      },
+      update: {
+        kelasId,
+        tahunAjaranId: yearId,
+        status,
+        keterangan: keterangan || null,
+        waktuHadir: status === "HADIR" ? new Date() : null,
+      },
+      select: { siswaId: true, status: true, keterangan: true, waktuHadir: true },
+    });
+
+    return res.json({ presensi: saved, message: "Presensi siswa disimpan." });
+  } catch (error) {
+    console.error("Gagal menyimpan presensi sekolah:", error);
+    return res.status(503).json({ error: "Presensi siswa belum dapat disimpan." });
+  }
+});
+
+app.post("/api/sekolah/presensi/batch", async (req, res) => {
+  try {
+    const session = await getSession(req, "ADMIN");
+    const sekolahId = session?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+
+    const kelasId = typeof req.body?.kelasId === "string" ? req.body.kelasId.trim() : "";
+    const tanggalStr = typeof req.body?.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.tanggal)
+      ? req.body.tanggal
+      : jakartaIsoDate();
+    const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : null;
+
+    if (!kelasId || !rawEntries || rawEntries.length === 0 || rawEntries.length > 200) {
+      return res.status(400).json({ error: "Daftar presensi kelas tidak valid." });
+    }
+
+    const kelas = await prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true } });
+    if (!kelas) return res.status(404).json({ error: "Kelas tidak ditemukan di sekolah ini." });
+
+    const entries: Array<{ siswaId: string; status: "HADIR" | "SAKIT" | "IZIN" | "ALPA"; keterangan?: string | null }> = [];
+    for (const item of rawEntries) {
+      if (!item || typeof item !== "object") continue;
+      const siswaId = typeof item.siswaId === "string" ? item.siswaId.trim() : "";
+      const status = item.status;
+      if (!siswaId || !["HADIR", "SAKIT", "IZIN", "ALPA"].includes(status)) {
+        return res.status(400).json({ error: "Terdapat status presensi yang tidak valid." });
+      }
+      entries.push({
+        siswaId,
+        status,
+        keterangan: typeof item.keterangan === "string" ? item.keterangan.trim().slice(0, 160) : null,
+      });
+    }
+
+    const { savedCount } = await saveAttendanceBatch({ sekolahId, kelasId, tanggalStr, entries });
+    return res.json({ savedCount, message: `Presensi ${savedCount} siswa berhasil disimpan.` });
+  } catch (error) {
+    console.error("Gagal menyimpan presensi massal sekolah:", error);
     return res.status(503).json({ error: "Presensi siswa belum dapat disimpan." });
   }
 });
@@ -1528,9 +2097,17 @@ app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(
 app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 app.use("/api/sekolah", tahap2AcademicRoutes(resolveAcademicSchoolSession));
 app.use("/api/sekolah", tahap2CbtRoutes(resolveAdminOrTeacherSession));
+app.use("/api/cbt", cbtPublicBankRoutes(resolveAdminOrTeacherSession));
 app.use("/api/sekolah", tahap2ProRoutes(resolveAdminSchoolSession));
 app.use("/api/sekolah", tahap2CollabRoutes(resolveCollabSchoolSession));
+app.use("/api/sekolah", schoolMasterContentRoutes(resolveAdminOrTeacherSession));
+app.use("/api/school", schoolMasterContentRoutes(resolveAdminOrTeacherSession));
 app.use("/api/school", tahap2CollabRoutes(resolveCollabSchoolSession));
+app.use("/api/master/pustaka-konten", masterContentRoutes(async (req) => {
+  const masterSession = await getSession(req, "MASTER_ADMIN");
+  if (!masterSession) return null;
+  return { akunId: masterSession.akun.id, nama: masterSession.akun.nama };
+}));
 app.use("/api/verval", vervalRoutes(async (req) => {
   const adminSession = await getSession(req, "ADMIN");
   if (adminSession?.akun.sekolahId) {
@@ -2370,7 +2947,7 @@ app.get("/api/sekolah/:jenis", async (req, res) => {
     const page = pageValue === undefined ? 1 : Number(pageValue);
     const pageSize = limitValue === undefined ? 25 : Number(limitValue);
     const pagination = { skip: (page - 1) * pageSize, take: pageSize + 1 };
-    let rows: { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null }[];
+    let rows: { id: string; nama: string; keterangan: string; status: string; kelasId?: string | null; punyaAkun?: boolean; username?: string; email?: string; telepon?: string; alamat?: string; jenjang?: string; catatan?: string | null }[];
     let total: number;
     if (req.params.jenis === "siswa") {
       const filter = req.query.kelas;
@@ -2387,10 +2964,18 @@ app.get("/api/sekolah/:jenis", async (req, res) => {
         ...(term ? { OR: [{ nama: { contains: term, mode: "insensitive" } }, { nisn: { contains: term, mode: "insensitive" } }] } : {}),
       };
       const [data, count] = await Promise.all([
-        prisma.siswa.findMany({ where, select: { id: true, nama: true, nisn: true, kelasId: true, status: true, akun: { select: { id: true } } }, orderBy: { id: "asc" }, ...pagination }),
+        prisma.siswa.findMany({ where, select: { id: true, nama: true, nisn: true, kelasId: true, status: true, akun: { select: { id: true, aktif: true, email: true } } }, orderBy: { id: "asc" }, ...pagination }),
         prisma.siswa.count({ where }),
       ]);
-      rows = data.map((item) => ({ id: item.id, nama: item.nama, keterangan: item.nisn, kelasId: item.kelasId, status: item.status, punyaAkun: !!item.akun }));
+      rows = data.map((item) => ({
+        id: item.id,
+        nama: item.nama,
+        keterangan: item.nisn,
+        kelasId: item.kelasId,
+        status: item.status,
+        punyaAkun: Boolean(item.akun?.aktif),
+        username: item.nisn.trim() || item.akun?.email || "",
+      }));
       total = count;
     } else if (req.params.jenis === "guru") {
       const search = req.query.q;
@@ -2550,6 +3135,95 @@ app.get("/api/master/sekolah", async (req, res) => {
   } catch (error) {
     console.error("Gagal memuat daftar sekolah:", error);
     return res.status(503).json({ error: "Daftar sekolah tidak tersedia. Coba lagi nanti." });
+  }
+});
+
+app.post("/api/master/sekolah", async (req, res) => {
+  try {
+    const session = await getSession(req, "MASTER_ADMIN");
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+
+    const body = (req.body && typeof req.body === "object" && !Array.isArray(req.body)
+      ? req.body
+      : {}) as Record<string, unknown>;
+    const nama = typeof body.nama === "string" ? body.nama.trim() : "";
+    const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : "";
+    const npsn = typeof body.npsn === "string" ? body.npsn.trim().toUpperCase() : "";
+    const adminName = typeof body.adminName === "string" ? body.adminName.trim() : "";
+    const adminEmail = typeof body.adminEmail === "string" ? body.adminEmail.trim().toLowerCase() : "";
+    const adminPassword = typeof body.adminPassword === "string" ? body.adminPassword : "";
+    const plan = toCleanPlanCode(body.plan ?? body.paket) ?? "reguler";
+    const isiKontenSiapPakai = body.isiKontenSiapPakai === true || body.seedMasterContent === true;
+
+    if (!nama || nama.length < 3 || nama.length > 200) {
+      return res.status(400).json({ error: "Nama sekolah wajib diisi (3–200 karakter)." });
+    }
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug) || slug === "www") {
+      return res.status(400).json({ error: "Subdomain/slug tidak valid (gunakan huruf kecil, angka, atau strip)." });
+    }
+    if (npsn && !/^(?:\d{8}|[PK]\d{7})$/.test(npsn)) {
+      return res.status(400).json({ error: "Format NPSN tidak valid (8 digit atau awalan P/K + 7 digit)." });
+    }
+    if (!adminName || adminName.length < 2 || !adminEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+      return res.status(400).json({ error: "Nama dan email admin sekolah wajib diisi dengan format valid." });
+    }
+    if (!isValidPasswordLength(adminPassword)) {
+      return res.status(400).json({ error: "Kata sandi admin minimal 6 karakter." });
+    }
+
+    const passwordHash = await hashPassword(adminPassword);
+    const globalTheme = await getGlobalTheme(prisma);
+    const createdSchool = await prisma.$transaction(async (tx) => {
+      const school = await tx.sekolah.create({
+        data: {
+          nama,
+          slug,
+          npsn: npsn || null,
+          status: "ACTIVE",
+          plan,
+          themeKey: globalTheme,
+        },
+        select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true },
+      });
+      await tx.akun.create({
+        data: {
+          sekolahId: school.id,
+          nama: adminName,
+          email: adminEmail,
+          passwordHash,
+          peran: "ADMIN",
+          aktif: true,
+          wajibGantiPassword: false,
+        },
+      });
+      return school;
+    });
+
+    let seedSummary = null;
+    if (isiKontenSiapPakai) {
+      try {
+        seedSummary = await cloneMasterContentToSchool(prisma, {
+          sekolahId: createdSchool.id,
+          copyAll: true,
+        });
+      } catch (seedError) {
+        console.warn("Auto-salin Pustaka Konten Pusat saat pembuatan sekolah gagal:", seedError);
+      }
+    }
+
+    return res.status(201).json({
+      sekolah: createdSchool,
+      seedSummary,
+      message: seedSummary
+        ? `Sekolah ${createdSchool.nama} berhasil dibuat beserta ${seedSummary.copiedModul} modul & ${seedSummary.copiedBankSoal} paket soal dari Pustaka Pusat.`
+        : `Sekolah ${createdSchool.nama} berhasil dibuat.`,
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({ error: "Slug, NPSN, atau email admin sudah terdaftar." });
+    }
+    console.error("Gagal membuat tenant sekolah baru:", error);
+    return res.status(503).json({ error: "Sekolah baru belum dapat dibuat." });
   }
 });
 

@@ -9,7 +9,7 @@ import { PasswordChangeForm } from "./PasswordChangeForm";
 import { LoginNavigation, type LoginRole } from "./LoginNavigation";
 import { BrandLogo } from "./BrandLogo";
 import { DashboardHero, PortalSpinner } from "./DashboardUI";
-import { BookOpen, CalendarDays, Eye, EyeOff, Home, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, CheckCircle2, Eye, EyeOff, Home, UserRound } from "lucide-react";
 import { StudentVervalForm } from "./StudentVervalForm";
 import {
   clearAuthCache,
@@ -25,6 +25,13 @@ import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWi
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { TeacherPortal } from "./TeacherPortal";
 
+type StudentTodayAttendance = {
+  tanggal: string;
+  status: "HADIR" | "IZIN" | "SAKIT" | "ALPA" | null;
+  keterangan: string | null;
+  waktuHadir: string | null;
+};
+
 type Session = {
   nama: string;
   peran: "SISWA" | "GURU";
@@ -36,6 +43,7 @@ type Session = {
   nuptk?: string | null;
   telepon?: string | null;
   mapelUtama?: string | null;
+  presensiHariIni?: StudentTodayAttendance | null;
 };
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
 const button = "master-primary w-full py-3 disabled:opacity-50";
@@ -185,8 +193,16 @@ export function LmsLogin() {
     />
     <form onSubmit={submit} className="mt-4 space-y-4">
       <label className="block text-sm font-semibold">
-        {peran === "SISWA" ? "NISN" : "Email"}
-        <input className={input} required maxLength={254} autoComplete="username" value={identitas} onChange={(e) => setIdentitas(e.target.value)} />
+        {peran === "SISWA" ? "NISN atau Username" : "Email"}
+        <input
+          className={input}
+          required
+          maxLength={254}
+          autoComplete="username"
+          placeholder={peran === "SISWA" ? "Masukkan NISN atau username siswa" : "Masukkan email guru"}
+          value={identitas}
+          onChange={(e) => setIdentitas(e.target.value)}
+        />
       </label>
       <div>
         <label htmlFor="lms-login-password" className="block text-sm font-semibold">Kata sandi</label>
@@ -261,6 +277,22 @@ export function LmsHome() {
           throw new Error("Respons sesi tidak valid.");
         }
         const raw = data as Record<string, unknown>;
+        const rawAttendance = raw.presensiHariIni;
+        const presensiHariIni: StudentTodayAttendance | null =
+          rawAttendance && typeof rawAttendance === "object" && !Array.isArray(rawAttendance) && typeof (rawAttendance as Record<string, unknown>).tanggal === "string"
+            ? {
+                tanggal: (rawAttendance as Record<string, unknown>).tanggal as string,
+                status:
+                  (rawAttendance as Record<string, unknown>).status === "HADIR" ||
+                  (rawAttendance as Record<string, unknown>).status === "IZIN" ||
+                  (rawAttendance as Record<string, unknown>).status === "SAKIT" ||
+                  (rawAttendance as Record<string, unknown>).status === "ALPA"
+                    ? ((rawAttendance as Record<string, unknown>).status as StudentTodayAttendance["status"])
+                    : null,
+                keterangan: typeof (rawAttendance as Record<string, unknown>).keterangan === "string" ? ((rawAttendance as Record<string, unknown>).keterangan as string) : null,
+                waktuHadir: typeof (rawAttendance as Record<string, unknown>).waktuHadir === "string" ? ((rawAttendance as Record<string, unknown>).waktuHadir as string) : null,
+              }
+            : null;
         const nextSession: Session = {
           nama: data.nama,
           peran: data.peran,
@@ -272,6 +304,7 @@ export function LmsHome() {
           nuptk: typeof raw.nuptk === "string" ? raw.nuptk : null,
           telepon: typeof raw.telepon === "string" ? raw.telepon : null,
           mapelUtama: typeof raw.mapelUtama === "string" ? raw.mapelUtama : null,
+          presensiHariIni,
         };
         setSession(nextSession);
         saveAuthCache<LmsAuthCache>("lms", {
@@ -435,12 +468,69 @@ function LmsPortalShell({
         </div>
       </header>
       <div className="animate-page-enter mx-auto max-w-6xl space-y-5 px-4 py-6 pb-28 sm:px-6 md:pb-6">
-        <div id="beranda-lms" className="scroll-mt-24">
+        <div id="beranda-lms" className="scroll-mt-24 space-y-3">
           <DashboardHero
             title={session.wajibGantiPassword ? "Wajib ganti password" : `Selamat datang, ${session.nama}`}
             description={session.wajibGantiPassword ? "Buat password baru untuk melanjutkan." : "Akses jadwal dan kegiatan pembelajaran Anda."}
             badge={session.peran === "GURU" ? "Portal Guru" : "Portal Siswa"}
           />
+          {session.peran === "SISWA" && !session.wajibGantiPassword && session.presensiHariIni && (
+            <div className="flex flex-wrap items-center gap-2">
+              {(() => {
+                const st = session.presensiHariIni.status;
+                const ket = session.presensiHariIni.keterangan;
+                if (st === "HADIR") {
+                  const sourceLabel = ket === "Login Daring" ? "Login Daring" : ket || "Dicatat Guru";
+                  return (
+                    <span
+                      role="status"
+                      className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold shadow-xs ${
+                        isDark
+                          ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-200"
+                          : "border-emerald-300 bg-emerald-50 text-emerald-900"
+                      }`}
+                    >
+                      <CheckCircle2 size={15} className="shrink-0 text-emerald-600" aria-hidden="true" />
+                      Presensi Hari Ini: Tercatat Hadir ({sourceLabel})
+                    </span>
+                  );
+                }
+                if (st === "IZIN" || st === "SAKIT" || st === "ALPA") {
+                  const labelMap = { IZIN: "Izin", SAKIT: "Sakit", ALPA: "Alpa" } as const;
+                  const tone =
+                    st === "IZIN"
+                      ? isDark
+                        ? "border-sky-500/40 bg-sky-950/60 text-sky-200"
+                        : "border-sky-300 bg-sky-50 text-sky-900"
+                      : st === "SAKIT"
+                        ? isDark
+                          ? "border-amber-500/40 bg-amber-950/60 text-amber-200"
+                          : "border-amber-300 bg-amber-50 text-amber-900"
+                        : isDark
+                          ? "border-rose-500/40 bg-rose-950/60 text-rose-200"
+                          : "border-rose-300 bg-rose-50 text-rose-900";
+                  return (
+                    <span role="status" className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold shadow-xs ${tone}`}>
+                      <CheckCircle2 size={15} className="shrink-0" aria-hidden="true" />
+                      Presensi Hari Ini: Tercatat {labelMap[st]} (Dicatat Guru)
+                    </span>
+                  );
+                }
+                return (
+                  <span
+                    role="status"
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold ${
+                      isDark
+                        ? "border-slate-700 bg-slate-900/70 text-slate-300"
+                        : "border-slate-200 bg-white/90 text-slate-600"
+                    }`}
+                  >
+                    Presensi Hari Ini: Menunggu Penempatan Kelas
+                  </span>
+                );
+              })()}
+            </div>
+          )}
         </div>
         {session.wajibGantiPassword ? (
           <div className="dashboard-glass p-5">

@@ -6,10 +6,11 @@ import { parseRegistration } from "./school-registration.js";
 import { toCleanPlanCode } from "./lms-plan-sync.js";
 import type { TenantPlan } from "./plan-utils.js";
 import { getGlobalTheme, isGlobalThemeKey, type GlobalThemeKey } from "./global-theme.js";
+import { cloneMasterContentToSchool } from "./master-content-shared.js";
 
 type Status = "ACTIVE" | "SUSPENDED";
 type ThemeKey = GlobalThemeKey;
-type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date };
+type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date; isiKontenSiapPakai?: boolean };
 type PlanUpdate = { sekolahId?: string | null; npsn: string | null; slug: string | null; plan: TenantPlan };
 type UpdatedTenantPlan = { id: string; nama: string; slug: string; npsn: string | null; plan: string | null };
 type InternalStore = {
@@ -18,6 +19,7 @@ type InternalStore = {
   getTheme: (npsn: string) => Promise<string | null>;
   updateTheme: (themeKey: ThemeKey, sekolahId: string | null, npsn?: string) => Promise<number>;
   updatePlan?: (data: PlanUpdate) => Promise<UpdatedTenantPlan | null>;
+  seedMasterContent?: (sekolahId: string) => Promise<unknown>;
 };
 
 export class ProvisionConflict extends Error {}
@@ -39,7 +41,8 @@ function provisionInput(body: unknown): Provision | null {
   const subdomain = input.subdomain.trim().toLowerCase();
   const plan = input.plan.trim();
   if (!/^[a-z0-9]{1,63}$/.test(subdomain) || subdomain === "www" || !plan || plan.length > 100) return null;
-  return { institutionName: parsed.namaSekolah, npsn: parsed.npsn, subdomain, adminName: parsed.namaKontak, adminEmail: parsed.emailKontak, adminPhone: parsed.teleponKontak, plan, expiresAt };
+  const isiKontenSiapPakai = input.isiKontenSiapPakai === true || input.seedMasterContent === true;
+  return { institutionName: parsed.namaSekolah, npsn: parsed.npsn, subdomain, adminName: parsed.namaKontak, adminEmail: parsed.emailKontak, adminPhone: parsed.teleponKontak, plan, expiresAt, isiKontenSiapPakai };
 }
 
 export function prismaInternalStore(prisma: PrismaClient): InternalStore {
@@ -124,6 +127,9 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
         data: { plan },
         select: { id: true, nama: true, slug: true, npsn: true, plan: true },
       });
+    },
+    async seedMasterContent(sekolahId) {
+      return cloneMasterContentToSchool(prisma, { sekolahId, copyAll: true });
     },
   };
 }
@@ -302,6 +308,14 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
     try {
       const temporaryPassword = generateTemporaryPassword();
       const tenantId = await store.provision(data, await hashPassword(temporaryPassword));
+      let seedSummary = null;
+      if (data.isiKontenSiapPakai && store.seedMasterContent) {
+        try {
+          seedSummary = await store.seedMasterContent(tenantId);
+        } catch (seedError) {
+          console.warn("Gagal menyalin Pustaka Konten Pusat saat provisioning:", seedError);
+        }
+      }
       let appDomain = "rsch.my.id";
       if (process.env.APP_ORIGIN) {
         try {
@@ -310,7 +324,7 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
           appDomain = "rsch.my.id";
         }
       }
-      return res.status(201).json({ success: true, tenantId, loginUrl: `https://${data.subdomain}.${appDomain}/login`, initialUsername: data.adminEmail, temporaryPassword });
+      return res.status(201).json({ success: true, tenantId, loginUrl: `https://${data.subdomain}.${appDomain}/login`, initialUsername: data.adminEmail, temporaryPassword, ...(seedSummary ? { seedSummary } : {}) });
     } catch (error) {
       if (error instanceof ProvisionConflict) return res.status(409).json({ error: error.message });
       console.error("Gagal memproses provisioning internal:", error);

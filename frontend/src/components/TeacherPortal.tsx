@@ -6,12 +6,17 @@ import {
   BookOpen,
   Bot,
   CalendarDays,
+  Check,
   CheckCircle2,
   ClipboardCheck,
+  Copy,
   Database,
-  Download,
+  Eye,
+  EyeOff,
+  Globe,
   GraduationCap,
   Home,
+  KeyRound,
   LayoutDashboard,
   LayoutGrid,
   Lock,
@@ -21,8 +26,10 @@ import {
   MonitorCheck,
   RefreshCw,
   Save,
+  Search,
   UploadCloud,
   UserCheck,
+  UserPlus,
   UserRound,
   Users,
   X,
@@ -34,9 +41,11 @@ import { Classroom } from "./Classroom";
 import { CardGridSkeleton, DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { PLAN_BADGE_STYLES, SIDEBAR_THEMES } from "./SchoolAccess";
-import { CbtBankSoalView, CbtImportView, CbtJadwalView, CbtMonitoringView } from "./SchoolCbtModules";
+import { SchoolAttendance } from "./SchoolAttendance";
+import { CbtBankSoalView, CbtImportView, CbtJadwalView, CbtMonitoringView, CbtPublicBanksView } from "./SchoolCbtModules";
 import { AsistenAiView, RuangDiskusiView } from "./SchoolCollabAssetModules";
 import { CekRaportView } from "./SchoolEquivalenceRaport";
+import { SchoolModal } from "./SchoolModal";
 import { TeacherPasswordReset } from "./TeacherPasswordReset";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
@@ -45,6 +54,7 @@ import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
 export type TeacherView =
   | "beranda"
   | "materi-tugas"
+  | "siswa"
   | "presensi"
   | "cbt"
   | "raport"
@@ -117,22 +127,20 @@ type TeacherBerandaPayload = {
   }>;
 };
 
-type PresensiStatus = "HADIR" | "IZIN" | "SAKIT" | "ALPA";
+type TeacherStudentRow = {
+  id: string;
+  nama: string;
+  nisn: string;
+  kelasId: string | null;
+  kelasNama: string;
+  status: string;
+  punyaAkun: boolean;
+  username: string;
+};
 
-type TeacherPresensiPayload = {
+type TeacherStudentsPayload = {
   kelas: Array<{ id: string; nama: string; isWali: boolean }>;
-  selectedKelasId: string | null;
-  tanggal: string;
-  bulan: string;
-  siswa: Array<{
-    id: string;
-    nama: string;
-    nisn: string;
-    status: PresensiStatus | null;
-    keterangan: string;
-    waktuHadir: string | null;
-    rekapBulanan: { HADIR: number; IZIN: number; SAKIT: number; ALPA: number };
-  }>;
+  siswa: TeacherStudentRow[];
 };
 
 const TEACHER_NAV_SECTIONS: Array<{ title: string; items: TeacherMenuItem[] }> = [
@@ -141,6 +149,7 @@ const TEACHER_NAV_SECTIONS: Array<{ title: string; items: TeacherMenuItem[] }> =
     items: [
       { id: "beranda", label: "Beranda Guru", icon: LayoutDashboard },
       { id: "materi-tugas", label: "Materi & Tugas Kelas", icon: BookOpen },
+      { id: "siswa", label: "Data Siswa", icon: Users },
       { id: "presensi", label: "Presensi Siswa", icon: UserCheck },
       { id: "diskusi", label: "Ruang Diskusi", icon: MessageSquare },
     ],
@@ -163,6 +172,7 @@ const HASH_TO_TEACHER_VIEW: Record<string, TeacherView> = {
   "#materi-ajar": "materi-tugas",
   "#tugas-penilaian": "materi-tugas",
   "#materi-tugas": "materi-tugas",
+  "#data-siswa": "siswa",
   "#presensi-siswa": "presensi",
   "#cbt-guru": "cbt",
   "#raport-guru": "raport",
@@ -178,10 +188,6 @@ function sandboxHeaders(sandboxRole?: "GURU" | "SISWA", extra?: Record<string, s
     ...(extra ?? {}),
     ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
   };
-}
-
-function escapeCsv(value: string | number | null | undefined) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
 export function TeacherPortal({
@@ -221,7 +227,7 @@ export function TeacherPortal({
 
   const [view, setView] = useState<TeacherView>(() => HASH_TO_TEACHER_VIEW[window.location.hash] ?? "beranda");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [cbtTab, setCbtTab] = useState<"bank" | "impor" | "jadwal" | "monitoring">("bank");
+  const [cbtTab, setCbtTab] = useState<"bank" | "publik" | "impor" | "jadwal" | "monitoring">("bank");
   const [classroomTarget, setClassroomTarget] = useState<{ kelasId?: string | null; tab?: "materi" | "tugas"; seq: number }>({ seq: 0 });
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
 
@@ -527,14 +533,17 @@ export function TeacherPortal({
               />
             )}
 
-            {view === "presensi" && <TeacherPresensiSection sandboxRole={sandboxRole} />}
+            {view === "siswa" && <TeacherStudentsSection sandboxRole={sandboxRole} />}
+
+            {view === "presensi" && <SchoolAttendance role="GURU" sandboxRole={sandboxRole} />}
 
             {view === "cbt" && hasPlanAccess(effectivePlan, "reguler") && (
               <div className="space-y-4">
                 <div className="dashboard-glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
                   <div className="flex flex-wrap gap-2">
                     {([
-                      { id: "bank" as const, label: "Bank Soal & Ujian", icon: Database },
+                      { id: "bank" as const, label: "Bank Soal Sekolah", icon: Database },
+                      { id: "publik" as const, label: "Bank Soal Umum", icon: Globe },
                       { id: "impor" as const, label: "Impor Soal & Tugas", icon: UploadCloud },
                       { id: "jadwal" as const, label: "Jadwal & Token", icon: CalendarDays },
                       { id: "monitoring" as const, label: "Monitoring & Hasil CBT", icon: MonitorCheck },
@@ -565,6 +574,12 @@ export function TeacherPortal({
                 </div>
 
                 {cbtTab === "bank" && <CbtBankSoalView sandboxRole={sandboxRole} />}
+                {cbtTab === "publik" && (
+                  <CbtPublicBanksView
+                    sandboxRole={sandboxRole}
+                    onCloned={() => setCbtTab("bank")}
+                  />
+                )}
                 {cbtTab === "impor" && <CbtImportView sandboxRole={sandboxRole} />}
                 {cbtTab === "jadwal" && <CbtJadwalView sandboxRole={sandboxRole} />}
                 {cbtTab === "monitoring" && <CbtMonitoringView sandboxRole={sandboxRole} />}
@@ -1063,45 +1078,54 @@ function TeacherBerandaSection({
 }
 
 // ==========================================
-// 2. PRESENSI SISWA (INPUT HARIAN & REKAP BULANAN)
+// 2. DATA SISWA DIKELOLA GURU (BUAT AKUN & RESET PASSWORD)
 // ==========================================
-function TeacherPresensiSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
+function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
   const isDark = useTenantTheme() === "dark";
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const [kelasId, setKelasId] = useState("");
-  const [tanggal, setTanggal] = useState(todayIso);
-  const [data, setData] = useState<TeacherPresensiPayload | null>(null);
+  const [kelasFilter, setKelasFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [data, setData] = useState<TeacherStudentsPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
-  const loadPresensi = useCallback(
-    async (nextKelasId: string, nextTanggal: string, signal?: AbortSignal) => {
+  const [modalTarget, setModalTarget] = useState<{ student: TeacherStudentRow; reset: boolean } | null>(null);
+  const [passwordInput, setPasswordInput] = useState("123456");
+  const [showPassword, setShowPassword] = useState(false);
+  const [modalBusy, setModalBusy] = useState(false);
+  const [modalError, setModalError] = useState("");
+  const [credential, setCredential] = useState<{
+    nama: string;
+    username: string;
+    password: string;
+    reset: boolean;
+  } | null>(null);
+  const [copiedCredential, setCopiedCredential] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchTerm(searchInput.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const loadStudents = useCallback(
+    async (nextKelasId: string, nextQ: string, signal?: AbortSignal) => {
       setLoading(true);
       try {
         const params = new URLSearchParams();
         if (nextKelasId) params.set("kelasId", nextKelasId);
-        if (nextTanggal) {
-          params.set("tanggal", nextTanggal);
-          params.set("bulan", nextTanggal.slice(0, 7));
-        }
+        if (nextQ) params.set("q", nextQ);
         const headers = sandboxHeaders(sandboxRole);
-        const res = await fetchWithTimeout(`/api/lms/guru/presensi?${params.toString()}`, {
+        const res = await fetchWithTimeout(`/api/lms/guru/siswa?${params.toString()}`, {
           signal,
           ...(headers ? { headers } : {}),
         });
-        const body = (await res.json()) as TeacherPresensiPayload & { error?: string };
-        if (!res.ok) throw new Error(body.error || "Data presensi belum dapat dimuat.");
+        const body = (await res.json()) as TeacherStudentsPayload & { error?: string };
+        if (!res.ok) throw new Error(body.error || "Data siswa belum dapat dimuat.");
         setData(body);
-        if (body.selectedKelasId && body.selectedKelasId !== nextKelasId) {
-          setKelasId(body.selectedKelasId);
-        }
         setError("");
       } catch (failure) {
         if (!isCallerAborted(failure, signal)) {
-          setError(describeFetchError(failure, "Presensi siswa belum dapat dimuat."));
+          setError(describeFetchError(failure, "Data siswa belum dapat dimuat."));
         }
       } finally {
         if (!signal?.aborted) setLoading(false);
@@ -1112,239 +1136,375 @@ function TeacherPresensiSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadPresensi(kelasId, tanggal, controller.signal);
+    void loadStudents(kelasFilter, searchTerm, controller.signal);
     return () => controller.abort();
-  }, [kelasId, tanggal, loadPresensi]);
+  }, [kelasFilter, searchTerm, loadStudents]);
 
-  async function setStudentStatus(siswaId: string, status: PresensiStatus) {
-    const activeKelasId = data?.selectedKelasId ?? kelasId;
-    if (!activeKelasId) return;
-    setSavingId(siswaId);
-    setError("");
-    setNotice("");
+  function openAccountModal(student: TeacherStudentRow, reset: boolean) {
+    setModalError("");
+    setPasswordInput("123456");
+    setShowPassword(false);
+    setModalTarget({ student, reset });
+  }
+
+  async function submitAccountAction(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!modalTarget) return;
+    const { student, reset } = modalTarget;
+    const passwordToSend = passwordInput.trim() || "123456";
+    if (passwordToSend.length < 6) {
+      setModalError("Kata sandi minimal 6 karakter.");
+      return;
+    }
+    setModalBusy(true);
+    setModalError("");
     try {
-      const res = await fetchWithTimeout("/api/lms/guru/presensi", {
-        method: "PATCH",
+      const endpoint = `/api/lms/guru/siswa/${encodeURIComponent(student.id)}/${reset ? "reset-password" : "akun"}`;
+      const res = await fetchWithTimeout(endpoint, {
+        method: "POST",
         headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
-        body: JSON.stringify({ kelasId: activeKelasId, siswaId, tanggal, status }),
+        body: JSON.stringify({ password: passwordToSend }),
       });
-      const body = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(body.error || "Gagal menyimpan presensi.");
-      setNotice("Presensi siswa berhasil diperbarui.");
-      await loadPresensi(activeKelasId, tanggal);
-    } catch (failure) {
-      setError(describeFetchError(failure, "Presensi siswa belum dapat disimpan."));
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function markAllPresent() {
-    const activeKelasId = data?.selectedKelasId ?? kelasId;
-    if (!activeKelasId || !data?.siswa.length) return;
-    setBulkBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      for (const s of data.siswa) {
-        if (s.status === "HADIR") continue;
-        const res = await fetchWithTimeout("/api/lms/guru/presensi", {
-          method: "PATCH",
-          headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
-          body: JSON.stringify({ kelasId: activeKelasId, siswaId: s.id, tanggal, status: "HADIR" }),
-        });
-        if (!res.ok) {
-          const body = (await res.json()) as { error?: string };
-          throw new Error(body.error || "Sebagian presensi gagal disimpan.");
-        }
+      const body = (await res.json()) as {
+        temporaryPassword?: string;
+        username?: string;
+        nama?: string;
+        error?: string;
+      };
+      if (!res.ok || !body.temporaryPassword) {
+        throw new Error(body.error || (reset ? "Password siswa belum dapat direset." : "Akun siswa belum dapat dibuat."));
       }
-      setNotice("Seluruh warga belajar ditandai Hadir pada tanggal ini.");
-      await loadPresensi(activeKelasId, tanggal);
+      setCredential({
+        nama: body.nama || student.nama,
+        username: body.username || student.username || student.nisn,
+        password: body.temporaryPassword,
+        reset,
+      });
+      setCopiedCredential(false);
+      setModalTarget(null);
+      await loadStudents(kelasFilter, searchTerm);
     } catch (failure) {
-      setError(describeFetchError(failure, "Presensi massal belum dapat diselesaikan."));
+      setModalError(describeFetchError(failure, "Permintaan akun siswa gagal diproses."));
     } finally {
-      setBulkBusy(false);
+      setModalBusy(false);
     }
   }
-
-  function exportCsv() {
-    if (!data?.siswa.length) return;
-    const kelasNama = data.kelas.find((k) => k.id === data.selectedKelasId)?.nama ?? "Kelas";
-    const lines = [
-      ["No", "NISN", "Nama Siswa", `Status (${data.tanggal})`, "Hadir (Bulan)", "Izin (Bulan)", "Sakit (Bulan)", "Alpa (Bulan)"]
-        .map(escapeCsv)
-        .join(","),
-      ...data.siswa.map((s, idx) =>
-        [
-          idx + 1,
-          s.nisn,
-          s.nama,
-          s.status ?? "BELUM DIISI",
-          s.rekapBulanan.HADIR,
-          s.rekapBulanan.IZIN,
-          s.rekapBulanan.SAKIT,
-          s.rekapBulanan.ALPA,
-        ]
-          .map(escapeCsv)
-          .join(","),
-      ),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `presensi-${kelasNama.toLowerCase().replace(/\s+/g, "-")}-${data.tanggal}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const summary = useMemo(() => {
-    const list = data?.siswa ?? [];
-    return {
-      total: list.length,
-      hadir: list.filter((s) => s.status === "HADIR").length,
-      izin: list.filter((s) => s.status === "IZIN").length,
-      sakit: list.filter((s) => s.status === "SAKIT").length,
-      alpa: list.filter((s) => s.status === "ALPA").length,
-    };
-  }, [data]);
 
   return (
-    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
+    <section className="dashboard-glass space-y-5 rounded-2xl p-5 sm:p-6">
       <DashboardHero
-        eyebrow="KEHADIRAN WARGA BELAJAR"
-        title="Presensi Siswa & Rekap Bulanan"
-        description="Catat kehadiran harian warga belajar per pertemuan kelas dan pantau akumulasi kehadiran bulanan secara otomatis."
+        eyebrow="WARGA BELAJAR DIAMPU"
+        title="Data Siswa"
+        description="Lihat daftar warga belajar dari kelas yang Anda ampu, buatkan akun login baru, atau bantu reset kata sandi siswa secara langsung."
+        badge={data ? `${data.siswa.length} siswa aktif` : undefined}
         action={
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={bulkBusy || !data?.siswa.length}
-              onClick={() => void markAllPresent()}
-              className="dashboard-hero-action whitespace-nowrap disabled:opacity-50"
-            >
-              <CheckCircle2 size={15} aria-hidden="true" />
-              {bulkBusy ? "Menyimpan..." : "Tandai Semua Hadir"}
-            </button>
-            <button
-              type="button"
-              disabled={!data?.siswa.length}
-              onClick={exportCsv}
-              className="dashboard-hero-action dashboard-hero-secondary whitespace-nowrap disabled:opacity-50"
-            >
-              <Download size={15} aria-hidden="true" />
-              Ekspor CSV
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => void loadStudents(kelasFilter, searchTerm)}
+            className="dashboard-hero-action dashboard-hero-secondary whitespace-nowrap"
+          >
+            <RefreshCw size={15} aria-hidden="true" />
+            Segarkan
+          </button>
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="block text-xs font-bold">
-          Pilih Kelas
-          <select
-            value={data?.selectedKelasId ?? kelasId}
-            onChange={(e) => setKelasId(e.target.value)}
-            className="glass-input mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
-          >
-            {!data?.kelas.length && <option value="">Belum ada kelas</option>}
-            {data?.kelas.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.nama}{k.isWali ? " (Wali Kelas)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-xs font-bold">
-          Tanggal Pertemuan
+      {/* Filter Kelas & Pencarian */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
+        <label className="relative block">
+          <span className="sr-only">Cari nama atau NISN siswa</span>
+          <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            type="date"
-            value={tanggal}
-            onChange={(e) => setTanggal(e.target.value)}
-            className="glass-input mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            maxLength={100}
+            placeholder="Cari nama atau NISN warga belajar..."
+            className="glass-input w-full rounded-xl py-2.5 pl-10 pr-4 text-sm"
           />
         </label>
-        <div className={`flex items-center justify-between rounded-2xl border px-4 py-3 ${isDark ? "border-slate-700/60 bg-slate-900/70" : "border-white/85 bg-white/85"}`}>
-          <span className="text-xs font-bold text-slate-500">Hadir Hari Ini</span>
-          <span className="text-xl font-black text-emerald-600 tabular-nums">
-            {summary.hadir} / {summary.total}
-          </span>
-        </div>
-        <div className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-xs font-bold tabular-nums ${isDark ? "border-slate-700/60 bg-slate-900/70" : "border-white/85 bg-white/85"}`}>
-          <span className="text-sky-700">Izin: {summary.izin}</span>
-          <span className="text-amber-700">Sakit: {summary.sakit}</span>
-          <span className="text-rose-700">Alpa: {summary.alpa}</span>
-        </div>
+        <select
+          aria-label="Filter kelas yang diampu"
+          value={kelasFilter}
+          onChange={(e) => setKelasFilter(e.target.value)}
+          className="glass-input w-full rounded-xl px-3.5 py-2.5 text-sm font-semibold"
+        >
+          <option value="">Semua Kelas Diampu ({data?.kelas.length ?? 0})</option>
+          {data?.kelas.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.nama}
+              {k.isWali ? " (Wali Kelas)" : ""}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}
-      {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
+      {error && (
+        <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+          {error}
+        </p>
+      )}
+
+      {credential && (
+        <div
+          role="status"
+          className={`rounded-2xl border p-4 text-sm shadow-xs ${
+            isDark
+              ? "border-emerald-500/40 bg-emerald-950/50 text-emerald-100"
+              : "border-emerald-300 bg-emerald-50 text-emerald-950"
+          }`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="font-extrabold">
+              {credential.reset ? `Password baru untuk ${credential.nama}` : `Akun login berhasil dibuat untuk ${credential.nama}`}
+            </p>
+            <button
+              type="button"
+              onClick={() => setCredential(null)}
+              className="text-xs font-bold underline opacity-80 hover:opacity-100"
+            >
+              Tutup
+            </button>
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+            <span
+              className={`rounded-lg border px-3 py-1.5 text-xs ${
+                isDark ? "border-emerald-400/30 bg-slate-950/80 text-slate-100" : "border-emerald-200 bg-white text-slate-900"
+              }`}
+            >
+              NISN / Username: <strong className="font-mono text-sm">{credential.username}</strong>
+            </span>
+            <span
+              className={`rounded-lg border px-3 py-1.5 text-xs ${
+                isDark ? "border-emerald-400/30 bg-slate-950/80 text-amber-300" : "border-emerald-200 bg-white text-slate-900"
+              }`}
+            >
+              Kata Sandi: <strong className="font-mono text-sm tracking-wider">{credential.password}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const text = `${credential.nama}\nNISN/Username: ${credential.username}\nKata Sandi: ${credential.password}`;
+                if (navigator.clipboard?.writeText) {
+                  void navigator.clipboard.writeText(text).then(() => {
+                    setCopiedCredential(true);
+                    window.setTimeout(() => setCopiedCredential(false), 2500);
+                  }).catch(() => {});
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                isDark
+                  ? "border-emerald-400/40 bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+                  : "border-emerald-400 bg-white text-emerald-950 hover:bg-emerald-100"
+              }`}
+            >
+              {copiedCredential ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+              {copiedCredential ? "Info Login Tersalin" : "Salin Info Login"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs opacity-85">
+            Akun langsung aktif untuk masuk ke Portal Siswa. Bagikan username dan kata sandi ini kepada siswa.
+          </p>
+        </div>
+      )}
 
       {loading && !data ? (
-        <TableSkeleton rows={5} columns={4} />
+        <TableSkeleton rows={6} columns={5} />
       ) : !data?.kelas.length ? (
         <EmptyState
-          title="Belum ada kelas tersedia"
-          description="Anda belum ditugaskan pada jadwal mengajar atau wali kelas di lembaga ini."
+          title="Belum ada kelas diampu"
+          description="Anda belum ditugaskan sebagai wali kelas atau pengajar pada kelas aktif di lembaga ini."
         />
-      ) : !data.siswa.length ? (
+      ) : data.siswa.length === 0 ? (
         <EmptyState
-          title="Belum ada siswa aktif pada kelas ini"
-          description="Minta admin sekolah untuk menempatkan warga belajar pada kelas yang dipilih."
+          title={searchTerm ? "Siswa tidak ditemukan" : "Belum ada siswa di kelas ini"}
+          description={
+            searchTerm
+              ? "Coba kata kunci nama atau NISN lain, atau ubah filter kelas."
+              : "Minta admin sekolah untuk menempatkan warga belajar pada kelas yang Anda ampu."
+          }
         />
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-white/80 bg-white/85">
-          <table className="w-full min-w-[680px] text-left text-xs">
-            <thead className="border-b border-slate-200/80 bg-slate-50/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+        <div
+          className={`overflow-x-auto rounded-2xl border ${
+            isDark ? "border-slate-700/70 bg-slate-900/75" : "border-white/85 bg-white/95 shadow-xs"
+          }`}
+        >
+          <table className="w-full min-w-[680px] text-left text-xs sm:text-sm">
+            <thead
+              className={
+                isDark
+                  ? "border-b border-slate-800 bg-slate-950/60 text-[11px] font-extrabold uppercase tracking-wider text-slate-400"
+                  : "border-b border-slate-200/80 bg-slate-50/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-600"
+              }
+            >
               <tr>
                 <th className="px-4 py-3">Warga Belajar</th>
-                <th className="px-4 py-3">Status ({data.tanggal})</th>
-                <th className="px-4 py-3 text-center">Rekap Bulan ({data.bulan})</th>
+                <th className="px-4 py-3">NISN / Username</th>
+                <th className="px-4 py-3">Kelas</th>
+                <th className="px-4 py-3">Status Akun</th>
+                <th className="px-4 py-3 text-right">Aksi Akun</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200/70">
+            <tbody className={isDark ? "divide-y divide-slate-800/80" : "divide-y divide-slate-200/70"}>
               {data.siswa.map((student) => (
-                <tr key={student.id} className="hover:bg-indigo-50/40">
-                  <td className="px-4 py-3">
-                    <p className="font-bold text-slate-900">{student.nama}</p>
-                    <p className="font-mono text-[11px] text-slate-500">NISN {student.nisn}</p>
+                <tr key={student.id} className={isDark ? "hover:bg-slate-800/45" : "hover:bg-sky-50/40"}>
+                  <td className={`px-4 py-3 font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{student.nama}</td>
+                  <td className={`px-4 py-3 font-mono text-xs tabular-nums ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    {student.username || student.nisn || "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {([
-                        { code: "HADIR" as const, label: "Hadir", active: "bg-emerald-600 text-white border-emerald-600" },
-                        { code: "IZIN" as const, label: "Izin", active: "bg-sky-600 text-white border-sky-600" },
-                        { code: "SAKIT" as const, label: "Sakit", active: "bg-amber-500 text-white border-amber-500" },
-                        { code: "ALPA" as const, label: "Alpa", active: "bg-rose-600 text-white border-rose-600" },
-                      ]).map((opt) => {
-                        const isSelected = student.status === opt.code;
-                        return (
-                          <button
-                            key={opt.code}
-                            type="button"
-                            disabled={savingId === student.id || bulkBusy}
-                            aria-pressed={isSelected}
-                            onClick={() => void setStudentStatus(student.id, opt.code)}
-                            className={`whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-bold transition disabled:opacity-50 ${
-                              isSelected
-                                ? opt.active
-                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        isDark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-800"
+                      }`}
+                    >
+                      {student.kelasNama || "Tanpa Kelas"}
+                    </span>
                   </td>
-                  <td className="px-4 py-3 text-center font-semibold tabular-nums text-slate-700">
-                    H:{student.rekapBulanan.HADIR} · I:{student.rekapBulanan.IZIN} · S:{student.rekapBulanan.SAKIT} · A:{student.rekapBulanan.ALPA}
+                  <td className="px-4 py-3">
+                    {student.punyaAkun ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                          isDark ? "bg-emerald-500/15 text-emerald-300" : "bg-emerald-50 text-emerald-700"
+                        }`}
+                      >
+                        <CheckCircle2 size={12} aria-hidden="true" />
+                        Akun Aktif
+                      </span>
+                    ) : (
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          isDark ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        Belum Ada Akun
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {student.punyaAkun ? (
+                      <button
+                        type="button"
+                        onClick={() => openAccountModal(student, true)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                          isDark
+                            ? "border-amber-400/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                            : "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+                        }`}
+                      >
+                        <KeyRound size={13} aria-hidden="true" />
+                        Reset Password
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => openAccountModal(student, false)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                          isDark
+                            ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                            : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        }`}
+                      >
+                        <UserPlus size={13} aria-hidden="true" />
+                        Buat Akun
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {modalTarget && (
+        <SchoolModal
+          title={modalTarget.reset ? `Reset Password ${modalTarget.student.nama}` : `Buat Akun ${modalTarget.student.nama}`}
+          titleIcon={
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-600">
+              <KeyRound size={20} aria-hidden="true" />
+            </span>
+          }
+          busy={modalBusy}
+          onClose={() => {
+            if (!modalBusy) setModalTarget(null);
+          }}
+        >
+          <form onSubmit={(e) => void submitAccountAction(e)} className="mt-4 space-y-4 text-sm">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
+              <p className="font-bold text-slate-900">
+                {modalTarget.student.nama} · {modalTarget.student.kelasNama}
+              </p>
+              <p className="mt-1">
+                {modalTarget.student.username || modalTarget.student.nisn ? (
+                  <>
+                    Login menggunakan NISN/Username:{" "}
+                    <strong className="font-mono">{modalTarget.student.username || modalTarget.student.nisn}</strong>
+                  </>
+                ) : (
+                  "NISN siswa kosong — sistem akan membuatkan username otomatis berbasis nama."
+                )}
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="teacher-student-password" className="block text-xs font-bold text-slate-700">
+                {modalTarget.reset ? "Kata Sandi Baru (default: 123456)" : "Kata Sandi Awal (default: 123456)"}
+              </label>
+              <div className="relative mt-1.5">
+                <input
+                  id="teacher-student-password"
+                  type={showPassword ? "text" : "password"}
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  minLength={6}
+                  maxLength={100}
+                  required
+                  placeholder="Minimal 6 karakter (default 123456)"
+                  className="glass-input w-full rounded-xl py-2.5 pl-3.5 pr-11 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-800"
+                >
+                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                {modalTarget.reset
+                  ? "Kata sandi baru langsung aktif untuk login siswa dan sesi lama akan dikeluarkan."
+                  : "Biarkan 123456 atau masukkan kata sandi khusus minimal 6 karakter."}
+              </p>
+            </div>
+
+            {modalError && (
+              <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                {modalError}
+              </p>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={modalBusy}
+                onClick={() => setModalTarget(null)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={modalBusy}
+                className="master-primary px-4 py-2 text-xs disabled:opacity-50"
+              >
+                {modalBusy ? "Menyimpan..." : modalTarget.reset ? "Simpan Password Baru" : "Buat Akun Sekarang"}
+              </button>
+            </div>
+          </form>
+        </SchoolModal>
       )}
     </section>
   );

@@ -1,3 +1,5 @@
+import { MAX_IMAGE_BYTES, validateImageAttachment } from "./upload-validation.js";
+
 function object(input: unknown): Record<string, unknown> | null {
   return typeof input === "object" && input !== null && !Array.isArray(input) ? input as Record<string, unknown> : null;
 }
@@ -71,21 +73,8 @@ export function parseLearningContentUpdate(input: unknown, kind: "materi" | "tug
 }
 
 function optionalSubmissionPhoto(value: unknown): string | null | undefined {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  if (/^data:/i.test(trimmed)) {
-    const compact = trimmed.replace(/\s+/g, "");
-    if (compact.length > 2_500_000) return undefined;
-    if (!/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(compact)) {
-      return undefined;
-    }
-    return compact;
-  }
-
-  return optionalLink(trimmed);
+  const checked = validateImageAttachment(value, { maxBytes: MAX_IMAGE_BYTES });
+  return checked.ok ? checked.value : undefined;
 }
 
 export function parseSubmission(input: unknown) {

@@ -36,9 +36,9 @@ export function httpSecurity(options: { production: boolean; origin?: string }):
   return (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
-    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       const origin = req.get("origin");
       if (options.production && !origin) return res.status(403).json({ error: "Permintaan ditolak." });

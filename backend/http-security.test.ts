@@ -29,9 +29,9 @@ test("production API enforces origin and applies security headers, including err
     assert.equal(health.status, 200);
     assert.equal(health.headers.get("cache-control"), "no-store");
     assert.equal(health.headers.get("x-content-type-options"), "nosniff");
-    assert.equal(health.headers.get("x-frame-options"), "DENY");
-    assert.equal(health.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'");
-    assert.equal(health.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(health.headers.get("x-frame-options"), "SAMEORIGIN");
+    assert.equal(health.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'self'");
+    assert.equal(health.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
     for (const origin of [undefined, "http://lms.example.com", "https://evil.example.com", "https://lms.example.com.evil.example.com", "null", "https://lms.example.com/path"]) {
       const response = await fetch(`${url}/change`, { method: "POST", headers: origin ? { origin, "x-test-host": "lms.example.com" } : { "x-test-host": "lms.example.com" } });
       assert.equal(response.status, 403);

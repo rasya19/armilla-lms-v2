@@ -263,8 +263,8 @@ test("module-bank routes enforce visibility scoping, seed idempotency, bulk impo
         ...(opts?.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
       });
 
-    // 1. Reject SISWA
-    assert.equal((await call("/", { role: "SISWA" })).status, 401);
+    // 1. Reject SISWA with 403 Forbidden
+    assert.equal((await call("/", { role: "SISWA" })).status, 403);
 
     // 2. GET / hides other schools' PRIVATE and ARCHIVED modules
     const listRes = await call("/");

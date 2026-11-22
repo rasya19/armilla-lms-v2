@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
+import { validateDocumentAttachment } from "./upload-validation.js";
 
 export type VervalStatus = "BELUM_LENGKAP" | "SIAP_VERVAL" | "TERVERIFIKASI_PKBM";
 export type VervalDinasStatus = "MENUNGGU_DINAS" | "LOLOS_VERVAL" | "PERLU_PERBAIKAN";
@@ -199,17 +200,7 @@ export function detectPaketCategory(jenjang?: string | null, kelasNama?: string 
 export function isSafeDocumentUrl(raw: string): boolean {
   const value = raw.trim();
   if (!value) return true;
-  if (/^data:(?:image\/(?:png|jpeg|jpg|webp)|application\/pdf);base64,[A-Za-z0-9+/=]+$/i.test(value)) {
-    return value.length <= 2_500_000;
-  }
-  if (value.length > 1500) return false;
-  if (value.startsWith("/")) return !value.startsWith("//");
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
-  } catch {
-    return false;
-  }
+  return validateDocumentAttachment(value, { allowRelative: true, allowHttp: false }).ok;
 }
 
 function parseFlexibleDateInput(raw: unknown): { ok: true; value: Date | null } | { ok: false } {

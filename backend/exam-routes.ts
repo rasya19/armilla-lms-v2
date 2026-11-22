@@ -5,6 +5,46 @@ import { prisma } from "./db.js";
 import { answersInput, examInput } from "./exam-input.js";
 
 type Session = { sekolahId: string; peran: "ADMIN" | "GURU" | "SISWA"; guruId: string | null; siswaId: string | null; kelasId: string | null };
+
+const SENSITIVE_CBT_KEYS = new Set([
+  "benar",
+  "isCorrect",
+  "correctAnswer",
+  "answerKey",
+  "kunciJawaban",
+  "kunciEsai",
+  "explanation",
+  "pembahasan",
+  "tokenKode",
+  "tokenHash",
+]);
+
+/**
+ * Defense-in-depth sanitizer: recursively strips any answer-key, correctness flag,
+ * explanation, or exam token fields before sending exam questions to a student.
+ */
+export function sanitizeStudentExamPayload<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeStudentExamPayload(item)) as unknown as T;
+  }
+  if (value instanceof Date || value === null || typeof value !== "object") {
+    return value;
+  }
+  const clean: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (SENSITIVE_CBT_KEYS.has(key)) continue;
+    clean[key] = sanitizeStudentExamPayload(entry);
+  }
+  return clean as T;
+}
+
+function isAttemptFinalized(attempt: { dikumpulkanPada?: Date | null; status?: string | null } | null | undefined): boolean {
+  if (!attempt) return false;
+  if (attempt.dikumpulkanPada) return true;
+  const normalizedStatus = typeof attempt.status === "string" ? attempt.status.trim().toUpperCase() : "";
+  return normalizedStatus === "SELESAI" || normalizedStatus === "COMPLETED";
+}
+
 export function examRoutes(getSession: (req: Request) => Promise<Session | null>, today: () => Date) {
   const router = Router();
   router.use(async (req, res, next) => {
@@ -70,8 +110,13 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
           take: 200,
         }),
       ]);
-      const rows = rawRows.map(({ tokenKode, _count, ...rest }) => ({
+      const rows = rawRows.map(({ tokenKode, _count, percobaan, ...rest }) => ({
         ...rest,
+        percobaan: percobaan.map((p) => ({
+          ...p,
+          nilai: rest.tampilNilai || p.nilaiOverride !== null ? p.nilai : null,
+          nilaiOverride: rest.tampilNilai || p.nilaiOverride !== null ? p.nilaiOverride : null,
+        })),
         butuhToken: Boolean(tokenKode && tokenKode.trim().length > 0),
         jumlahSoal: _count.soal,
       }));
@@ -87,8 +132,18 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
     try {
       const kelas = await prisma.kelas.findFirst({ where: { id: req.params.kelasId, sekolahId: s.sekolahId }, select: { id: true } });
       if (!kelas) return res.status(404).json({ error: "Kelas tidak ditemukan." });
-      const rows = await prisma.ujian.findMany({ where: { sekolahId: s.sekolahId, kelasId: kelas.id, kelas: { sekolahId: s.sekolahId }, guru: { sekolahId: s.sekolahId }, mapel: { sekolahId: s.sekolahId }, tahunAjaran: { sekolahId: s.sekolahId }, ...(s.peran === "GURU" ? { guruId: s.guruId ?? "" } : s.peran === "SISWA" ? { dipublikasikan: true } : {}) }, select: { id: true, judul: true, mulai: true, selesai: true, durasiMenit: true, mapel: { select: { nama: true } }, percobaan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { dikumpulkanPada: true, nilai: true, nilaiOverride: true } } }, orderBy: { mulai: "desc" }, take: 501 });
-      if (rows.length > 500) return res.status(409).json({ error: "Terlalu banyak ujian." });
+      const rawRows = await prisma.ujian.findMany({ where: { sekolahId: s.sekolahId, kelasId: kelas.id, kelas: { sekolahId: s.sekolahId }, guru: { sekolahId: s.sekolahId }, mapel: { sekolahId: s.sekolahId }, tahunAjaran: { sekolahId: s.sekolahId }, ...(s.peran === "GURU" ? { guruId: s.guruId ?? "" } : s.peran === "SISWA" ? { dipublikasikan: true } : {}) }, select: { id: true, judul: true, mulai: true, selesai: true, durasiMenit: true, tampilNilai: true, mapel: { select: { nama: true } }, percobaan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { dikumpulkanPada: true, nilai: true, nilaiOverride: true } } }, orderBy: { mulai: "desc" }, take: 501 });
+      if (rawRows.length > 500) return res.status(409).json({ error: "Terlalu banyak ujian." });
+      const rows = s.peran === "SISWA"
+        ? rawRows.map((row) => ({
+            ...row,
+            percobaan: row.percobaan.map((p) => ({
+              ...p,
+              nilai: row.tampilNilai || p.nilaiOverride !== null ? p.nilai : null,
+              nilaiOverride: row.tampilNilai || p.nilaiOverride !== null ? p.nilaiOverride : null,
+            })),
+          }))
+        : rawRows;
       return res.json({ rows });
     } catch (error) { console.error("Gagal memuat ujian:", error); return res.status(503).json({ error: "Ujian belum tersedia." }); }
   });
@@ -118,7 +173,7 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
         const now = new Date();
         if (now < exam.mulai || now > exam.selesai) return { status: 409, error: "Ujian tidak sedang berlangsung." };
         let attempt = await tx.percobaanUjian.findUnique({ where: { ujianId_siswaId: { ujianId: exam.id, siswaId: s.siswaId ?? "" } } });
-        if (attempt?.dikumpulkanPada) return { status: 409, error: "Ujian sudah dikumpulkan." };
+        if (isAttemptFinalized(attempt)) return { status: 409, error: "Ujian sudah dikumpulkan." };
         if (!attempt) {
           const requiredToken = typeof exam.tokenKode === "string" ? exam.tokenKode.trim().toUpperCase() : "";
           if (requiredToken && submittedToken !== requiredToken) {
@@ -128,7 +183,7 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
         }
         const deadline = new Date(Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000));
         if (now > deadline) return { status: 409, error: "Waktu pengerjaan telah berakhir." };
-        const { tokenKode: _hiddenToken, ...safeExam } = exam;
+        const safeExam = sanitizeStudentExamPayload(exam);
         return { exam: { ...safeExam, deadline, siswaId: s.siswaId } };
       });
       if ("error" in result) return res.status(result.status).json({ error: result.error });
@@ -147,7 +202,7 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
             const exam = await tx.ujian.findFirst({ where: examWhere(s, req.params.ujianId), select: { id: true, mulai: true, selesai: true, durasiMenit: true, tampilNilai: true, soal: { select: { id: true, opsi: { select: { id: true, kode: true, benar: true } } } } } });
             if (!exam) return { kind: "missing" as const };
             const attempt = await tx.percobaanUjian.findUnique({ where: { ujianId_siswaId: { ujianId: exam.id, siswaId: students[0].id } } });
-            if (!attempt || attempt.dikumpulkanPada) return { kind: "submitted" as const };
+            if (!attempt || isAttemptFinalized(attempt)) return { kind: "submitted" as const };
             const now = new Date();
             if (now < exam.mulai || now.getTime() > Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000)) return { kind: "expired" as const };
             if (Object.keys(answers).some((id) => !exam.soal.some((question) => question.id === id))) return { kind: "invalid" as const };

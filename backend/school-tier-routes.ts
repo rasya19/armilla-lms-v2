@@ -5,15 +5,11 @@ import { prisma } from "./db.js";
 import { hasPlanAccess, normalizeTenantPlan, type TenantPlan } from "./plan-utils.js";
 import { getGlobalTheme } from "./global-theme.js";
 
+import { MAX_IMAGE_BYTES, validateImageAttachment } from "./upload-validation.js";
+
 function isSafeLogoUrl(value: string): boolean {
   if (!value) return true;
-  if (value.startsWith("/")) return !value.startsWith("//");
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
-  } catch {
-    return false;
-  }
+  return validateImageAttachment(value, { maxBytes: MAX_IMAGE_BYTES, allowRelative: true }).ok;
 }
 
 export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<string | null>) {

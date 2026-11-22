@@ -1,16 +1,30 @@
-function text(value: unknown, min: number, max: number): string | null {
+const DISALLOWED_PROTOCOL_RE = /\b(?:javascript|vbscript|data:text\/html)\s*:/i;
+
+export function sanitizePlainText(value: unknown, min: number, max: number): string | null {
   if (typeof value !== "string") return null;
-  const result = value.trim();
-  return result.length >= min && result.length <= max ? result : null;
+  if (DISALLOWED_PROTOCOL_RE.test(value)) return null;
+  const cleaned = value
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length >= min && cleaned.length <= max ? cleaned : null;
+}
+
+function text(value: unknown, min: number, max: number): string | null {
+  return sanitizePlainText(value, min, max);
 }
 
 function email(value: unknown): string | null {
-  const result = text(value, 3, 254);
-  return result && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result) ? result.toLowerCase() : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (/[<>]/.test(trimmed) || trimmed.length < 3 || trimmed.length > 254) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed.toLowerCase() : null;
 }
 
 function phone(value: unknown): string | null {
-  const result = text(value, 6, 30);
+  const result = sanitizePlainText(value, 6, 30);
   return result && /^[+0-9 ()-]+$/.test(result) ? result : null;
 }
 

@@ -6,6 +6,7 @@ import {
   isPrismaMissingSchema,
   type SchoolContextResolver,
 } from "./school-modules-shared.js";
+import { MAX_PDF_BYTES, validatePdfAttachment } from "./upload-validation.js";
 
 export type ModuleVisibility = "PRIVATE" | "PUBLIC" | "ARCHIVED";
 export type ModulePaket = "Paket A" | "Paket B" | "Paket C";
@@ -287,18 +288,9 @@ export function parseModuleVisibilityStrict(raw: unknown): ModuleVisibility | nu
 }
 
 export function validateSafeModuleUrl(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > 2000) return null;
-  try {
-    const parsed = new URL(trimmed);
-    if ((parsed.protocol !== "https:" && parsed.protocol !== "http:") || parsed.username || parsed.password) {
-      return null;
-    }
-    return parsed.href;
-  } catch {
-    return null;
-  }
+  const checked = validatePdfAttachment(raw, { maxBytes: MAX_PDF_BYTES, allowHttp: false });
+  if (!checked.ok) return null;
+  return checked.value;
 }
 
 export function normalizeLookupKey(value: string): string {
@@ -401,8 +393,11 @@ export function moduleBankRoutes(getSchoolSession: SchoolContextResolver) {
   router.use(async (req, res, next) => {
     try {
       const session = await getSchoolSession(req);
-      if (!session?.sekolahId || session.peran === "SISWA") {
-        return res.status(401).json({ error: "Akses Bank Modul hanya untuk Admin Sekolah dan Guru." });
+      if (!session?.sekolahId) {
+        return res.status(401).json({ error: "Sesi tidak valid. Silakan masuk sebagai Admin Sekolah atau Guru." });
+      }
+      if (session.peran === "SISWA") {
+        return res.status(403).json({ error: "Akses ditolak. Bank Modul hanya untuk Admin Sekolah dan Guru." });
       }
       res.locals.moduleSession = session;
       return next();

@@ -49,6 +49,8 @@ import { masterContentRoutes, moduleBulkImportRoutes, schoolMasterContentRoutes 
 import { moduleBankRoutes } from "./module-bank-routes.js";
 import { cloneMasterContentToSchool } from "./master-content-shared.js";
 import { resolveTeacherScope, type SchoolSessionInfo } from "./school-modules-shared.js";
+import { createLoginFailureLimiter, createPpdbSubmissionLimiter, resolveSafeClientIp } from "./rate-limit.js";
+import { createSecurityGuardMiddleware, globalErrorHandler, type VerifiedActorSession } from "./security-middleware.js";
 
 const app = express();
 export default app;
@@ -57,22 +59,25 @@ const schoolCookieName = "sekolah_session";
 const lmsCookieName = "lms_session";
 const dinasCookieName = "dinas_session";
 const sessionDurationMs = 8 * 60 * 60 * 1000;
-const ppdbAttempts = new Map<string, { count: number; until: number }>();
+const loginFailureLimiter = createLoginFailureLimiter();
+const ppdbSubmissionLimiter = createPpdbSubmissionLimiter();
 const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 
 app.disable("x-powered-by");
 const production = process.env.NODE_ENV === "production";
 app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
-app.use("/api/verval", express.json({ limit: "4mb" }));
+app.use("/api/verval", express.json({ limit: "20mb" }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "2mb" }));
+app.use("/api/sekolah/identitas", express.json({ limit: "5mb" }));
 app.use("/api/master/pustaka-konten", express.json({ limit: "2mb" }));
 app.use("/api/school", express.json({ limit: "2mb" }));
 app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/diskusi", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/cbt", express.json({ limit: "2mb" }));
 app.use("/api/sekolah/pembelajaran", express.json({ limit: "256kb" }));
-app.use("/api/lms/pembelajaran", express.json({ limit: "3mb" }));
+app.use("/api/lms/pembelajaran", express.json({ limit: "5mb" }));
+app.use("/api/module-bank", express.json({ limit: "20mb" }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", tenantHostMiddleware(production, (slug) => resolveTenantHostSchool(prisma, slug), process.env.APP_ORIGIN));
 app.get("/api/tenant/context", (req, res) => res.json({
@@ -91,12 +96,50 @@ app.use("/api", (req, res, next) => {
   }
   return next();
 });
+app.use("/api", createSecurityGuardMiddleware(async (req): Promise<VerifiedActorSession | null> => {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+  const path = req.path || "/";
+
+  const toAdminActor = async (): Promise<VerifiedActorSession | null> => {
+    const s = await getSession(req, "ADMIN");
+    return s?.akun.sekolahId ? { userId: s.akun.id, role: "ADMIN", schoolId: s.akun.sekolahId } : null;
+  };
+  const toLmsActor = async (): Promise<VerifiedActorSession | null> => {
+    const s = await getLmsSession(req);
+    if (!s?.akun.sekolahId) return null;
+    const role = s.akun.peran === "GURU" ? "GURU" : "SISWA";
+    return { userId: s.akun.id, role, schoolId: s.akun.sekolahId };
+  };
+  const toMasterActor = async (): Promise<VerifiedActorSession | null> => {
+    const s = await getSession(req, "MASTER_ADMIN");
+    return s ? { userId: s.akun.id, role: "MASTER_ADMIN", schoolId: null } : null;
+  };
+  const toDinasActor = async (): Promise<VerifiedActorSession | null> => {
+    const d = await getDinasSession(req);
+    return d ? { userId: d.akunId, role: d.peran === "MASTER_ADMIN" ? "MASTER_ADMIN" : "DINAS", schoolId: null } : null;
+  };
+
+  if (path === "/master" || path.startsWith("/master/")) {
+    return (await toMasterActor()) ?? (await toAdminActor()) ?? (await toLmsActor()) ?? (await toDinasActor());
+  }
+  if (path === "/dinas" || path.startsWith("/dinas/")) {
+    return (await toDinasActor()) ?? (await toAdminActor()) ?? (await toLmsActor());
+  }
+  if (path === "/lms" || path.startsWith("/lms/")) {
+    return (await toLmsActor()) ?? (await toAdminActor()) ?? (await toMasterActor());
+  }
+  return (await toAdminActor()) ?? (await toLmsActor()) ?? (await toMasterActor()) ?? (await toDinasActor());
+}));
 const limitSecret = production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex");
 const limitLogin = loginRateLimit(loginPool, limitSecret);
 const limitProductionPpdb = registrationRateLimit(loginPool, limitSecret, false, "ppdb");
 
 function loginIp(req: express.Request): string {
-  return loginClientIp(production, !!process.env.VERCEL, req.ip, req.get("x-vercel-forwarded-for"));
+  if (production && process.env.VERCEL) {
+    return loginClientIp(production, true, req.ip, req.get("x-vercel-forwarded-for"));
+  }
+  return resolveSafeClientIp(req);
 }
 
 function sessionToken(cookieHeader: string | undefined, name: string): string | undefined {
@@ -248,8 +291,14 @@ app.post("/api/auth/master/login", async (req, res) => {
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) {
     return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
   }
+  const clientIp = loginIp(req);
+  const memCheck = loginFailureLimiter.check(clientIp, email);
+  if (!memCheck.allowed) {
+    res.setHeader("Retry-After", String(memCheck.retryAfter));
+    return res.status(429).json({ error: "Terlalu banyak percobaan login gagal. Coba lagi nanti." });
+  }
   try {
-    const result = await limitLogin<{ token: string; nama: string; peran: "MASTER_ADMIN" }>(loginIp(req), email, async () => {
+    const result = await limitLogin<{ token: string; nama: string; peran: "MASTER_ADMIN" }>(clientIp, email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       if (!account || !valid || !account.aktif || account.peran !== "MASTER_ADMIN") return { kind: "failure" };
@@ -262,8 +311,10 @@ app.post("/api/auth/master/login", async (req, res) => {
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
     if (result.kind === "failure") {
+      loginFailureLimiter.recordFailure(clientIp, email);
       return res.status(401).json({ error: "Email atau kata sandi salah." });
     }
+    loginFailureLimiter.recordSuccess(clientIp, email);
     res.cookie(cookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({
       nama: result.value.nama,
@@ -337,6 +388,12 @@ app.post("/api/auth/dinas/login", async (req, res) => {
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) {
     return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
   }
+  const clientIp = loginIp(req);
+  const memCheck = loginFailureLimiter.check(clientIp, email);
+  if (!memCheck.allowed) {
+    res.setHeader("Retry-After", String(memCheck.retryAfter));
+    return res.status(429).json({ error: "Terlalu banyak percobaan login gagal. Coba lagi nanti." });
+  }
   try {
     const result = await limitLogin<{
       token: string;
@@ -345,7 +402,7 @@ app.post("/api/auth/dinas/login", async (req, res) => {
       peran: "DINAS" | "MASTER_ADMIN";
       wilayahKabupaten: string | null;
       isSuperAdmin: boolean;
-    }>(loginIp(req), email, async () => {
+    }>(clientIp, email, async () => {
       const normalizedEmail = email.trim().toLowerCase();
       if (normalizedEmail === SANDBOX_DINAS_EMAIL) {
         await ensureSandboxTenant(prisma);
@@ -376,8 +433,10 @@ app.post("/api/auth/dinas/login", async (req, res) => {
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
     if (result.kind === "failure") {
+      loginFailureLimiter.recordFailure(clientIp, email);
       return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak memiliki akses Dinas Pendidikan." });
     }
+    loginFailureLimiter.recordSuccess(clientIp, email);
     res.cookie(dinasCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({
       nama: result.value.nama,
@@ -435,6 +494,12 @@ app.post("/api/auth/dinas/logout", async (req, res) => {
 app.post("/api/auth/sekolah/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
+  const clientIp = loginIp(req);
+  const memCheck = loginFailureLimiter.check(clientIp, email);
+  if (!memCheck.allowed) {
+    res.setHeader("Retry-After", String(memCheck.retryAfter));
+    return res.status(429).json({ error: "Terlalu banyak percobaan login gagal. Coba lagi nanti." });
+  }
   try {
     const result = await limitLogin<{
       token: string;
@@ -446,7 +511,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
       plan: string;
       rawPlan: string | null;
       themeKey: string;
-    }>(loginIp(req), email, async () => {
+    }>(clientIp, email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       if (!account || !valid || !account.aktif || account.peran !== "ADMIN" || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id)) return { kind: "failure" };
@@ -480,7 +545,11 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
       res.setHeader("Retry-After", String(result.retryAfter));
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
-    if (result.kind === "failure") return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
+    if (result.kind === "failure") {
+      loginFailureLimiter.recordFailure(clientIp, email);
+      return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
+    }
+    loginFailureLimiter.recordSuccess(clientIp, email);
     res.cookie(schoolCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({
       nama: result.value.nama,
@@ -821,6 +890,12 @@ app.get("/api/tenant/theme", async (req, res) => {
 app.post("/api/auth/lms/login", async (req, res) => {
   const { identitas, password, peran } = req.body || {};
   if (typeof identitas !== "string" || identitas.length > 254 || typeof password !== "string" || password.length > 1024 || (peran !== "SISWA" && peran !== "GURU")) return res.status(400).json({ error: "Periksa identitas, peran, dan kata sandi." });
+  const clientIp = loginIp(req);
+  const memCheck = loginFailureLimiter.check(clientIp, identitas);
+  if (!memCheck.allowed) {
+    res.setHeader("Retry-After", String(memCheck.retryAfter));
+    return res.status(429).json({ error: "Terlalu banyak percobaan login gagal. Coba lagi nanti." });
+  }
   try {
     const result = await limitLogin<{
       token: string;
@@ -830,7 +905,7 @@ app.post("/api/auth/lms/login", async (req, res) => {
       sekolahId: string;
       siswaId: string | null;
       kelasId: string | null;
-    }>(loginIp(req), identitas, async () => {
+    }>(clientIp, identitas, async () => {
       const identity = identitas.trim().toLowerCase();
       const account = peran === "SISWA"
         ? await prisma.akun.findFirst({
@@ -873,7 +948,11 @@ app.post("/api/auth/lms/login", async (req, res) => {
       res.setHeader("Retry-After", String(result.retryAfter));
       return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi nanti." });
     }
-    if (result.kind === "failure") return res.status(401).json({ error: "Identitas atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
+    if (result.kind === "failure") {
+      loginFailureLimiter.recordFailure(clientIp, identitas);
+      return res.status(401).json({ error: "Identitas atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
+    }
+    loginFailureLimiter.recordSuccess(clientIp, identitas);
 
     let presensiHariIni = null;
     if (result.value.peran === "SISWA" && result.value.siswaId) {
@@ -2562,7 +2641,7 @@ app.use(
     resolveAdminOrTeacherSession,
   ),
 );
-app.use("/api/module-bank", express.json({ limit: "2mb" }), moduleBankRoutes(resolveAdminOrTeacherSession));
+app.use("/api/module-bank", moduleBankRoutes(resolveAdminOrTeacherSession));
 app.use("/api/verval", vervalRoutes(async (req) => {
   const adminSession = await getSession(req, "ADMIN");
   if (adminSession?.akun.sekolahId) {
@@ -3048,11 +3127,23 @@ app.get("/api/ppdb/:slug", async (req, res) => {
   }
 });
 
-app.post("/api/ppdb/:slug", async (req, res) => {
-  if (req.tenant?.kind === "school" && req.params.slug !== req.tenant.slug) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
-  if (production) {
+async function handlePublicPpdbSubmission(req: express.Request, res: express.Response) {
+  const slug = String(req.params.slug ?? "").trim().toLowerCase();
+  if (!slug || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)) {
+    return res.status(400).json({ error: "Subdomain sekolah tidak valid." });
+  }
+  if (req.tenant?.kind === "school" && slug !== req.tenant.slug) {
+    return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+  }
+  const clientIp = loginIp(req);
+  const memLimit = ppdbSubmissionLimiter.consume(clientIp);
+  if (!memLimit.allowed) {
+    res.setHeader("Retry-After", String(memLimit.retryAfter));
+    return res.status(429).json({ error: "Terlalu banyak pengiriman pendaftaran PPDB. Coba lagi beberapa menit lagi." });
+  }
+  if (production && process.env.VERCEL) {
     try {
-      const limit = await limitProductionPpdb(loginIp(req));
+      const limit = await limitProductionPpdb(clientIp);
       if (!limit.allowed) {
         res.setHeader("Retry-After", String(limit.retryAfter));
         return res.status(429).json({ error: "Terlalu banyak permintaan. Coba lagi nanti." });
@@ -3061,23 +3152,13 @@ app.post("/api/ppdb/:slug", async (req, res) => {
       console.error("Pembatas PPDB tidak tersedia:", error instanceof Error ? error.name : "UnknownError");
       return res.status(503).json({ error: "Perlindungan PPDB tidak tersedia." });
     }
-  } else {
-    const now = Date.now();
-    for (const [key, value] of ppdbAttempts) if (value.until <= now) ppdbAttempts.delete(key);
-    const ip = req.ip || "unknown";
-    const current = ppdbAttempts.get(ip);
-    if (current && current.count >= 5) {
-      res.setHeader("Retry-After", String(Math.ceil((current.until - now) / 1000)));
-      return res.status(429).json({ error: "Terlalu banyak permintaan. Coba lagi nanti." });
-    }
-    ppdbAttempts.set(ip, { count: (current?.count || 0) + 1, until: current?.until || now + 60 * 60 * 1000 });
   }
   const data = parseApplicant(req.body);
   if (!data) return res.status(400).json({ error: "Periksa nama, email, telepon, alamat, dan jenjang." });
   try {
-    const school = req.params.slug === SANDBOX_SLUG
-      ? await resolveSchoolWithSandboxSeed(prisma, req.params.slug)
-      : await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { id: true } });
+    const school = slug === SANDBOX_SLUG
+      ? await resolveSchoolWithSandboxSeed(prisma, slug)
+      : await prisma.sekolah.findUnique({ where: { slug }, select: { id: true } });
     if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
     await prisma.pPDB.create({ data: { ...data, sekolahId: school.id, noDaftar: randomBytes(16).toString("hex"), status: "Pending" } });
     return res.status(201).json({ message: "Pendaftaran diterima dan menunggu pemeriksaan admin sekolah." });
@@ -3085,7 +3166,10 @@ app.post("/api/ppdb/:slug", async (req, res) => {
     console.error("Gagal menyimpan PPDB:", error);
     return res.status(503).json({ error: "Pendaftaran belum dapat disimpan." });
   }
-});
+}
+
+app.post("/api/ppdb/:slug", handlePublicPpdbSubmission);
+app.post("/api/public/:slug/ppdb", handlePublicPpdbSubmission);
 
 app.post("/api/sekolah/ppdb/:id/tinjau", async (req, res) => {
   try {
@@ -3941,3 +4025,4 @@ app.delete("/api/master/pendaftaran-sekolah/:id", async (req, res) => {
 });
 
 app.use("/api", (_req, res) => res.status(503).json({ error: "Fitur ini belum tersedia." }));
+app.use(globalErrorHandler);

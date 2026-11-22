@@ -24,6 +24,7 @@ import {
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { TeacherPortal } from "./TeacherPortal";
+import { StudentPortal } from "./StudentPortal";
 
 type StudentTodayAttendance = {
   tanggal: string;
@@ -43,6 +44,9 @@ type Session = {
   nuptk?: string | null;
   telepon?: string | null;
   mapelUtama?: string | null;
+  nisn?: string | null;
+  kelasId?: string | null;
+  kelasNama?: string | null;
   presensiHariIni?: StudentTodayAttendance | null;
 };
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
@@ -304,6 +308,9 @@ export function LmsHome() {
           nuptk: typeof raw.nuptk === "string" ? raw.nuptk : null,
           telepon: typeof raw.telepon === "string" ? raw.telepon : null,
           mapelUtama: typeof raw.mapelUtama === "string" ? raw.mapelUtama : null,
+          nisn: typeof raw.nisn === "string" ? raw.nisn : null,
+          kelasId: typeof raw.kelasId === "string" ? raw.kelasId : null,
+          kelasNama: typeof raw.kelasNama === "string" ? raw.kelasNama : null,
           presensiHariIni,
         };
         setSession(nextSession);
@@ -366,6 +373,22 @@ export function LmsHome() {
           }}
           onProfileUpdated={(nextNama) => {
             setSession((prev) => (prev ? { ...prev, nama: nextNama } : prev));
+          }}
+        />
+      ) : session.peran === "SISWA" && !session.wajibGantiPassword ? (
+        <StudentPortal
+          nama={session.nama}
+          nisn={session.nisn}
+          kelasId={session.kelasId}
+          kelasNama={session.kelasNama}
+          school={session.sekolah}
+          presensiHariIni={session.presensiHariIni}
+          busy={busy}
+          error={error}
+          onLogout={logout}
+          onPasswordChanged={() => {
+            clearAuthCache("lms");
+            navigate("/lms/login", { state: { changed: true }, replace: true });
           }}
         />
       ) : (

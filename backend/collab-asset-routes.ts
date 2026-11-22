@@ -433,6 +433,9 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
 
       const topic = await prisma.topikDiskusi.findFirst({ where: { id: req.params.id, sekolahId } });
       if (!topic) return res.status(404).json({ error: "Topik diskusi tidak ditemukan." });
+      if (auth.session.peran === "SISWA" && topic.kelasId && topic.kelasId !== auth.session.kelasId) {
+        return res.status(403).json({ error: "Anda hanya dapat membalas diskusi pada kelas Anda atau forum umum." });
+      }
       if (topic.ditutup) return res.status(409).json({ error: "Utas diskusi ini sudah ditutup oleh admin/tutor." });
 
       const isi = cleanText(req.body?.isi, 2000);

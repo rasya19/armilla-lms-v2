@@ -1122,7 +1122,7 @@ app.get("/api/lms/siswa/nilai", async (req, res) => {
     const [siswa, sekolah, tugasRows, ujianRows, nilaiRows, mapelRows, taRows, modulSkkRows, catatanRows] = await Promise.all([
       prisma.siswa.findFirst({
         where: { id: siswaId, sekolahId },
-        select: { id: true, nama: true, nisn: true, kelasId: true },
+        select: { id: true, nama: true, nisn: true, kelasId: true, jenjang: true },
       }),
       prisma.sekolah.findUnique({
         where: { id: sekolahId },
@@ -1219,19 +1219,19 @@ app.get("/api/lms/siswa/nilai", async (req, res) => {
       }).catch(() => null),
     ]);
     const kelasNama = siswaKelas?.nama ?? null;
-    const kelasNamaLower = (kelasNama ?? "").toLowerCase();
+    const jenjangSource = `${kelasNama ?? ""} ${siswa.jenjang ?? ""}`.toLowerCase();
     const detectedJenjang =
-      /\bpaket\s*a\b|\bkelas\s*[1-6]\b|\bsd\b/.test(kelasNamaLower)
+      /\bpaket[\s_-]*a\b|\bkelas\s*[1-6]\b|\bsd\b/.test(jenjangSource)
         ? "PAKET_A"
-        : /\bpaket\s*b\b|\bkelas\s*[7-9]\b|\bsmp\b/.test(kelasNamaLower)
+        : /\bpaket[\s_-]*b\b|\bkelas\s*[7-9]\b|\bsmp\b/.test(jenjangSource)
           ? "PAKET_B"
-          : /\bpaket\s*c\b|\bkelas\s*1[0-2]\b|\bsma\b/.test(kelasNamaLower)
+          : /\bpaket[\s_-]*c\b|\bkelas\s*1[0-2]\b|\bsma\b/.test(jenjangSource)
             ? "PAKET_C"
             : null;
 
     const matchingSkk = detectedJenjang
       ? modulSkkRows.filter((m) => m.jenjang === detectedJenjang)
-      : modulSkkRows;
+      : [];
 
     const raport = nilaiRows.map((row) => ({
       id: row.id,

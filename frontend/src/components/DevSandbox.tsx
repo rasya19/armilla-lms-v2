@@ -4,6 +4,7 @@ import { Classroom } from "./Classroom";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { LmsSchedule } from "./LmsSchedule";
 import { StudentVervalForm } from "./StudentVervalForm";
+import { StudentPortal } from "./StudentPortal";
 import { TeacherPortal } from "./TeacherPortal";
 import { useTenantPlan } from "./TenantThemeProvider";
 import type { PlanSlug } from "./subscriptionPlans";
@@ -191,6 +192,19 @@ export function DevSandboxLmsPreview({
         school={school}
         plan={plan}
         sandboxRole="GURU"
+        onBackToAdmin={onBackToAdmin}
+      />
+    );
+  }
+
+  if (role === "SISWA" && !loading && samples?.siswa) {
+    return (
+      <StudentPortal
+        nama={samples.siswa.nama}
+        nisn={samples.siswa.nisn}
+        kelasId={samples.siswa.kelasId}
+        school={school}
+        sandboxRole="SISWA"
         onBackToAdmin={onBackToAdmin}
       />
     );

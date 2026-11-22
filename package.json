@@ -25,5 +25,8 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.7"
+  },
+  "dependencies": {
+    "@google/genai": "^3.6.1"
   }
 }

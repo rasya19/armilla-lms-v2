@@ -765,3 +765,59 @@ model PlatformSetting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+model MasterModul {
+  id            String   @id @default(uuid())
+  jenjang       String // "PAKET_A" | "PAKET_B" | "PAKET_C"
+  tingkatKelas  String   @default("")
+  mataPelajaran String
+  kategoriUjian String   @default("MATERI") // "MATERI" | "UTS" | "UAS" | "UJIAN_AKHIR"
+  judul         String
+  deskripsi     String?
+  konten        String?
+  fileUrl       String?
+  jenis         String   @default("MODUL")
+  aktif         Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([jenjang, mataPelajaran, kategoriUjian])
+}
+
+model MasterBankSoal {
+  id            String            @id @default(uuid())
+  jenjang       String // "PAKET_A" | "PAKET_B" | "PAKET_C"
+  tingkatKelas  String            @default("")
+  mataPelajaran String
+  kategoriUjian String            @default("UTS") // "UTS" | "UAS" | "UJIAN_AKHIR"
+  judul         String
+  deskripsi     String?
+  durasiMenit   Int               @default(60)
+  kkm           Float             @default(75)
+  aktif         Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  butirSoal     MasterButirSoal[]
+
+  @@index([jenjang, mataPelajaran, kategoriUjian])
+}
+
+model MasterButirSoal {
+  id           String         @id @default(uuid())
+  bankSoalId   String
+  bankSoal     MasterBankSoal @relation(fields: [bankSoalId], references: [id], onDelete: Cascade)
+  urutan       Int
+  tipe         String         @default("PG") // "PG" | "ESAI"
+  teks         String
+  bobot        Int            @default(10)
+  opsiA        String?
+  opsiB        String?
+  opsiC        String?
+  opsiD        String?
+  opsiE        String?
+  kunciJawaban String
+  pembahasan   String?
+
+  @@unique([bankSoalId, urutan])
+}
+

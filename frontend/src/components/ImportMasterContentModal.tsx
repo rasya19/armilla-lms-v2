@@ -4,23 +4,32 @@ import {
   BookMarked,
   BookOpen,
   CheckCircle2,
+  Download,
+  FileSpreadsheet,
   Layers,
   Loader2,
+  UploadCloud,
   X,
 } from "lucide-react";
 import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
+import { ModulePdfPreview } from "./ModulePdfPreview";
 import {
   JENJANG_OPTIONS,
   KATEGORI_OPTIONS,
+  PKBM_MAPEL_PRESETS,
+  TINGKAT_BY_JENJANG,
+  downloadMasterModulTemplate,
   jenjangBadgeCls,
   jenjangLabel,
   kategoriBadgeCls,
   kategoriLabel,
+  parseMasterModulFile,
   type CloneMasterSummary,
   type MasterBankSoalItem,
   type MasterJenjang,
   type MasterKategori,
   type MasterModulItem,
+  type ParsedModulImportItem,
 } from "./masterContentData";
 
 type CatalogResponse = {
@@ -55,6 +64,18 @@ export function ImportMasterContentModal({
   const [error, setError] = useState("");
   const [resultMsg, setResultMsg] = useState("");
   const [resultSummary, setResultSummary] = useState<CloneMasterSummary | null>(null);
+  const [modalView, setModalView] = useState<"catalog" | "bulk-import">("catalog");
+  const [catalogVersion, setCatalogVersion] = useState(0);
+
+  // Bulk Excel/CSV module import states
+  const [bulkJenjang, setBulkJenjang] = useState<MasterJenjang>("PAKET_C");
+  const [bulkTingkat, setBulkTingkat] = useState("Kelas 12");
+  const [bulkMapel, setBulkMapel] = useState("Bahasa Indonesia");
+  const [bulkVisibility, setBulkVisibility] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
+  const [bulkCloneToSchool, setBulkCloneToSchool] = useState(true);
+  const [parsedBulkModuls, setParsedBulkModuls] = useState<ParsedModulImportItem[]>([]);
+  const [bulkWarnings, setBulkWarnings] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const [selectedJenjang, setSelectedJenjang] = useState<MasterJenjang[]>(["PAKET_A", "PAKET_B", "PAKET_C"]);
   const [selectedMapel, setSelectedMapel] = useState("");
@@ -69,6 +90,9 @@ export function ImportMasterContentModal({
 
   useEffect(() => {
     if (!open) return;
+    setModalView("catalog");
+    setParsedBulkModuls([]);
+    setBulkWarnings([]);
     setTargetKelasId(defaultKelasId ?? "");
     setResultMsg("");
     setResultSummary(null);
@@ -80,7 +104,10 @@ export function ImportMasterContentModal({
           ? ["UTS", "UAS", "UJIAN_AKHIR"]
           : ["MATERI", "UTS", "UAS", "UJIAN_AKHIR"],
     );
+  }, [open, defaultMode, defaultKelasId]);
 
+  useEffect(() => {
+    if (!open) return;
     const controller = new AbortController();
     setLoading(true);
     fetchWithTimeout("/api/school/master-content", {
@@ -106,7 +133,7 @@ export function ImportMasterContentModal({
       });
 
     return () => controller.abort();
-  }, [open, defaultMode, defaultKelasId, sandboxRole]);
+  }, [open, sandboxRole, catalogVersion]);
 
   const filteredModuls = useMemo(() => {
     if (!catalog || !selectedKategori.includes("MATERI")) return [];
@@ -214,8 +241,79 @@ export function ImportMasterContentModal({
     }
   }
 
+  async function handleBulkModulFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBulkWarnings([]);
+    setParsedBulkModuls([]);
+    setError("");
+    try {
+      const result = await parseMasterModulFile(file, {
+        jenjang: bulkJenjang,
+        tingkatKelas: bulkTingkat,
+        mataPelajaran: bulkMapel,
+      });
+      setParsedBulkModuls(result.items);
+      setBulkWarnings(result.warnings);
+    } catch (failure: unknown) {
+      setBulkWarnings([
+        describeFetchError(failure, "Format file tidak dikenali. Gunakan Template Excel (.xlsx/.csv) atau JSON."),
+      ]);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleSubmitBulkModuls() {
+    if (parsedBulkModuls.length === 0) {
+      setError("Pilih file Excel/CSV yang berisi daftar modul terlebih dahulu.");
+      return;
+    }
+    setBulkBusy(true);
+    setError("");
+    setResultMsg("");
+    setResultSummary(null);
+    try {
+      const res = await fetchWithTimeout("/api/modules/import-bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({
+          items: parsedBulkModuls,
+          visibility: bulkVisibility,
+          cloneToSchool: bulkCloneToSchool,
+          ...(targetKelasId ? { targetKelasId } : {}),
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+        errors?: string[];
+        error?: string;
+      } | null;
+      if (!res.ok) {
+        throw new Error(body?.error || "Gagal mengimpor daftar modul massal.");
+      }
+      setResultMsg(body?.message || `${parsedBulkModuls.length} daftar modul berhasil diimpor.`);
+      if (Array.isArray(body?.errors) && body.errors.length > 0) {
+        setBulkWarnings(body.errors);
+      } else {
+        setBulkWarnings([]);
+      }
+      setParsedBulkModuls([]);
+      setCatalogVersion((v) => v + 1);
+      onImported();
+    } catch (failure: unknown) {
+      setError(describeFetchError(failure, "Gagal mengimpor daftar modul massal."));
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   const totalSelected = selectedVisibleModulIds.length + selectedVisibleBankIds.length;
   const totalVisible = filteredModuls.length + filteredBankSoal.length;
+  const allowBulkTab = defaultMode !== "soal";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
@@ -248,6 +346,204 @@ export function ImportMasterContentModal({
 
         {/* Body */}
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          {allowBulkTab && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalView("catalog");
+                    setError("");
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                    modalView === "catalog"
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <BookOpen size={14} aria-hidden="true" />
+                  Pustaka Umum (Salin ke Kelas)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalView("bulk-import");
+                    setError("");
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                    modalView === "bulk-import"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <UploadCloud size={14} aria-hidden="true" />
+                  Impor Daftar Modul (Excel/CSV)
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => downloadMasterModulTemplate()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                <Download size={14} aria-hidden="true" />
+                Unduh Template Excel
+              </button>
+            </div>
+          )}
+
+          {modalView === "bulk-import" && allowBulkTab ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs text-emerald-950">
+                <p className="font-extrabold">Impor Massal Daftar Modul Berbasis Tautan (URL-Only, Maks. 500 Modul)</p>
+                <p className="mt-1 leading-5 text-emerald-900">
+                  Cukup simpan metadata dan tautan Google Drive / PDF agar database tetap ringan tanpa menyimpan file biner.
+                  Kolom template: <span className="font-bold">Paket, Kelas, Mata Pelajaran, Judul Modul, Ringkasan, Link PDF</span>.
+                </p>
+              </div>
+
+              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-2">
+                <label className="block text-xs font-extrabold text-slate-700">
+                  Default Jenjang (jika kolom Paket kosong)
+                  <select
+                    value={bulkJenjang}
+                    onChange={(e) => {
+                      const next = e.target.value as MasterJenjang;
+                      setBulkJenjang(next);
+                      setBulkTingkat(TINGKAT_BY_JENJANG[next][TINGKAT_BY_JENJANG[next].length - 1]);
+                    }}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900"
+                  >
+                    {JENJANG_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-xs font-extrabold text-slate-700">
+                  Default Tingkat Kelas
+                  <select
+                    value={bulkTingkat}
+                    onChange={(e) => setBulkTingkat(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900"
+                  >
+                    {TINGKAT_BY_JENJANG[bulkJenjang].map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-xs font-extrabold text-slate-700">
+                  Default Mata Pelajaran
+                  <input
+                    list="school-bulk-mapel-list"
+                    value={bulkMapel}
+                    onChange={(e) => setBulkMapel(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900"
+                  />
+                  <datalist id="school-bulk-mapel-list">
+                    {Array.from(new Set([...PKBM_MAPEL_PRESETS, ...(catalog?.mataPelajaranList ?? [])])).map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </label>
+
+                <label className="block text-xs font-extrabold text-slate-700">
+                  Visibilitas Daftar Modul
+                  <select
+                    value={bulkVisibility}
+                    onChange={(e) => setBulkVisibility(e.target.value as "PUBLIC" | "PRIVATE")}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900"
+                  >
+                    <option value="PUBLIC">Publik (Tampil di Pustaka Umum lintas PKBM)</option>
+                    <option value="PRIVATE">Khusus Sekolah Ini saja</option>
+                  </select>
+                </label>
+
+                <label className="block text-xs font-extrabold text-slate-700 sm:col-span-2">
+                  Rombel / Kelas Tujuan (Opsional)
+                  <select
+                    value={targetKelasId}
+                    onChange={(e) => setTargetKelasId(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-900"
+                  >
+                    <option value="">Otomatis sesuaikan Jenjang & Tingkat di setiap baris Excel</option>
+                    {(catalog?.kelasSekolah ?? []).map((k) => (
+                      <option key={k.id} value={k.id}>{k.nama}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={bulkCloneToSchool}
+                    onChange={(e) => setBulkCloneToSchool(e.target.checked)}
+                    className="accent-emerald-600"
+                  />
+                  Langsung salin seluruh modul hasil impor ke Ruang Kelas sekolah ini
+                </label>
+              </div>
+
+              {error && (
+                <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {resultMsg && (
+                <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-900">
+                  <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />
+                  <span>{resultMsg}</span>
+                </div>
+              )}
+
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-emerald-500 hover:bg-emerald-50/40">
+                <FileSpreadsheet size={30} className="text-emerald-600" aria-hidden="true" />
+                <span className="text-sm font-extrabold text-slate-900">Pilih File Excel (.xlsx / .xls), CSV, atau JSON</span>
+                <span className="text-xs text-slate-600">
+                  Sistem memvalidasi tautan HTTPS Google Drive / PDF secara otomatis (maks. 500 baris)
+                </span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv,.json"
+                  onChange={(e) => void handleBulkModulFileSelect(e)}
+                  className="hidden"
+                />
+              </label>
+
+              {bulkWarnings.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900">
+                  <p className="font-bold">Catatan Validasi Baris:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                    {bulkWarnings.slice(0, 8).map((w, idx) => (
+                      <li key={idx}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {parsedBulkModuls.length > 0 && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 text-xs text-emerald-950">
+                  <p className="font-extrabold">
+                    Siap mengimpor {parsedBulkModuls.length} daftar modul (metadata & tautan):
+                  </p>
+                  <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto">
+                    {parsedBulkModuls.slice(0, 50).map((m, idx) => (
+                      <li key={idx} className="truncate">
+                        • [{jenjangLabel(m.jenjang)} · {m.tingkatKelas} · {m.mataPelajaran}] <span className="font-semibold">{m.judul}</span>
+                        {m.fileUrl ? <span className="text-emerald-700"> (PDF/Link)</span> : ""}
+                      </li>
+                    ))}
+                    {parsedBulkModuls.length > 50 && (
+                      <li className="italic text-emerald-700">...dan {parsedBulkModuls.length - 50} modul lainnya.</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
           {/* Filters */}
           <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 md:grid-cols-2">
             <div>
@@ -455,40 +751,50 @@ export function ImportMasterContentModal({
                     {filteredModuls.map((item) => {
                       const checked = checkedModulIds.has(item.id);
                       return (
-                        <label
+                        <div
                           key={item.id}
-                          className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${
+                          className={`rounded-xl border p-3.5 transition ${
                             checked
                               ? "border-emerald-400 bg-emerald-50/60 shadow-2xs"
                               : "border-slate-200 bg-white hover:border-slate-300"
                           }`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setCheckedModulIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(item.id)) next.delete(item.id);
-                                else next.add(item.id);
-                                return next;
-                              });
-                            }}
-                            className="mt-1 accent-emerald-600"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${jenjangBadgeCls(item.jenjang)}`}>
-                                {jenjangLabel(item.jenjang)} · {item.tingkatKelas}
-                              </span>
-                              <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${kategoriBadgeCls(item.kategoriUjian)}`}>
-                                Modul Ajar
-                              </span>
+                          <label className="flex cursor-pointer items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setCheckedModulIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.id)) next.delete(item.id);
+                                  else next.add(item.id);
+                                  return next;
+                                });
+                              }}
+                              className="mt-1 accent-emerald-600"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap gap-1.5">
+                                <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${jenjangBadgeCls(item.jenjang)}`}>
+                                  {jenjangLabel(item.jenjang)} · {item.tingkatKelas}
+                                </span>
+                                <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${kategoriBadgeCls(item.kategoriUjian)}`}>
+                                  Modul Ajar
+                                </span>
+                              </div>
+                              <p className="mt-1.5 truncate text-xs font-extrabold text-slate-900">{item.judul}</p>
+                              <p className="mt-0.5 text-[11px] text-slate-600">{item.mataPelajaran}</p>
+                              {item.deskripsi && (
+                                <p className="mt-1 line-clamp-2 text-[11px] text-slate-500">{item.deskripsi}</p>
+                              )}
                             </div>
-                            <p className="mt-1.5 truncate text-xs font-extrabold text-slate-900">{item.judul}</p>
-                            <p className="mt-0.5 text-[11px] text-slate-600">{item.mataPelajaran}</p>
-                          </div>
-                        </label>
+                          </label>
+                          {item.fileUrl && (
+                            <div className="pl-7">
+                              <ModulePdfPreview url={item.fileUrl} title={item.judul} />
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -496,31 +802,61 @@ export function ImportMasterContentModal({
               )}
             </div>
           )}
+            </>
+          )}
         </div>
 
         {/* Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
-          <p className="text-xs font-semibold text-slate-600 tabular-nums">
-            {totalSelected} item siap disalin ke sekolah Anda
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
-            >
-              Tutup
-            </button>
-            <button
-              type="button"
-              disabled={submitting || totalSelected === 0}
-              onClick={() => void handleImport()}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {submitting ? <Loader2 size={14} className="animate-spin" /> : <BookMarked size={14} />}
-              {submitting ? "Menyalin Konten..." : `Salin ${totalSelected} Konten Terpilih`}
-            </button>
-          </div>
+          {modalView === "bulk-import" && allowBulkTab ? (
+            <>
+              <p className="text-xs font-semibold text-slate-600 tabular-nums">
+                {parsedBulkModuls.length} daftar modul siap diimpor (tanpa simpan file biner)
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkBusy || parsedBulkModuls.length === 0}
+                  onClick={() => void handleSubmitBulkModuls()}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+                  {bulkBusy ? "Mengimpor Modul..." : `Impor ${parsedBulkModuls.length} Modul`}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold text-slate-600 tabular-nums">
+                {totalSelected} item siap disalin ke sekolah Anda
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting || totalSelected === 0}
+                  onClick={() => void handleImport()}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 size={14} className="animate-spin" /> : <BookMarked size={14} />}
+                  {submitting ? "Menyalin Konten..." : `Salin ${totalSelected} Konten Terpilih`}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

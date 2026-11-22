@@ -13,12 +13,14 @@ import {
   jenjangLabel,
   normalizeMasterJenjang,
   normalizeMasterKategori,
+  normalizeModuleVisibility,
   normalizeTingkatKelas,
   parseMasterBankSoalInput,
   parseMasterButirList,
   parseMasterModulInput,
   type MasterJenjang,
   type MasterKategori,
+  type ParsedMasterModul,
 } from "./master-content-shared.js";
 
 export type MasterSessionChecker = (req: Request) => Promise<{ akunId: string; nama: string } | null>;
@@ -338,8 +340,9 @@ export function masterContentRoutes(requireMaster: MasterSessionChecker) {
       if (mode === "modul") {
         const rows = Array.isArray(req.body?.items) ? req.body.items : [];
         if (rows.length === 0) return res.status(400).json({ error: "Daftar modul untuk diimpor kosong." });
-        const validModuls: ReturnType<typeof parseMasterModulInput>[] = rows.slice(0, 200).map(parseMasterModulInput);
-        const toInsert = validModuls.filter((item): item is { ok: true; data: NonNullable<ReturnType<typeof parseMasterModulInput> extends { ok: true; data: infer D } ? D : never> } => item.ok);
+        const defaultVisibility = normalizeModuleVisibility(req.body?.visibility, "PUBLIC");
+        const validModuls = rows.slice(0, 500).map((row) => parseMasterModulInput(row, defaultVisibility));
+        const toInsert = validModuls.filter((item): item is { ok: true; data: ParsedMasterModul } => item.ok);
         const errors = validModuls
           .map((item, idx) => (item.ok === false ? `Baris #${idx + 1}: ${item.error}` : null))
           .filter((msg): msg is string => Boolean(msg));
@@ -646,7 +649,7 @@ export function schoolMasterContentRoutes(getSchoolSession: SchoolContextResolve
 
       const [moduls, bankSoal, kelasList, mapelList] = await Promise.all([
         prisma.masterModul.findMany({
-          where: { aktif: true, ...(jenjangFilter ? { jenjang: jenjangFilter } : {}) },
+          where: { aktif: true, visibility: "PUBLIC", ...(jenjangFilter ? { jenjang: jenjangFilter } : {}) },
           select: {
             id: true,
             jenjang: true,
@@ -657,6 +660,7 @@ export function schoolMasterContentRoutes(getSchoolSession: SchoolContextResolve
             deskripsi: true,
             jenis: true,
             fileUrl: true,
+            visibility: true,
             updatedAt: true,
           },
           orderBy: [{ jenjang: "asc" }, { tingkatKelas: "asc" }, { mataPelajaran: "asc" }],
@@ -804,6 +808,209 @@ export function schoolMasterContentRoutes(getSchoolSession: SchoolContextResolve
       });
     } catch (error) {
       return handleMasterSchemaError(error, res, "Gagal menyalin konten dari Pustaka Pusat.");
+    }
+  });
+
+  return router;
+}
+
+export function moduleBulkImportRoutes(
+  requireMaster: MasterSessionChecker,
+  getSchoolSession: SchoolContextResolver,
+) {
+  const router = Router();
+
+  // POST /api/modules/import-bulk
+  // Lightweight metadata + URL-only bulk importer (Excel/CSV JSON array) up to 500 modules per request.
+  router.post("/import-bulk", async (req, res) => {
+    try {
+      const [masterSession, schoolSession] = await Promise.all([
+        requireMaster(req),
+        getSchoolSession(req),
+      ]);
+
+      const isMaster = Boolean(masterSession);
+      const isSchoolStaff = Boolean(schoolSession?.sekolahId && schoolSession.peran !== "SISWA");
+      if (!isMaster && !isSchoolStaff) {
+        return res.status(401).json({
+          error: "Akses impor massal modul hanya tersedia untuk Master Admin, Admin Sekolah, atau Guru.",
+        });
+      }
+
+      const rawBody = req.body;
+      const bodyObj =
+        rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
+          ? (rawBody as Record<string, unknown>)
+          : {};
+      const rawItems = Array.isArray(rawBody)
+        ? rawBody
+        : Array.isArray(bodyObj.items)
+          ? bodyObj.items
+          : Array.isArray(bodyObj.modules)
+            ? bodyObj.modules
+            : [];
+
+      if (rawItems.length === 0) {
+        return res.status(400).json({ error: "Daftar modul (items) tidak boleh kosong." });
+      }
+      if (rawItems.length > 500) {
+        return res.status(400).json({ error: "Maksimal 500 modul dapat diimpor dalam satu kali proses." });
+      }
+
+      const requestedVisibility = normalizeModuleVisibility(
+        bodyObj.visibility,
+        isMaster ? "PUBLIC" : "PUBLIC",
+      );
+      const targetKelasId =
+        typeof bodyObj.targetKelasId === "string" && bodyObj.targetKelasId.trim()
+          ? bodyObj.targetKelasId.trim()
+          : null;
+      const cloneToSchool = bodyObj.cloneToSchool === true;
+
+      const parsedResults = rawItems.map((row) => parseMasterModulInput(row, requestedVisibility));
+      const validModuls: ParsedMasterModul[] = [];
+      const errors: string[] = [];
+
+      parsedResults.forEach((result, idx) => {
+        if ("data" in result) {
+          validModuls.push({
+            ...result.data,
+            // Enforce lightweight metadata + URL only; never keep bulky content if not provided
+            visibility: result.data.visibility,
+          });
+        } else {
+          errors.push(`Baris #${idx + 1}: ${result.error}`);
+        }
+      });
+
+      if (validModuls.length === 0) {
+        return res.status(400).json({
+          error: errors[0] || "Tidak ada baris modul yang valid untuk diimpor.",
+          errors: errors.slice(0, 20),
+        });
+      }
+
+      const createdIds: string[] = [];
+      if (isMaster || requestedVisibility === "PUBLIC") {
+        // Save lightweight metadata + fileUrl to MasterModul library
+        const createdRows = await prisma.$transaction(
+          validModuls.map((item) =>
+            prisma.masterModul.create({
+              data: {
+                jenjang: item.jenjang,
+                tingkatKelas: item.tingkatKelas,
+                mataPelajaran: item.mataPelajaran,
+                kategoriUjian: item.kategoriUjian,
+                judul: item.judul,
+                deskripsi: item.deskripsi,
+                konten: item.konten,
+                fileUrl: item.fileUrl,
+                jenis: item.jenis,
+                visibility: item.visibility,
+                aktif: item.aktif,
+              },
+              select: { id: true },
+            }),
+          ),
+        );
+        for (const r of createdRows) createdIds.push(r.id);
+      }
+
+      let clonedToClassCount = 0;
+      if (isSchoolStaff && schoolSession?.sekolahId && (cloneToSchool || (!isMaster && requestedVisibility === "PRIVATE"))) {
+        if (createdIds.length > 0) {
+          const summary = await cloneMasterContentToSchool(prisma, {
+            sekolahId: schoolSession.sekolahId,
+            guruId: schoolSession.guruId ?? null,
+            modulIds: createdIds,
+            bankSoalIds: [],
+            targetKelasId,
+          });
+          clonedToClassCount = summary.copiedModul;
+        } else {
+          // Direct lightweight school-only import (metadata + fileUrl only, zero binary storage)
+          const tempCreated = await prisma.$transaction(
+            validModuls.map((item) =>
+              prisma.masterModul.create({
+                data: {
+                  ...item,
+                  visibility: "PRIVATE",
+                  aktif: false,
+                },
+                select: { id: true },
+              }),
+            ),
+          );
+          const summary = await cloneMasterContentToSchool(prisma, {
+            sekolahId: schoolSession.sekolahId,
+            guruId: schoolSession.guruId ?? null,
+            modulIds: tempCreated.map((r) => r.id),
+            bankSoalIds: [],
+            targetKelasId,
+            includePrivateModuls: true,
+          });
+          clonedToClassCount = summary.copiedModul;
+        }
+      }
+
+      const summarySuffix =
+        clonedToClassCount > 0 ? ` dan ${clonedToClassCount} modul langsung disalin ke kelas` : "";
+
+      return res.status(201).json({
+        imported: validModuls.length,
+        clonedToClassCount,
+        visibility: requestedVisibility,
+        errors: errors.slice(0, 20),
+        message: `${validModuls.length} daftar modul berhasil diimpor (berbasis tautan/metadata ringan)${summarySuffix}.`,
+      });
+    } catch (error) {
+      return handleMasterSchemaError(error, res, "Impor massal daftar modul gagal.");
+    }
+  });
+
+  // POST /api/modules/:id/clone-to-class
+  // Duplicates only lightweight metadata + file_url from public library into a school class.
+  router.post("/:id/clone-to-class", async (req, res) => {
+    try {
+      const session = await getSchoolSession(req);
+      if (!session?.sekolahId || session.peran === "SISWA") {
+        return res.status(401).json({ error: "Akses hanya tersedia untuk Admin Sekolah dan Guru." });
+      }
+      const modulId = cleanText(req.params.id, 100);
+      const targetKelasId =
+        typeof req.body?.targetKelasId === "string" && req.body.targetKelasId.trim()
+          ? req.body.targetKelasId.trim()
+          : typeof req.body?.kelasId === "string" && req.body.kelasId.trim()
+            ? req.body.kelasId.trim()
+            : null;
+      if (!modulId) return res.status(400).json({ error: "ID modul tidak valid." });
+
+      const modul = await prisma.masterModul.findFirst({
+        where: { id: modulId, aktif: true, visibility: "PUBLIC" },
+        select: { id: true, judul: true },
+      });
+      if (!modul) {
+        return res.status(404).json({ error: "Modul tidak ditemukan atau tidak tersedia untuk publik." });
+      }
+
+      const summary = await cloneMasterContentToSchool(prisma, {
+        sekolahId: session.sekolahId,
+        guruId: session.guruId ?? null,
+        modulIds: [modul.id],
+        bankSoalIds: [],
+        targetKelasId,
+      });
+
+      return res.status(201).json({
+        success: true,
+        summary,
+        message:
+          summary.copiedModul > 0
+            ? `Modul "${modul.judul}" berhasil disalin ke kelas (berbasis URL & metadata ringan).`
+            : `Modul "${modul.judul}" sudah tersedia pada kelas tujuan.`,
+      });
+    } catch (error) {
+      return handleMasterSchemaError(error, res, "Gagal menyalin modul ke kelas.");
     }
   });
 

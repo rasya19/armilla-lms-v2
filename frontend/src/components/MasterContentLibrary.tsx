@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
+import { ModulePdfPreview } from "./ModulePdfPreview";
 import {
   JENJANG_OPTIONS,
   KATEGORI_OPTIONS,
@@ -136,6 +137,7 @@ export function MasterContentLibrary() {
   // Bulk Excel/JSON Import modal
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importMode, setImportMode] = useState<"bank-soal" | "modul">("bank-soal");
+  const [importVisibility, setImportVisibility] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
   const [importJenjang, setImportJenjang] = useState<MasterJenjang>("PAKET_C");
   const [importTingkat, setImportTingkat] = useState("Kelas 12");
   const [importMapel, setImportMapel] = useState("Bahasa Indonesia");
@@ -519,11 +521,13 @@ export function MasterContentLibrary() {
   async function handleSubmitImport() {
     setImportBusy(true);
     try {
+      const endpoint =
+        importMode === "modul" ? "/api/modules/import-bulk" : "/api/master/pustaka-konten/import";
       const payload =
         importMode === "modul"
-          ? { mode: "modul", items: parsedModuls }
+          ? { items: parsedModuls, visibility: importVisibility }
           : { mode: "bank-soal", packets: parsedPackets };
-      const res = await fetchWithTimeout("/api/master/pustaka-konten/import", {
+      const res = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -595,9 +599,20 @@ export function MasterContentLibrary() {
               <Sparkles size={15} aria-hidden="true" />
               Generate Draf via AI
             </button>
+            {activeTab === "modul" && (
+              <button
+                type="button"
+                onClick={() => downloadMasterModulTemplate()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20"
+              >
+                <Download size={15} aria-hidden="true" />
+                Unduh Template Excel
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
+                setImportMode(activeTab === "modul" ? "modul" : "bank-soal");
                 setParsedModuls([]);
                 setParsedPackets([]);
                 setImportWarnings([]);
@@ -606,7 +621,7 @@ export function MasterContentLibrary() {
               className="master-outline inline-flex items-center gap-1.5 text-xs"
             >
               <UploadCloud size={15} aria-hidden="true" />
-              Impor Excel / JSON
+              {activeTab === "modul" ? "Impor Daftar Modul (Excel/CSV)" : "Impor Excel / JSON"}
             </button>
             <button
               type="button"
@@ -817,6 +832,13 @@ export function MasterContentLibrary() {
                     <span className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${kategoriBadgeCls(item.kategoriUjian, true)}`}>
                       {kategoriLabel(item.kategoriUjian)}
                     </span>
+                    <span className={`rounded-lg border px-2 py-0.5 text-[11px] font-bold ${
+                      item.visibility === "PRIVATE"
+                        ? "border-slate-500/40 bg-slate-800 text-slate-300"
+                        : "border-emerald-400/30 bg-emerald-500/15 text-emerald-200"
+                    }`}>
+                      {item.visibility === "PRIVATE" ? "Privat" : "Publik"}
+                    </span>
                   </div>
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wider text-emerald-300">{item.mataPelajaran}</p>
@@ -824,14 +846,7 @@ export function MasterContentLibrary() {
                     {item.deskripsi && <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-400">{item.deskripsi}</p>}
                   </div>
                   {item.fileUrl && (
-                    <a
-                      href={item.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-300 underline hover:text-sky-200"
-                    >
-                      <FileText size={13} /> Lampiran / Tautan Modul
-                    </a>
+                    <ModulePdfPreview url={item.fileUrl} title={item.judul} dark />
                   )}
                 </div>
                 <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-3">
@@ -1549,6 +1564,19 @@ export function MasterContentLibrary() {
                     className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
                   />
                 </label>
+                {importMode === "modul" && (
+                  <label className="block text-xs font-bold text-slate-300">
+                    Visibilitas Pustaka Modul
+                    <select
+                      value={importVisibility}
+                      onChange={(e) => setImportVisibility(e.target.value as "PUBLIC" | "PRIVATE")}
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+                    >
+                      <option value="PUBLIC">Publik (Tersedia untuk semua sekolah klien)</option>
+                      <option value="PRIVATE">Privat (Draf internal Master Admin)</option>
+                    </select>
+                  </label>
+                )}
                 {importMode === "bank-soal" && (
                   <label className="block text-xs font-bold text-slate-300">
                     Default Kategori Ujian
@@ -1565,6 +1593,15 @@ export function MasterContentLibrary() {
                 )}
               </div>
 
+              {importMode === "modul" && (
+                <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-100">
+                  <p className="font-bold">Mode Ringan Berbasis Tautan (URL-Only, hingga 500 modul sekaligus)</p>
+                  <p className="mt-0.5 text-[11px] text-emerald-200/85">
+                    Kolom template Excel/CSV: <span className="font-semibold">Paket, Kelas, Mata Pelajaran, Judul Modul, Ringkasan, Link PDF</span> (Google Drive atau URL PDF langsung — tanpa menyimpan file biner di server).
+                  </p>
+                </div>
+              )}
+
               {importMode === "bank-soal" && (
                 <label className="block text-xs font-bold text-slate-300">
                   Default Judul Paket (opsional jika kolom judul_paket belum diisi di Excel)
@@ -1580,7 +1617,11 @@ export function MasterContentLibrary() {
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-700 bg-slate-950/60 p-6 text-center transition hover:border-indigo-400">
                 <FileSpreadsheet size={28} className="text-indigo-300" />
                 <span className="text-sm font-bold text-white">Pilih File .xlsx, .xls, .csv, atau .json</span>
-                <span className="text-xs text-slate-400">Otomatis memvalidasi kolom jenjang, mapel, kategori, dan kunci jawaban</span>
+                <span className="text-xs text-slate-400">
+                  {importMode === "modul"
+                    ? "Otomatis membaca kolom Paket, Kelas, Mata Pelajaran, Judul Modul, Ringkasan, dan Link PDF"
+                    : "Otomatis memvalidasi kolom jenjang, mapel, kategori, dan kunci jawaban"}
+                </span>
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv,.json"

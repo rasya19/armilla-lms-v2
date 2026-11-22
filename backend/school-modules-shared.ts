@@ -8,6 +8,8 @@ export type SchoolSessionInfo = {
   nama: string;
   peran: "ADMIN" | "GURU" | "SISWA";
   guruId?: string | null;
+  siswaId?: string | null;
+  kelasId?: string | null;
 };
 
 export type SchoolContextResolver = (req: Request) => Promise<SchoolSessionInfo | null>;

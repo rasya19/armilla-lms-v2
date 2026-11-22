@@ -14,6 +14,7 @@ export type MasterModulItem = {
   konten?: string | null;
   fileUrl: string | null;
   jenis: string;
+  visibility?: "PUBLIC" | "PRIVATE";
   aktif?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -249,19 +250,28 @@ export async function parseMasterModulFile(
         warnings.push(`Entri #${i + 1} dilewati karena judul atau mapel kosong.`);
         continue;
       }
-      const jenjang = parseJenjangCell(String(entry?.jenjang ?? ""), defaults.jenjang);
+      const rawUrl = String(
+        entry?.fileUrl ?? entry?.file_url ?? entry?.linkPdf ?? entry?.link_pdf ?? entry?.tautan ?? "",
+      ).trim();
+      if (rawUrl && !/^https?:\/\//i.test(rawUrl)) {
+        warnings.push(`Baris #${i + 1} dilewati karena Link PDF harus berupa tautan http:// atau https://.`);
+        continue;
+      }
+      const jenjang = parseJenjangCell(String(entry?.jenjang ?? entry?.paket ?? ""), defaults.jenjang);
       items.push({
         jenjang,
-        tingkatKelas: String(entry?.tingkatKelas ?? entry?.tingkat_kelas ?? defaults.tingkatKelas).trim() || defaults.tingkatKelas,
+        tingkatKelas:
+          String(entry?.tingkatKelas ?? entry?.tingkat_kelas ?? entry?.kelas ?? defaults.tingkatKelas).trim() ||
+          defaults.tingkatKelas,
         mataPelajaran: mapel,
         kategoriUjian: parseKategoriCell(String(entry?.kategoriUjian ?? entry?.kategori_ujian ?? "MATERI"), "MATERI"),
         judul,
-        deskripsi: String(entry?.deskripsi ?? "").trim(),
+        deskripsi: String(entry?.deskripsi ?? entry?.ringkasan ?? "").trim(),
         konten: String(entry?.konten ?? entry?.isi ?? "").trim(),
-        fileUrl: String(entry?.fileUrl ?? entry?.file_url ?? entry?.tautan ?? "").trim(),
+        fileUrl: rawUrl,
       });
     }
-    return { items, warnings };
+    return { items: items.slice(0, 500), warnings };
   }
 
   const buffer = await file.arrayBuffer();
@@ -271,25 +281,33 @@ export async function parseMasterModulFile(
 
   const rows = sheetToNormalizedRows(sheet);
   const items: ParsedModulImportItem[] = [];
-  for (let i = 0; i < rows.length; i++) {
+  for (let i = 0; i < Math.min(rows.length, 500); i++) {
     const row = rows[i];
-    const judul = pickCell(row, ["judul", "judul_modul", "nama_modul", "title"]);
+    const judul = pickCell(row, ["judul_modul", "judul", "nama_modul", "title"]);
     const mapel = pickCell(row, ["mata_pelajaran", "mapel", "pelajaran", "subject"]) || defaults.mataPelajaran;
     if (!judul || !mapel) {
-      warnings.push(`Baris #${i + 2} dilewati karena kolom judul atau mata_pelajaran kosong.`);
+      warnings.push(`Baris #${i + 2} dilewati karena kolom Judul Modul atau Mata Pelajaran kosong.`);
       continue;
     }
-    const jenjang = parseJenjangCell(pickCell(row, ["jenjang", "paket", "program"]), defaults.jenjang);
+    const rawUrl = pickCell(row, ["link_pdf", "file_url", "url", "tautan", "link", "link_modul"]);
+    if (rawUrl && !/^https?:\/\//i.test(rawUrl)) {
+      warnings.push(`Baris #${i + 2} (${judul}): Link PDF tidak valid (wajib diawali https:// atau http://).`);
+      continue;
+    }
+    const jenjang = parseJenjangCell(pickCell(row, ["paket", "jenjang", "program"]), defaults.jenjang);
     items.push({
       jenjang,
-      tingkatKelas: pickCell(row, ["tingkat_kelas", "tingkat", "kelas"]) || defaults.tingkatKelas,
+      tingkatKelas: pickCell(row, ["kelas", "tingkat_kelas", "tingkat"]) || defaults.tingkatKelas,
       mataPelajaran: mapel,
       kategoriUjian: parseKategoriCell(pickCell(row, ["kategori_ujian", "kategori"]), "MATERI"),
       judul,
-      deskripsi: pickCell(row, ["deskripsi", "ringkasan", "keterangan"]),
+      deskripsi: pickCell(row, ["ringkasan", "deskripsi", "keterangan"]),
       konten: pickCell(row, ["konten", "isi", "materi", "isi_modul"]),
-      fileUrl: pickCell(row, ["file_url", "url", "tautan", "link"]),
+      fileUrl: rawUrl,
     });
+  }
+  if (rows.length > 500) {
+    warnings.push("File memiliki lebih dari 500 baris. Hanya 500 modul pertama yang diproses dalam satu kali impor.");
   }
   return { items, warnings };
 }
@@ -445,30 +463,34 @@ export async function parseMasterBankSoalFile(
 export function downloadMasterModulTemplate(): void {
   const rows = [
     {
-      jenjang: "PAKET_C",
-      tingkat_kelas: "Kelas 12",
-      mata_pelajaran: "Bahasa Indonesia",
-      kategori_ujian: "MATERI",
-      judul: "Modul 1: Teks Editorial & Analisis Opini",
-      deskripsi: "Panduan struktur teks editorial untuk persiapan UPK Paket C.",
-      konten: "Tujuan Pembelajaran:\n1. Memahami struktur teks editorial.\n2. Membedakan fakta dan opini pada artikel berita.",
-      file_url: "",
+      Paket: "Paket A",
+      Kelas: "Kelas 6",
+      "Mata Pelajaran": "Matematika",
+      "Judul Modul": "Modul 1: Operasi Hitung Pecahan & Desimal",
+      Ringkasan: "Panduan konsep pecahan, desimal, dan soal latihan kontekstual Paket A.",
+      "Link PDF": "https://drive.google.com/file/d/1A2B3C4D5E6F7G8H9I0J/view",
     },
     {
-      jenjang: "PAKET_B",
-      tingkat_kelas: "Kelas 9",
-      mata_pelajaran: "Matematika",
-      kategori_ujian: "MATERI",
-      judul: "Modul 2: Persamaan Kuadrat & Fungsi",
-      deskripsi: "Ringkasan konsep akar persamaan kuadrat beserta latihan mandiri.",
-      konten: "Bentuk umum persamaan kuadrat: ax^2 + bx + c = 0 dengan a != 0.",
-      file_url: "",
+      Paket: "Paket B",
+      Kelas: "Kelas 9",
+      "Mata Pelajaran": "Bahasa Indonesia",
+      "Judul Modul": "Modul 2: Teks Eksposisi & Argumentasi",
+      Ringkasan: "Struktur teks eksposisi, kaidah kebahasaan, dan evaluasi mandiri Paket B.",
+      "Link PDF": "https://emodul.kemdikbud.go.id/contoh-modul-paket-b.pdf",
+    },
+    {
+      Paket: "Paket C",
+      Kelas: "Kelas 12",
+      "Mata Pelajaran": "Bahasa Indonesia",
+      "Judul Modul": "Modul 3: Teks Editorial & Analisis Opini",
+      Ringkasan: "Panduan struktur teks editorial untuk persiapan UPK Paket C.",
+      "Link PDF": "https://drive.google.com/file/d/9Z8Y7X6W5V4U3T2S1R0Q/view",
     },
   ];
   const sheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, "MasterModul");
-  XLSX.writeFile(workbook, "Template_Pustaka_Master_Modul.xlsx");
+  XLSX.utils.book_append_sheet(workbook, sheet, "DaftarModul");
+  XLSX.writeFile(workbook, "Template_Daftar_Modul_Resmi.xlsx");
 }
 
 export function downloadMasterBankSoalTemplate(): void {

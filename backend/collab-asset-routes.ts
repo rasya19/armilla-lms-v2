@@ -317,22 +317,31 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId, kelasId: sessionKelasId } = auth.session;
       const teacherScope = peran === "GURU" && sessionGuruId ? await resolveTeacherScope(sekolahId, sessionGuruId) : null;
       const restrictToAssigned = Boolean(teacherScope && !teacherScope.isWaliKelas);
+      const isStudent = peran === "SISWA";
+      const studentKelasId = isStudent ? (sessionKelasId ?? null) : null;
 
       const [topics, kelas] = await Promise.all([
         prisma.topikDiskusi.findMany({
           where: {
             sekolahId,
-            ...(restrictToAssigned
+            ...(isStudent
               ? {
                   OR: [
                     { kelasId: null },
-                    ...(teacherScope!.assignedKelasIds.length ? [{ kelasId: { in: teacherScope!.assignedKelasIds } }] : []),
+                    ...(studentKelasId ? [{ kelasId: studentKelasId }] : []),
                   ],
                 }
-              : {}),
+              : restrictToAssigned
+                ? {
+                    OR: [
+                      { kelasId: null },
+                      ...(teacherScope!.assignedKelasIds.length ? [{ kelasId: { in: teacherScope!.assignedKelasIds } }] : []),
+                    ],
+                  }
+                : {}),
           },
           include: {
             balasan: {
@@ -345,7 +354,13 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
         prisma.kelas.findMany({
           where: {
             sekolahId,
-            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedKelasIds } } : {}),
+            ...(isStudent
+              ? studentKelasId
+                ? { id: studentKelasId }
+                : { id: "__none__" }
+              : restrictToAssigned
+                ? { id: { in: teacherScope!.assignedKelasIds } }
+                : {}),
           },
           select: { id: true, nama: true },
           orderBy: { nama: "asc" },
@@ -353,7 +368,11 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
         }),
       ]);
 
-      return res.json({ topics, kelas });
+      return res.json({
+        topics,
+        kelas,
+        ...(isStudent ? { studentKelasId, belumDitempatkan: !studentKelasId } : {}),
+      });
     } catch (error) {
       if (isPrismaMissingSchema(error)) {
         return res.status(503).json({ error: "Tabel Ruang Diskusi belum dimigrasi pada database." });
@@ -367,7 +386,7 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId, nama, peran } = auth.session;
+      const { sekolahId, nama, peran, kelasId: sessionKelasId } = auth.session;
 
       const judul = cleanText(req.body?.judul, 200);
       const isi = cleanText(req.body?.isi, 3000);
@@ -377,6 +396,9 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
 
       if (!judul || !isi || !VALID_KATEGORI_DISKUSI.has(kategori)) {
         return res.status(400).json({ error: "Judul, kategori, dan isi topik diskusi wajib diisi." });
+      }
+      if (peran === "SISWA" && kelasId && kelasId !== sessionKelasId) {
+        return res.status(403).json({ error: "Anda hanya dapat membuat topik diskusi pada kelas Anda sendiri atau forum umum." });
       }
       if (kelasId) {
         const kelas = await prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true } });
@@ -443,6 +465,9 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      if (auth.session.peran === "SISWA") {
+        return res.status(403).json({ error: "Hanya Admin atau Guru yang dapat memoderasi topik diskusi." });
+      }
       const { sekolahId } = auth.session;
 
       const existing = await prisma.topikDiskusi.findFirst({ where: { id: req.params.id, sekolahId } });
@@ -467,6 +492,9 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      if (auth.session.peran === "SISWA") {
+        return res.status(403).json({ error: "Hanya Admin atau Guru yang dapat menghapus topik diskusi." });
+      }
       const deleted = await prisma.topikDiskusi.deleteMany({
         where: { id: req.params.id, sekolahId: auth.session.sekolahId },
       });

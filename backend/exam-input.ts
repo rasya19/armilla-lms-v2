@@ -15,13 +15,15 @@ export function examInput(value: unknown) {
   }
   return { jadwalId: value.jadwalId, judul: value.judul.trim(), mulai, selesai, durasiMenit: value.durasiMenit, soal };
 }
-export function answersInput(value: unknown): Record<string, Choice | null> | null {
+type AnswerChoice = "A" | "B" | "C" | "D" | "E";
+export function answerChoice(value: unknown): value is AnswerChoice { return value === "A" || value === "B" || value === "C" || value === "D" || value === "E"; }
+export function answersInput(value: unknown): Record<string, AnswerChoice | null> | null {
   if (!object(value) || Object.keys(value).length > 100) return null;
-  const answers: Record<string, Choice | null> = {};
+  const answers: Record<string, AnswerChoice | null> = {};
   for (const [id, answer] of Object.entries(value)) {
     if (!id || id.length > 100) return null;
     if (answer === null) answers[id] = null;
-    else if (choice(answer)) answers[id] = answer;
+    else if (answerChoice(answer)) answers[id] = answer;
     else return null;
   }
   return answers;

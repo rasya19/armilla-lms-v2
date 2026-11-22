@@ -5,6 +5,7 @@ import { normalizeLookupKey } from "./cbt-import.js";
 
 export type MasterJenjang = "PAKET_A" | "PAKET_B" | "PAKET_C";
 export type MasterKategori = "MATERI" | "UTS" | "UAS" | "UJIAN_AKHIR";
+export type ModuleVisibility = "PUBLIC" | "PRIVATE" | "ARCHIVED";
 
 export type ParsedMasterModul = {
   jenjang: MasterJenjang;
@@ -16,6 +17,7 @@ export type ParsedMasterModul = {
   konten: string | null;
   fileUrl: string | null;
   jenis: string;
+  visibility: ModuleVisibility;
   aktif: boolean;
 };
 
@@ -115,34 +117,83 @@ export function cbtPrefixForMasterKategori(kategori: string): string {
   return "CBT";
 }
 
-export function parseMasterModulInput(body: unknown): { ok: true; data: ParsedMasterModul } | { ok: false; error: string } {
+export function normalizeModuleVisibility(
+  value: unknown,
+  fallback: ModuleVisibility = "PUBLIC",
+): ModuleVisibility {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const upper = value.trim().toUpperCase();
+  if (upper === "PUBLIC" || upper === "UMUM" || upper === "PUBLIK") return "PUBLIC";
+  if (upper === "PRIVATE" || upper === "PRIVAT" || upper === "SEKOLAH") return "PRIVATE";
+  if (upper === "ARCHIVED" || upper === "ARSIP") return "ARCHIVED";
+  return fallback;
+}
+
+const EMBEDDED_BASE64_PATTERN = /data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,/i;
+
+export function containsEmbeddedBinaryOrBase64(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return EMBEDDED_BASE64_PATTERN.test(value);
+}
+
+export function isPdfOrDriveUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host === "drive.google.com" || host === "docs.google.com") return true;
+    return parsed.pathname.toLowerCase().endsWith(".pdf");
+  } catch {
+    return false;
+  }
+}
+
+export function parseMasterModulInput(
+  body: unknown,
+  defaultVisibility: ModuleVisibility = "PUBLIC",
+): { ok: true; data: ParsedMasterModul } | { ok: false; error: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return { ok: false, error: "Data modul tidak valid." };
   }
   const row = body as Record<string, unknown>;
-  const jenjang = normalizeMasterJenjang(row.jenjang, "PAKET_C");
+  const jenjang = normalizeMasterJenjang(row.jenjang ?? row.paket ?? row.program, "PAKET_C");
   if (!jenjang) {
-    return { ok: false, error: "Jenjang harus Paket A, Paket B, atau Paket C." };
+    return { ok: false, error: "Jenjang/Paket harus Paket A, Paket B, atau Paket C." };
   }
   const kategori = normalizeMasterKategori(row.kategoriUjian ?? row.kategori_ujian ?? row.kategori, "MATERI");
   if (!kategori) {
     return { ok: false, error: "Kategori tidak valid. Gunakan MATERI, UTS, UAS, atau UJIAN_AKHIR." };
   }
   const mataPelajaran = cleanText(row.mataPelajaran ?? row.mata_pelajaran ?? row.mapel, 120);
-  const judul = cleanText(row.judul, 220);
+  const judul = cleanText(row.judul ?? row.judul_modul ?? row.judulModul ?? row.nama_modul, 220);
   if (!mataPelajaran || !judul) {
     return { ok: false, error: "Mata pelajaran dan judul modul wajib diisi." };
   }
   const tingkatKelas = normalizeTingkatKelas(row.tingkatKelas ?? row.tingkat_kelas ?? row.kelas, jenjang);
-  const deskripsi = cleanText(row.deskripsi, 1000) || null;
-  const konten = cleanText(row.konten, 20000) || null;
-  const fileUrl = cleanText(row.fileUrl ?? row.file_url ?? row.tautan, 600) || null;
-  if (fileUrl && !isSafeHttpUrl(fileUrl)) {
-    return { ok: false, error: "URL file/tautan harus menggunakan protokol http:// atau https://." };
+  const deskripsi = cleanText(row.deskripsi ?? row.ringkasan ?? row.keterangan, 1000) || null;
+  const konten = cleanText(row.konten ?? row.isi, 20000) || null;
+  const rawFileUrl = cleanText(
+    row.fileUrl ?? row.file_url ?? row.linkPdf ?? row.link_pdf ?? row.tautan ?? row.url ?? row.link,
+    1000,
+  ) || null;
+
+  if (
+    containsEmbeddedBinaryOrBase64(rawFileUrl) ||
+    containsEmbeddedBinaryOrBase64(deskripsi) ||
+    containsEmbeddedBinaryOrBase64(konten)
+  ) {
+    return {
+      ok: false,
+      error: "File biner/base64 tidak boleh disimpan di database. Gunakan tautan URL (Google Drive / PDF).",
+    };
   }
-  const rawJenis = cleanText(row.jenis, 30).toUpperCase() || (fileUrl ? "TAUTAN" : "MODUL");
-  const jenis = VALID_MODUL_JENIS.has(rawJenis) ? rawJenis : "MODUL";
-  const aktif = typeof row.aktif === "boolean" ? row.aktif : true;
+  if (rawFileUrl && !isSafeHttpUrl(rawFileUrl)) {
+    return { ok: false, error: "Link PDF / file_url harus menggunakan protokol http:// atau https://." };
+  }
+  const visibility = normalizeModuleVisibility(row.visibility, defaultVisibility);
+  const defaultJenis = rawFileUrl ? (isPdfOrDriveUrl(rawFileUrl) ? "PDF" : "TAUTAN") : "MODUL";
+  const rawJenis = cleanText(row.jenis, 30).toUpperCase() || defaultJenis;
+  const jenis = VALID_MODUL_JENIS.has(rawJenis) ? rawJenis : defaultJenis;
+  const aktif = typeof row.aktif === "boolean" ? row.aktif : visibility !== "ARCHIVED";
 
   return {
     ok: true,
@@ -154,8 +205,9 @@ export function parseMasterModulInput(body: unknown): { ok: true; data: ParsedMa
       judul,
       deskripsi,
       konten,
-      fileUrl,
+      fileUrl: rawFileUrl,
       jenis,
+      visibility,
       aktif,
     },
   };
@@ -297,6 +349,7 @@ export type CloneMasterContentParams = {
   targetKelasId?: string | null;
   targetMapelId?: string | null;
   copyAll?: boolean;
+  includePrivateModuls?: boolean;
 };
 
 export type CloneMasterContentResult = {
@@ -350,15 +403,15 @@ export async function cloneMasterContentToSchool(
     shouldQueryModul
       ? prisma.masterModul.findMany({
           where: {
-            aktif: true,
+            ...(params.includePrivateModuls ? {} : { aktif: true, visibility: "PUBLIC" }),
             ...(params.modulIds && params.modulIds.length > 0
-              ? { id: { in: params.modulIds.slice(0, 200) } }
+              ? { id: { in: params.modulIds.slice(0, 500) } }
               : {
                   ...(jenjangFilter ? { jenjang: { in: jenjangFilter } } : {}),
                 }),
           },
           orderBy: [{ jenjang: "asc" }, { tingkatKelas: "asc" }, { createdAt: "asc" }],
-          take: 250,
+          take: 500,
         })
       : Promise.resolve([]),
     shouldQueryBank

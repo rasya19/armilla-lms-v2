@@ -783,11 +783,13 @@ model MasterModul {
   konten        String?
   fileUrl       String?
   jenis         String   @default("MODUL")
+  visibility    String   @default("PUBLIC") // "PUBLIC" | "PRIVATE" | "ARCHIVED"
   aktif         Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([jenjang, mataPelajaran, kategoriUjian])
+  @@index([visibility, jenjang, mataPelajaran])
 }
 
 model MasterBankSoal {

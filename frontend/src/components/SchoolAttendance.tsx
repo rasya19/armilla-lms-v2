@@ -9,8 +9,10 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
+import { useGlassConfirm } from "./GlassConfirm";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
@@ -163,6 +165,7 @@ export function SchoolAttendance({
   onOpenClassroom?: () => void;
 }) {
   const isDark = useTenantTheme() === "dark";
+  const confirm = useGlassConfirm();
   const initialToday = useMemo(() => getJakartaTodayIso(), []);
   const [kelasId, setKelasId] = useState("");
   const [tanggal, setTanggal] = useState(initialToday);
@@ -172,6 +175,7 @@ export function SchoolAttendance({
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -247,6 +251,11 @@ export function SchoolAttendance({
     return data.siswa.filter((s) => Boolean(draftStatuses[s.id])).length;
   }, [data, draftStatuses]);
 
+  const savedCountOnDate = useMemo(() => {
+    if (!data) return 0;
+    return data.siswa.filter((s) => s.status !== null).length;
+  }, [data]);
+
   const summary = useMemo(() => {
     const list = data?.siswa ?? [];
     let hadir = 0;
@@ -310,7 +319,11 @@ export function SchoolAttendance({
       }))
       .filter((e): e is { siswaId: string; status: PresensiStatus; keterangan: string } => e.status !== null);
 
-    if (entries.length === 0) {
+    const clearedSiswaIds = data.siswa
+      .filter((s) => s.status !== null && (draftStatuses[s.id] ?? null) === null)
+      .map((s) => s.id);
+
+    if (entries.length === 0 && clearedSiswaIds.length === 0) {
       setError("Pilih status kehadiran minimal 1 siswa (atau klik Tandai Semua Hadir) sebelum menyimpan.");
       return;
     }
@@ -326,9 +339,10 @@ export function SchoolAttendance({
           kelasId: activeKelasId,
           tanggal,
           entries,
+          clearedSiswaIds,
         }),
       });
-      const body = (await res.json()) as { savedCount?: number; message?: string; error?: string };
+      const body = (await res.json()) as { savedCount?: number; deletedCount?: number; message?: string; error?: string };
       if (!res.ok) throw new Error(body.error || "Presensi belum dapat disimpan.");
       setNotice(body.message || `Presensi ${entries.length} siswa untuk ${formatLongIndonesianDate(tanggal)} berhasil disimpan.`);
       await loadPresensi(activeKelasId, tanggal, displayMonth);
@@ -336,6 +350,58 @@ export function SchoolAttendance({
       setError(describeFetchError(failure, "Presensi siswa belum dapat disimpan."));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleClearOrDeleteAttendance() {
+    const activeKelasId = data?.selectedKelasId ?? kelasId;
+    if (!activeKelasId || !data?.siswa.length) return;
+
+    // Jika baru berupa draf perubahan yang belum tersimpan di database, langsung kosongkan tanpa konfirmasi.
+    if (savedCountOnDate === 0) {
+      const clearedStatuses: Record<string, PresensiStatus | null> = {};
+      const clearedNotes: Record<string, string> = {};
+      for (const s of data.siswa) {
+        clearedStatuses[s.id] = null;
+        clearedNotes[s.id] = "";
+      }
+      setDraftStatuses(clearedStatuses);
+      setDraftNotes(clearedNotes);
+      setError("");
+      setNotice("Seluruh pilihan draf presensi telah dikosongkan.");
+      return;
+    }
+
+    const kelasNama = data.kelas.find((k) => k.id === activeKelasId)?.nama ?? "kelas ini";
+    const confirmed = await confirm(
+      `Hapus seluruh catatan presensi ${kelasNama} pada ${formatLongIndonesianDate(tanggal)}? Status tanggal ini di kalender akan kembali menjadi Belum diabsen.`,
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setError("");
+    setNotice("");
+    try {
+      const params = new URLSearchParams({
+        classId: activeKelasId,
+        date: tanggal,
+      });
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout(`/api/school/attendance?${params.toString()}`, {
+        method: "DELETE",
+        ...(headers ? { headers } : {}),
+      });
+      const body = (await res.json()) as { deletedCount?: number; message?: string; error?: string };
+      if (!res.ok) throw new Error(body.error || "Presensi tanggal ini belum dapat dihapus.");
+      setNotice(
+        body.message ||
+          `Presensi ${kelasNama} pada ${formatLongIndonesianDate(tanggal)} telah dikosongkan.`,
+      );
+      await loadPresensi(activeKelasId, tanggal, displayMonth);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Presensi tanggal ini belum dapat dihapus."));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -672,7 +738,7 @@ export function SchoolAttendance({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                disabled={saving || !data?.siswa.length}
+                disabled={saving || deleting || !data?.siswa.length}
                 onClick={handleMarkAllPresent}
                 className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition disabled:opacity-50 ${
                   isDark
@@ -686,7 +752,25 @@ export function SchoolAttendance({
 
               <button
                 type="button"
-                disabled={saving || filledCount === 0}
+                disabled={saving || deleting || (filledCount === 0 && savedCountOnDate === 0 && dirtyCount === 0)}
+                onClick={() => void handleClearOrDeleteAttendance()}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition disabled:opacity-50 ${
+                  isDark
+                    ? "border-rose-500/35 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
+                    : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                }`}
+              >
+                {deleting ? (
+                  <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 size={14} aria-hidden="true" />
+                )}
+                {deleting ? "Menghapus..." : "Hapus / Kosongkan Presensi"}
+              </button>
+
+              <button
+                type="button"
+                disabled={saving || deleting || (filledCount === 0 && dirtyCount === 0)}
                 onClick={() => void handleSaveBatch()}
                 className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition disabled:opacity-50 ${
                   dirtyCount > 0
@@ -774,11 +858,17 @@ export function SchoolAttendance({
                                 <button
                                   key={opt.code}
                                   type="button"
-                                  disabled={saving}
+                                  disabled={saving || deleting}
                                   aria-pressed={isSelected}
+                                  title={
+                                    isSelected
+                                      ? `Klik ulang untuk membatalkan status ${opt.label}`
+                                      : `Tandai ${opt.label}`
+                                  }
                                   onClick={() => {
-                                    setDraftStatuses((prev) => ({ ...prev, [student.id]: opt.code }));
-                                    if (opt.code !== "HADIR" && draftNotes[student.id] === "Login Daring") {
+                                    const nextStatus = isSelected ? null : opt.code;
+                                    setDraftStatuses((prev) => ({ ...prev, [student.id]: nextStatus }));
+                                    if (nextStatus !== "HADIR" && draftNotes[student.id] === "Login Daring") {
                                       setDraftNotes((prev) => ({ ...prev, [student.id]: "" }));
                                     }
                                   }}

@@ -28,6 +28,59 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
       return res.json({ rows });
     } catch (error) { console.error("Gagal memuat jadwal ujian:", error); return res.status(503).json({ error: "Jadwal ujian belum tersedia." }); }
   });
+  router.get("/saya", async (_req, res) => {
+    const s: Session = res.locals.exam;
+    if (s.peran !== "SISWA" || !s.siswaId) return res.status(403).json({ error: "Hanya siswa yang dapat mengakses daftar ujian ini." });
+    if (!s.kelasId) {
+      return res.json({ belumDitempatkan: true, kelas: null, rows: [] });
+    }
+    try {
+      const [kelas, rawRows] = await Promise.all([
+        prisma.kelas.findFirst({ where: { id: s.kelasId, sekolahId: s.sekolahId }, select: { id: true, nama: true } }),
+        prisma.ujian.findMany({
+          where: {
+            sekolahId: s.sekolahId,
+            kelasId: s.kelasId,
+            dipublikasikan: true,
+            kelas: { sekolahId: s.sekolahId },
+            guru: { sekolahId: s.sekolahId },
+            mapel: { sekolahId: s.sekolahId },
+            tahunAjaran: { sekolahId: s.sekolahId },
+          },
+          select: {
+            id: true,
+            kode: true,
+            judul: true,
+            mulai: true,
+            selesai: true,
+            durasiMenit: true,
+            kkm: true,
+            tokenKode: true,
+            tampilNilai: true,
+            mapel: { select: { nama: true } },
+            guru: { select: { nama: true } },
+            tahunAjaran: { select: { nama: true, semester: true } },
+            _count: { select: { soal: true } },
+            percobaan: {
+              where: { siswaId: s.siswaId },
+              select: { dimulaiPada: true, dikumpulkanPada: true, nilai: true, nilaiOverride: true, catatanGuru: true },
+            },
+          },
+          orderBy: { mulai: "desc" },
+          take: 200,
+        }),
+      ]);
+      const rows = rawRows.map(({ tokenKode, _count, ...rest }) => ({
+        ...rest,
+        butuhToken: Boolean(tokenKode && tokenKode.trim().length > 0),
+        jumlahSoal: _count.soal,
+      }));
+      return res.json({ belumDitempatkan: !kelas, kelas, rows });
+    } catch (error) {
+      console.error("Gagal memuat ujian siswa:", error);
+      return res.status(503).json({ error: "Daftar ujian CBT belum tersedia." });
+    }
+  });
   router.get("/kelas/:kelasId", async (req, res) => {
     const s: Session = res.locals.exam;
     if (s.peran === "SISWA" && s.kelasId !== req.params.kelasId) return res.status(404).json({ error: "Kelas tidak ditemukan." });
@@ -54,22 +107,31 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
   router.post("/:ujianId/mulai", async (req, res) => {
     const s: Session = res.locals.exam;
     if (s.peran !== "SISWA" || !s.siswaId || !s.kelasId) return res.status(403).json({ error: "Hanya siswa dapat memulai ujian." });
+    const submittedToken = typeof req.body?.token === "string" ? req.body.token.trim().toUpperCase() : "";
     try {
       const result = await prisma.$transaction(async (tx) => {
         const students = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Siswa" WHERE "id" = ${s.siswaId} AND "sekolahId" = ${s.sekolahId} AND "kelasId" = ${s.kelasId} AND "status" = 'Aktif' FOR UPDATE`;
-        if (!students.length) return { error: "Penempatan kelas berubah." };
-        const exam = await tx.ujian.findFirst({ where: { ...examWhere(s, req.params.ujianId), tahunAjaran: { sekolahId: s.sekolahId, mulai: { lte: today() }, selesai: { gte: today() } } }, select: { id: true, judul: true, mulai: true, selesai: true, durasiMenit: true, soal: { orderBy: { urutan: "asc" }, select: { id: true, urutan: true, teks: true, opsi: { orderBy: { kode: "asc" }, select: { kode: true, teks: true } } } } } });
-        if (!exam) return { error: "Ujian tidak ditemukan." };
+        if (!students.length) return { status: 409, error: "Penempatan kelas berubah." };
+        const exam = await tx.ujian.findFirst({ where: { ...examWhere(s, req.params.ujianId), tahunAjaran: { sekolahId: s.sekolahId, mulai: { lte: today() }, selesai: { gte: today() } } }, select: { id: true, judul: true, mulai: true, selesai: true, durasiMenit: true, tokenKode: true, soal: { orderBy: { urutan: "asc" }, select: { id: true, urutan: true, teks: true, opsi: { orderBy: { kode: "asc" }, select: { kode: true, teks: true } } } } } });
+        if (!exam) return { status: 409, error: "Ujian tidak ditemukan." };
+        if (exam.soal.length === 0) return { status: 409, error: "Paket ujian ini belum memiliki butir soal." };
         const now = new Date();
-        if (now < exam.mulai || now > exam.selesai) return { error: "Ujian tidak sedang berlangsung." };
+        if (now < exam.mulai || now > exam.selesai) return { status: 409, error: "Ujian tidak sedang berlangsung." };
         let attempt = await tx.percobaanUjian.findUnique({ where: { ujianId_siswaId: { ujianId: exam.id, siswaId: s.siswaId ?? "" } } });
-        if (attempt?.dikumpulkanPada) return { error: "Ujian sudah dikumpulkan." };
-        if (!attempt) attempt = await tx.percobaanUjian.create({ data: { ujianId: exam.id, siswaId: s.siswaId ?? "" } });
+        if (attempt?.dikumpulkanPada) return { status: 409, error: "Ujian sudah dikumpulkan." };
+        if (!attempt) {
+          const requiredToken = typeof exam.tokenKode === "string" ? exam.tokenKode.trim().toUpperCase() : "";
+          if (requiredToken && submittedToken !== requiredToken) {
+            return { status: 403, error: "Token ujian tidak sesuai. Minta token aktif dari tutor atau proktor." };
+          }
+          attempt = await tx.percobaanUjian.create({ data: { ujianId: exam.id, siswaId: s.siswaId ?? "" } });
+        }
         const deadline = new Date(Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000));
-        if (now > deadline) return { error: "Waktu pengerjaan telah berakhir." };
-        return { exam: { ...exam, deadline, siswaId: s.siswaId } };
+        if (now > deadline) return { status: 409, error: "Waktu pengerjaan telah berakhir." };
+        const { tokenKode: _hiddenToken, ...safeExam } = exam;
+        return { exam: { ...safeExam, deadline, siswaId: s.siswaId } };
       });
-      if ("error" in result) return res.status(409).json({ error: result.error });
+      if ("error" in result) return res.status(result.status).json({ error: result.error });
       return res.json(result.exam);
     } catch (error) { console.error("Gagal memulai ujian:", error); return res.status(503).json({ error: "Ujian belum dapat dimulai." }); }
   });
@@ -81,14 +143,14 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
         try {
           const result = await prisma.$transaction(async (tx) => {
             const students = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Siswa" WHERE "id" = ${s.siswaId} AND "sekolahId" = ${s.sekolahId} AND "kelasId" = ${s.kelasId} AND "status" = 'Aktif' FOR UPDATE`;
-            if (!students.length) return "missing" as const;
-            const exam = await tx.ujian.findFirst({ where: examWhere(s, req.params.ujianId), select: { id: true, mulai: true, selesai: true, durasiMenit: true, soal: { select: { id: true, opsi: { select: { id: true, kode: true, benar: true } } } } } });
-            if (!exam) return "missing" as const;
+            if (!students.length) return { kind: "missing" as const };
+            const exam = await tx.ujian.findFirst({ where: examWhere(s, req.params.ujianId), select: { id: true, mulai: true, selesai: true, durasiMenit: true, tampilNilai: true, soal: { select: { id: true, opsi: { select: { id: true, kode: true, benar: true } } } } } });
+            if (!exam) return { kind: "missing" as const };
             const attempt = await tx.percobaanUjian.findUnique({ where: { ujianId_siswaId: { ujianId: exam.id, siswaId: students[0].id } } });
-            if (!attempt || attempt.dikumpulkanPada) return "submitted" as const;
+            if (!attempt || attempt.dikumpulkanPada) return { kind: "submitted" as const };
             const now = new Date();
-            if (now < exam.mulai || now.getTime() > Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000)) return "expired" as const;
-            if (Object.keys(answers).some((id) => !exam.soal.some((question) => question.id === id))) return "invalid" as const;
+            if (now < exam.mulai || now.getTime() > Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000)) return { kind: "expired" as const };
+            if (Object.keys(answers).some((id) => !exam.soal.some((question) => question.id === id))) return { kind: "invalid" as const };
             const values = exam.soal.map((question) => {
               const option = answers[question.id] ? question.opsi.find((item) => item.kode === answers[question.id]) : null;
               if (answers[question.id] && !option) throw new Error("INVALID_ANSWER");
@@ -96,14 +158,14 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
             });
             const score = exam.soal.length ? Math.round(values.filter((value) => value.benar).length / exam.soal.length * 10000) / 100 : 0;
             await tx.jawabanUjian.createMany({ data: values.map(({ soalId, opsiId }) => ({ percobaanId: attempt.id, soalId, opsiId })) });
-            await tx.percobaanUjian.update({ where: { id: attempt.id }, data: { dikumpulkanPada: now, nilai: score } });
-            return "saved" as const;
+            await tx.percobaanUjian.update({ where: { id: attempt.id }, data: { status: "SELESAI", dikumpulkanPada: now, nilai: score } });
+            return { kind: "saved" as const, nilai: exam.tampilNilai ? score : null };
           });
-          if (result === "missing") return res.status(404).json({ error: "Ujian tidak ditemukan." });
-          if (result === "invalid") return res.status(400).json({ error: "Jawaban tidak sesuai soal." });
-          if (result === "submitted") return res.status(409).json({ error: "Ujian belum dimulai atau sudah dikumpulkan. Periksa kembali status ujian." });
-          if (result === "expired") return res.status(409).json({ error: "Waktu ujian telah berakhir. Hubungi guru untuk bantuan." });
-          return res.json({ success: true });
+          if (result.kind === "missing") return res.status(404).json({ error: "Ujian tidak ditemukan." });
+          if (result.kind === "invalid") return res.status(400).json({ error: "Jawaban tidak sesuai soal." });
+          if (result.kind === "submitted") return res.status(409).json({ error: "Ujian belum dimulai atau sudah dikumpulkan. Periksa kembali status ujian." });
+          if (result.kind === "expired") return res.status(409).json({ error: "Waktu ujian telah berakhir. Hubungi guru untuk bantuan." });
+          return res.json({ success: true, nilai: result.nilai });
         } catch (error) {
           if (error instanceof Error && error.message === "INVALID_ANSWER") return res.status(400).json({ error: "Jawaban tidak sesuai soal." });
           console.error("Gagal mengumpulkan ujian:", error); return res.status(503).json({ error: "Pengumpulan belum dapat dipastikan. Periksa status sebelum mencoba lagi." });

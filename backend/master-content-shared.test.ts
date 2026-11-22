@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   cloneMasterContentToSchool,
   defaultKelasNameForMaster,
+  isPdfOrDriveUrl,
   normalizeMasterJenjang,
   normalizeMasterKategori,
+  normalizeModuleVisibility,
   parseMasterBankSoalInput,
   parseMasterButirList,
   parseMasterModulInput,
@@ -48,6 +50,51 @@ test("parseMasterModulInput validates safe URLs and required fields", () => {
     fileUrl: "javascript:alert(1)",
   });
   assert.equal(unsafe.ok, false);
+
+  // Indonesian Excel column aliases (Paket, Kelas, Mata Pelajaran, Judul Modul, Ringkasan, Link PDF)
+  const excelAlias = parseMasterModulInput({
+    paket: "Paket C",
+    kelas: "11",
+    mata_pelajaran: "Ekonomi",
+    judul_modul: "Modul 3 — Pasar Modal",
+    ringkasan: "Pengantar instrumen pasar modal Indonesia",
+    link_pdf: "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view?usp=sharing",
+    visibility: "public",
+  });
+  assert.equal(excelAlias.ok, true);
+  if (excelAlias.ok) {
+    assert.equal(excelAlias.data.jenjang, "PAKET_C");
+    assert.equal(excelAlias.data.tingkatKelas, "Kelas 11");
+    assert.equal(excelAlias.data.mataPelajaran, "Ekonomi");
+    assert.equal(excelAlias.data.judul, "Modul 3 — Pasar Modal");
+    assert.equal(excelAlias.data.deskripsi, "Pengantar instrumen pasar modal Indonesia");
+    assert.equal(excelAlias.data.visibility, "PUBLIC");
+    assert.equal(isPdfOrDriveUrl(excelAlias.data.fileUrl), true);
+  }
+
+  // Reject embedded binary / base64 payloads
+  const base64FileUrl = parseMasterModulInput({
+    paket: "Paket B",
+    kelas: "7",
+    mata_pelajaran: "IPS",
+    judul_modul: "Modul Base64",
+    link_pdf: "data:application/pdf;base64,JVBERi0xLjQK",
+  });
+  assert.equal(base64FileUrl.ok, false);
+
+  const base64Konten = parseMasterModulInput({
+    paket: "Paket B",
+    kelas: "7",
+    mata_pelajaran: "IPS",
+    judul_modul: "Modul Embedded Base64",
+    konten: "Lampiran: data:application/pdf;base64,JVBERi0xLjQK",
+  });
+  assert.equal(base64Konten.ok, false);
+
+  assert.equal(normalizeModuleVisibility("PRIVATE"), "PRIVATE");
+  assert.equal(normalizeModuleVisibility("publik", "PRIVATE"), "PUBLIC");
+  assert.equal(isPdfOrDriveUrl("https://cdn.kemdikbud.go.id/modul-1.pdf"), true);
+  assert.equal(isPdfOrDriveUrl("https://example.org/halaman-biasa"), false);
 });
 
 test("parseMasterBankSoalInput and parseMasterButirList validate PG and ESAI items", () => {

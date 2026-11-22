@@ -21,6 +21,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  Library,
   Lock,
   LogOut,
   Menu,
@@ -105,6 +106,7 @@ import {
   UpgradePlanModal,
 } from "./SchoolTierViews";
 import { VervalDapodikView } from "./VervalDapodikView";
+import { ModuleBankView } from "./ModuleBankView";
 
 const DEVELOPER_EMAIL = "ismantoj88@gmail.com";
 
@@ -132,6 +134,7 @@ type SchoolView =
   | "dashboard"
   | "password"
   | "materi-tugas"
+  | "bank-modul"
   | "ruang-kbm"
   | "materi-ajar"
   | "tugas-penilaian"
@@ -189,6 +192,7 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
     icon: BookOpen,
     items: [
       { label: "Materi & Tugas Kelas", icon: BookOpen, target: "materi-tugas" },
+      { label: "Bank Modul Belajar", icon: Library, target: "bank-modul" },
       { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi" },
       { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
     ],
@@ -963,6 +967,7 @@ export function SchoolHome() {
           {(view === "materi-tugas" || view === "ruang-kbm" || view === "materi-ajar" || view === "tugas-penilaian") && (
             <Classroom key="materi-tugas" role="ADMIN" initialTab={view === "tugas-penilaian" ? "tugas" : undefined} />
           )}
+          {view === "bank-modul" && <ModuleBankView />}
           {view === "verval-dapodik" && <VervalDapodikView />}
           {view === "impor-dapodik" && hasPlanAccess(plan, "reguler") && (
             <SchoolImportPanel onGoToStudents={() => selectView("siswa")} />

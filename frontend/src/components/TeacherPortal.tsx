@@ -16,9 +16,11 @@ import {
   Globe,
   GraduationCap,
   Home,
+  Image as ImageIcon,
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
+  Library,
   Lock,
   LogOut,
   Menu,
@@ -54,10 +56,13 @@ import { TeacherPasswordReset } from "./TeacherPasswordReset";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
+import { ModuleBankView } from "./ModuleBankView";
+import { isSafeSubmissionPhotoSrc, SubmissionPhotoModal } from "./LmsLearning";
 
 export type TeacherView =
   | "beranda"
   | "materi-tugas"
+  | "bank-modul"
   | "siswa"
   | "presensi"
   | "cbt"
@@ -120,6 +125,9 @@ type TeacherBerandaPayload = {
   tugasMenungguKoreksi: Array<{
     id: string;
     dikumpulkanPada: string;
+    jawaban?: string | null;
+    tautan?: string | null;
+    attachmentPhotoUrl?: string | null;
     siswa: { id: string; nama: string; nisn: string };
     tugas: {
       id: string;
@@ -153,6 +161,7 @@ const TEACHER_NAV_SECTIONS: Array<{ title: string; items: TeacherMenuItem[] }> =
     items: [
       { id: "beranda", label: "Beranda Guru", icon: LayoutDashboard },
       { id: "materi-tugas", label: "Materi & Tugas Kelas", icon: BookOpen },
+      { id: "bank-modul", label: "Bank Modul Belajar", icon: Library },
       { id: "siswa", label: "Data Siswa", icon: Users },
       { id: "presensi", label: "Presensi Siswa", icon: UserCheck },
       { id: "diskusi", label: "Ruang Diskusi", icon: MessageSquare },
@@ -176,6 +185,7 @@ const HASH_TO_TEACHER_VIEW: Record<string, TeacherView> = {
   "#materi-ajar": "materi-tugas",
   "#tugas-penilaian": "materi-tugas",
   "#materi-tugas": "materi-tugas",
+  "#bank-modul": "bank-modul",
   "#data-siswa": "siswa",
   "#presensi-siswa": "presensi",
   "#cbt-guru": "cbt",
@@ -586,6 +596,8 @@ export function TeacherPortal({
               />
             )}
 
+            {view === "bank-modul" && <ModuleBankView sandboxRole={sandboxRole} />}
+
             {view === "siswa" && <TeacherStudentsSection sandboxRole={sandboxRole} />}
 
             {view === "presensi" && <SchoolAttendance role="GURU" sandboxRole={sandboxRole} />}
@@ -792,6 +804,7 @@ function TeacherBerandaSection({
 }) {
   const canUseReguler = hasPlanAccess(plan, "reguler");
   const canUsePro = hasPlanAccess(plan, "pro");
+  const [queuePhotoPreview, setQueuePhotoPreview] = useState<{ src: string; studentName: string; taskTitle: string } | null>(null);
 
   if (loading && !data) {
     return (
@@ -1014,33 +1027,78 @@ function TeacherBerandaSection({
               </div>
             ) : (
               <ul className="mt-4 divide-y divide-slate-200/70">
-                {data.tugasMenungguKoreksi.map((item) => (
-                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs">
-                    <div className="min-w-0 flex-1">
-                      <p className={`truncate font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
-                        {item.siswa.nama} · <span className="font-semibold text-indigo-700">{item.tugas.judul}</span>
-                      </p>
-                      <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                        {item.tugas.kelas.nama} · {item.tugas.mapel.nama} · Dikumpulkan{" "}
-                        {new Date(item.dikumpulkanPada).toLocaleDateString("id-ID")}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onOpenGrading(item.tugas.kelasId)}
-                      className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
-                        isDark
-                          ? "border-amber-400/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
-                          : "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
-                      }`}
-                    >
-                      Nilai Sekarang
-                    </button>
-                  </li>
-                ))}
+                {data.tugasMenungguKoreksi.map((item) => {
+                  const safePhoto = isSafeSubmissionPhotoSrc(item.attachmentPhotoUrl) ? item.attachmentPhotoUrl : null;
+                  return (
+                    <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                          {item.siswa.nama} · <span className={`font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>{item.tugas.judul}</span>
+                        </p>
+                        <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                          {item.tugas.kelas.nama} · {item.tugas.mapel.nama} · Dikumpulkan{" "}
+                          {new Date(item.dikumpulkanPada).toLocaleDateString("id-ID")}
+                        </p>
+                        {(item.jawaban || item.tautan || safePhoto) && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {item.jawaban && (
+                              <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${isDark ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-700"}`}>
+                                Jawaban Teks
+                              </span>
+                            )}
+                            {item.tautan && (
+                              <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${isDark ? "bg-sky-500/20 text-sky-200" : "bg-sky-50 text-sky-700"}`}>
+                                Tautan HTTPS
+                              </span>
+                            )}
+                            {safePhoto && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setQueuePhotoPreview({
+                                    src: safePhoto,
+                                    studentName: item.siswa.nama,
+                                    taskTitle: item.tugas.judul,
+                                  })
+                                }
+                                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-extrabold transition ${
+                                  isDark
+                                    ? "bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30"
+                                    : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                                }`}
+                              >
+                                <ImageIcon size={11} aria-hidden="true" />
+                                Lihat Foto Tugas
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenGrading(item.tugas.kelasId)}
+                        className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                          isDark
+                            ? "border-amber-400/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                            : "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+                        }`}
+                      >
+                        Nilai Sekarang
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
+          {queuePhotoPreview && (
+            <SubmissionPhotoModal
+              src={queuePhotoPreview.src}
+              studentName={queuePhotoPreview.studentName}
+              taskTitle={queuePhotoPreview.taskTitle}
+              onClose={() => setQueuePhotoPreview(null)}
+            />
+          )}
         </section>
 
         <section className="dashboard-glass flex flex-col justify-between gap-4 rounded-2xl p-6 lg:col-span-5">

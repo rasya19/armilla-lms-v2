@@ -166,7 +166,7 @@ export function ModulePdfPreview({
             }`}
           >
             <ExternalLink size={13} aria-hidden="true" />
-            Buka / Unduh PDF
+            Buka di Tab Baru / Unduh
           </a>
         </div>
       </div>
@@ -187,6 +187,105 @@ export function ModulePdfPreview({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+export function ModulePdfViewerModal({
+  url,
+  title,
+  subtitle,
+  onClose,
+}: {
+  url: string | null | undefined;
+  title: string;
+  subtitle?: string | null;
+  onClose: () => void;
+}) {
+  const resolved = resolveModulePreview(url);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`PDF Viewer: ${title}`}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-6"
+    >
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3.5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+              <FileText size={18} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-extrabold text-slate-900 sm:text-base">{title}</h2>
+              {subtitle && <p className="truncate text-xs text-slate-600">{subtitle}</p>}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {resolved && (
+              <a
+                href={resolved.originalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-indigo-700"
+              >
+                <ExternalLink size={14} aria-hidden="true" />
+                Buka di Tab Baru / Unduh
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-4">
+          {!resolved ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm font-semibold text-rose-700">
+              Tautan modul PDF tidak valid atau tidak aman untuk ditampilkan.
+            </div>
+          ) : resolved.embedUrl ? (
+            <div className="space-y-2.5">
+              <iframe
+                src={resolved.embedUrl}
+                title={`PDF Viewer: ${title}`}
+                referrerPolicy="no-referrer"
+                allow="fullscreen"
+                className="h-[72vh] min-h-[420px] w-full rounded-2xl border border-slate-200 bg-white shadow-sm"
+              />
+              <p className="text-center text-xs text-slate-500">
+                Jika pratinjau tidak muncul karena pembatasan situs sumber, klik tombol{" "}
+                <span className="font-bold text-slate-700">Buka di Tab Baru / Unduh</span> di kanan atas.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 bg-white p-10 text-center">
+              <FileText size={36} className="text-indigo-500" aria-hidden="true" />
+              <div className="max-w-md space-y-1">
+                <p className="text-sm font-extrabold text-slate-900">Tautan Eksternal Modul Belajar</p>
+                <p className="text-xs text-slate-600">
+                  Sumber tautan ini tidak berbentuk PDF langsung atau Google Drive Preview. Buka di tab baru untuk membaca atau mengunduhnya.
+                </p>
+              </div>
+              <a
+                href={resolved.originalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700"
+              >
+                <ExternalLink size={15} aria-hidden="true" />
+                Buka di Tab Baru / Unduh
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -96,13 +96,13 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
       }
       const [validClass, rows] = await Promise.all([
         checkClass,
-        prisma.tugas.findMany({ ...common, select: { ...select, guruId: true, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } }),
+        prisma.tugas.findMany({ ...common, select: { ...select, guruId: true, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, attachmentPhotoUrl: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } }),
       ]);
       if (!validClass) return res.status(404).json({ error: "Kelas tidak ditemukan." });
       return res.json({
         rows: rows.slice(0, 25).map(({ guruId, ...row }) => ({
           ...row,
-          bisaMenilai: s.peran === "GURU" && guruId === s.guruId,
+          bisaMenilai: s.peran === "ADMIN" || (s.peran === "GURU" && guruId === s.guruId),
           bisaKelola: s.peran === "ADMIN" || (s.peran === "GURU" && guruId === s.guruId),
         })),
         page: p,
@@ -244,7 +244,7 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     const s: LearningSession = res.locals.learning;
     if (s.peran !== "SISWA" || !s.siswaId || !s.kelasId) return res.status(403).json({ error: "Hanya siswa yang ditempatkan di kelas dapat mengumpulkan tugas." });
     const data = parseSubmission(req.body);
-    if (!data) return res.status(400).json({ error: "Isi jawaban atau tautan HTTPS yang valid." });
+    if (!data) return res.status(400).json({ error: "Isi minimal jawaban teks, tautan, atau unggah foto tugas" });
     try {
       const saved = await prisma.$transaction(async (tx) => {
         const siswa = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Siswa" WHERE "id" = ${s.siswaId} AND "sekolahId" = ${s.sekolahId} AND "kelasId" = ${s.kelasId} AND "status" = 'Aktif' FOR UPDATE`;
@@ -265,7 +265,7 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
 
   router.get("/tugas/:id/pengumpulan", async (req, res) => {
     const s: LearningSession = res.locals.learning;
-    if (s.peran !== "GURU" || !s.guruId) return res.status(403).json({ error: "Hanya guru pemilik tugas dapat melihat jawaban." });
+    if (s.peran === "SISWA" || (s.peran === "GURU" && !s.guruId)) return res.status(403).json({ error: "Hanya admin atau guru pemilik tugas dapat melihat jawaban." });
     const p = page(req.query.page);
     if (!p) return res.status(400).json({ error: "Nomor halaman tidak valid." });
     try {
@@ -273,7 +273,7 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
       if (!task) return res.status(404).json({ error: "Tugas tidak ditemukan." });
       const rows = await prisma.pengumpulanTugas.findMany({
         where: { tugasId: task.id, siswa: { sekolahId: s.sekolahId } },
-        select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true, siswa: { select: { nama: true, nisn: true } } },
+        select: { id: true, jawaban: true, tautan: true, attachmentPhotoUrl: true, dikumpulkanPada: true, nilai: true, catatanGuru: true, siswa: { select: { nama: true, nisn: true } } },
         orderBy: [{ dikumpulkanPada: "asc" }, { id: "asc" }], skip: (p - 1) * 25, take: 26,
       });
       return res.json({ rows: rows.slice(0, 25), page: p, hasNext: rows.length > 25, batasWaktu: task.batasWaktu });
@@ -285,7 +285,7 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
 
   router.patch("/tugas/:id/pengumpulan/:submissionId", async (req, res) => {
     const s: LearningSession = res.locals.learning;
-    if (s.peran !== "GURU" || !s.guruId) return res.status(403).json({ error: "Hanya guru pemilik tugas dapat memberi nilai." });
+    if (s.peran === "SISWA" || (s.peran === "GURU" && !s.guruId)) return res.status(403).json({ error: "Hanya admin atau guru pemilik tugas dapat memberi nilai." });
     const data = parseGrade(req.body);
     if (!data) return res.status(400).json({ error: "Nilai harus antara 0 dan 100; komentar maksimal 2000 karakter." });
     try {

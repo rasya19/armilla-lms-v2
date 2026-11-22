@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, BookOpen, GraduationCap, Layers, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, GraduationCap, Layers, Library, Sparkles, Users } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
 import { LmsLearning } from "./LmsLearning";
+import { ClassroomModulePickerModal } from "./ModuleBankView";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
@@ -415,6 +416,8 @@ function ClassroomWorkspace({ role, sandboxRole, initialTab, base, kelasId, onEx
   const [version, setVersion] = useState(0);
   const [tab, setTab] = useState<"materi" | "tugas" | "warga">(initialTab ?? "materi");
   const [mapelId, setMapelId] = useState("");
+  const [modulePickerOpen, setModulePickerOpen] = useState(false);
+  const [learningSeq, setLearningSeq] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     const cached = getCached<Details>(detailCacheKey);
@@ -448,8 +451,35 @@ function ClassroomWorkspace({ role, sandboxRole, initialTab, base, kelasId, onEx
     {!data ? !error && <TableSkeleton rows={4} columns={3} /> : <>
       <DashboardHero title={data.nama} description={`Wali Kelas: ${data.wali ?? "Belum ditentukan"}`} badge={`${data.siswa.length} siswa aktif`} action={role === "SISWA" ? <button type="button" className="dashboard-hero-action" disabled={busy || !!data.presensi} onClick={hadir}>{busy ? "Mencatat..." : data.presensi ? `Presensi hari ini: ${data.presensi}` : "Konfirmasi Hadir Hari Ini"}</button> : undefined} />
       <div className="dashboard-glass flex flex-wrap gap-2 p-4" aria-label="Filter mata pelajaran"><button type="button" aria-pressed={!mapelId} onClick={() => setMapelId("")} className={`rounded-full px-3 py-2 text-sm font-bold ${!mapelId ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Semua Mapel</button>{data.mapel.map((item) => <button key={item.id} type="button" aria-pressed={mapelId === item.id} onClick={() => setMapelId(item.id)} className={`rounded-full px-3 py-2 text-sm font-bold ${mapelId === item.id ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>{item.nama}</button>)}</div>
-      <div className="flex flex-wrap gap-2">{([["materi", "Materi & Pengumuman"], ["tugas", "Tugas Kelas"], ["warga", "Warga Kelas"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${tab === id ? "bg-indigo-600 text-white" : "bg-white/70 text-slate-700"}`}>{label}</button>)}</div>
-      {tab === "warga" ? <div className="grid gap-4 md:grid-cols-2"><section className="dashboard-glass p-5"><h2 className="flex items-center gap-2 font-bold"><BookOpen size={18} /> Guru Pengampu</h2>{data.guru.length ? <ul className="mt-3 space-y-2">{data.guru.map((item) => <li key={item.id}>{item.nama}</li>)}</ul> : <p className="mt-3 text-sm">Belum ada guru dengan jadwal aktif.</p>}</section><section className="dashboard-glass p-5"><h2 className="flex items-center gap-2 font-bold"><Users size={18} /> Siswa</h2>{data.siswa.length ? <ul className="mt-3 space-y-2">{data.siswa.map((item) => <li key={item.id}>{item.nama}</li>)}</ul> : <p className="mt-3 text-sm">Belum ada siswa aktif.</p>}</section></div> : <LmsLearning key={`${kelasId}-${tab}`} role={role} sandboxRole={sandboxRole} kelasId={kelasId} mapelId={mapelId || undefined} initialKind={tab} />}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">{([["materi", "Materi & Pengumuman"], ["tugas", "Tugas Kelas"], ["warga", "Warga Kelas"]] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${tab === id ? "bg-indigo-600 text-white" : "bg-white/70 text-slate-700"}`}>{label}</button>)}</div>
+        {role !== "SISWA" && tab === "materi" && (
+          <button
+            type="button"
+            onClick={() => setModulePickerOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-700"
+          >
+            <Library size={16} aria-hidden="true" />
+            Ambil dari Bank Modul
+          </button>
+        )}
+      </div>
+      {tab === "warga" ? <div className="grid gap-4 md:grid-cols-2"><section className="dashboard-glass p-5"><h2 className="flex items-center gap-2 font-bold"><BookOpen size={18} /> Guru Pengampu</h2>{data.guru.length ? <ul className="mt-3 space-y-2">{data.guru.map((item) => <li key={item.id}>{item.nama}</li>)}</ul> : <p className="mt-3 text-sm">Belum ada guru dengan jadwal aktif.</p>}</section><section className="dashboard-glass p-5"><h2 className="flex items-center gap-2 font-bold"><Users size={18} /> Siswa</h2>{data.siswa.length ? <ul className="mt-3 space-y-2">{data.siswa.map((item) => <li key={item.id}>{item.nama}</li>)}</ul> : <p className="mt-3 text-sm">Belum ada siswa aktif.</p>}</section></div> : <LmsLearning key={`${kelasId}-${tab}-${learningSeq}`} role={role} sandboxRole={sandboxRole} kelasId={kelasId} mapelId={mapelId || undefined} initialKind={tab} />}
+      {modulePickerOpen && role !== "SISWA" && (
+        <ClassroomModulePickerModal
+          kelasId={kelasId}
+          kelasNama={data.nama}
+          mapelId={mapelId || undefined}
+          sandboxRole={sandboxRole === "GURU" ? "GURU" : undefined}
+          onAssigned={(msg) => {
+            setModulePickerOpen(false);
+            setNotice(msg);
+            invalidateCache(["/api/sekolah/pembelajaran", "/api/lms/pembelajaran", "/api/sekolah/rekap-akademik"]);
+            setLearningSeq((v) => v + 1);
+          }}
+          onClose={() => setModulePickerOpen(false)}
+        />
+      )}
     </>}
   </div>;
 }

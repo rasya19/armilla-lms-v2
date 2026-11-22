@@ -14,6 +14,7 @@ test("classroom access, attendance and learning remain scoped to school and clas
   let moved = false;
   let taskWhere: Record<string, unknown> | null = null;
   let created = 0;
+  let lastSubmissionData: Record<string, unknown> | null = null;
   Object.defineProperty(prisma.kelas, "findFirst", { configurable: true, value: async ({ where }: { where: { id: string; sekolahId: string } }) =>
     where.id === "class-a" && where.sekolahId === "school-a" ? { id: "class-a", nama: "Kelas 9", waliGuruId: null } : null,
   });
@@ -42,7 +43,7 @@ test("classroom access, attendance and learning remain scoped to school and clas
     taskWhere = where;
     return [{ id: "task-a", guruId: "teacher-a", judul: "Tugas", kelas: { nama: "Kelas 9" }, mapel: { nama: "Matematika" }, guru: { nama: "Guru Uji" }, tahunAjaran: { nama: "2026", semester: "Ganjil" }, instruksi: "", batasWaktu: null, pengumpulan: [] }];
   } });
-  Object.defineProperty(prisma.tugas, "findFirst", { configurable: true, value: async ({ where }: { where: { guruId?: string } }) => where.guruId === "teacher-a" ? { id: "task-a", kelasId: "class-a", batasWaktu: null } : null });
+  Object.defineProperty(prisma.tugas, "findFirst", { configurable: true, value: async ({ where }: { where: { guruId?: string } }) => !where.guruId || where.guruId === "teacher-a" ? { id: "task-a", kelasId: "class-a", batasWaktu: null } : null });
   Object.defineProperty(prisma, "$transaction", { configurable: true, value: async (fn: (tx: object) => Promise<unknown>) => fn({
     $queryRaw: async (_query: TemplateStringsArray, student: string, school: string, kelas: string) => {
       assert.equal(student, "student-a"); assert.equal(school, "school-a"); assert.equal(kelas, "class-a");
@@ -62,8 +63,28 @@ test("classroom access, attendance and learning remain scoped to school and clas
     tugas: { findFirst: async ({ where }: { where: { sekolahId: string; kelasId: string } }) => {
       assert.equal(where.sekolahId, "school-a"); assert.equal(where.kelasId, "class-a"); return { id: "task-a" };
     } },
-    pengumpulanTugas: { create: async () => { created++; } },
+    pengumpulanTugas: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        created++;
+        lastSubmissionData = data;
+      },
+    },
   }) });
+  Object.defineProperty(prisma.pengumpulanTugas, "findMany", {
+    configurable: true,
+    value: async () => [
+      {
+        id: "sub-1",
+        jawaban: null,
+        tautan: null,
+        attachmentPhotoUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+        dikumpulkanPada: today,
+        nilai: null,
+        catatanGuru: null,
+        siswa: { nama: "Siswa Uji", nisn: "1234567890" },
+      },
+    ],
+  });
   const session = (role: string) => role === "ADMIN"
     ? { sekolahId: "school-a", peran: "ADMIN" as const, siswaId: null, kelasId: null, guruId: null, wajibGantiPassword: false }
     : role === "GURU"
@@ -107,7 +128,26 @@ test("classroom access, attendance and learning remain scoped to school and clas
     assert.equal(taskWhere?.sekolahId, "school-a"); assert.equal(taskWhere?.kelasId, "class-a"); assert.equal(taskWhere?.mapelId, "subject-a"); assert.equal(taskWhere?.guruId, undefined);
     assert.equal((await req("/learning/tugas/task-a/pengumpulan", "GURU")).status, 404);
     moved = true; assert.equal((await req("/learning/tugas/task-a/pengumpulan", "SISWA", "POST", { jawaban: "Jawaban", tautan: "" })).status, 404);
-    moved = false; assert.equal((await req("/learning/tugas/task-a/pengumpulan", "SISWA", "POST", { jawaban: "Jawaban", tautan: "" })).status, 201);
+    moved = false;
+    const emptySubmit = await req("/learning/tugas/task-a/pengumpulan", "SISWA", "POST", { jawaban: "", tautan: "", attachmentPhotoUrl: "" });
+    assert.equal(emptySubmit.status, 400);
+    assert.equal(((await emptySubmit.json()) as { error: string }).error, "Isi minimal jawaban teks, tautan, atau unggah foto tugas");
+
+    assert.equal((await req("/learning/tugas/task-a/pengumpulan", "SISWA", "POST", { jawaban: "Jawaban", tautan: "" })).status, 201);
+    const photoOnlySubmit = await req("/learning/tugas/task-a/pengumpulan", "SISWA", "POST", {
+      jawaban: "",
+      tautan: "",
+      attachmentPhotoUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+    });
+    assert.equal(photoOnlySubmit.status, 201);
+    assert.equal(lastSubmissionData?.attachmentPhotoUrl, "data:image/jpeg;base64,/9j/4AAQSkZJRg==");
+    assert.equal(lastSubmissionData?.jawaban, null);
+    assert.equal(lastSubmissionData?.tautan, null);
+
+    const adminSubmissions = await req("/learning/tugas/task-a/pengumpulan", "ADMIN");
+    assert.equal(adminSubmissions.status, 200);
+    const adminBody = (await adminSubmissions.json()) as { rows: Array<{ attachmentPhotoUrl?: string | null }> };
+    assert.equal(adminBody.rows[0]?.attachmentPhotoUrl, "data:image/jpeg;base64,/9j/4AAQSkZJRg==");
   } finally {
     server.close(); await once(server, "close"); await prisma.$disconnect(); await pool.end(); await loginPool.end();
   }

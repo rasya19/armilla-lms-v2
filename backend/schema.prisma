@@ -256,6 +256,7 @@ model Sekolah {
   alumniTracer       AlumniTracer[]
   asetSarpras        AsetSarpras[]
   topikDiskusi       TopikDiskusi[]
+  learningModules    LearningModuleBank[]
   pendaftaranLembaga PendaftaranSekolah?
 
   @@index([kabupatenKota, izinVervalDinas])
@@ -473,18 +474,19 @@ model Tugas {
 }
 
 model PengumpulanTugas {
-  id              String   @id @default(uuid())
-  tugasId         String
-  tugas           Tugas    @relation(fields: [tugasId], references: [id])
-  siswaId         String
-  siswa           Siswa    @relation(fields: [siswaId], references: [id])
-  jawaban         String?
-  tautan          String?
-  berkasId        String?
-  berkas          Berkas?  @relation(fields: [berkasId], references: [id])
-  dikumpulkanPada DateTime @default(now())
-  nilai           Float?
-  catatanGuru     String?
+  id                 String   @id @default(uuid())
+  tugasId            String
+  tugas              Tugas    @relation(fields: [tugasId], references: [id])
+  siswaId            String
+  siswa              Siswa    @relation(fields: [siswaId], references: [id])
+  jawaban            String?
+  tautan             String?
+  attachmentPhotoUrl String?
+  berkasId           String?
+  berkas             Berkas?  @relation(fields: [berkasId], references: [id])
+  dikumpulkanPada    DateTime @default(now())
+  nilai              Float?
+  catatanGuru        String?
 
   @@unique([tugasId, siswaId])
 }
@@ -828,4 +830,24 @@ model MasterButirSoal {
 
   @@unique([bankSoalId, urutan])
 }
+
+model LearningModuleBank {
+  id               String   @id @default(uuid())
+  schoolId         String?
+  school           Sekolah? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  originSchoolName String
+  paket            String // "Paket A" | "Paket B" | "Paket C"
+  gradeLevel       String // "Kelas 1" - "Kelas 12"
+  subject          String
+  title            String
+  summary          String?
+  fileUrl          String
+  visibility       String   @default("PRIVATE") // "PRIVATE" | "PUBLIC" | "ARCHIVED"
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([schoolId, visibility])
+  @@index([visibility, paket, gradeLevel])
+}
+
 

@@ -12,10 +12,30 @@ test("validates learning content and HTTPS links", () => {
 });
 
 test("validates submission and grading", () => {
-  assert.ok(parseSubmission({ jawaban: "Jawaban", tautan: "" }));
-  assert.ok(parseSubmission({ jawaban: "", tautan: "https://example.com" }));
-  assert.equal(parseSubmission({ jawaban: "", tautan: "" }), null);
+  const validJpegDataUrl = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/";
+  assert.deepEqual(parseSubmission({ jawaban: "Jawaban", tautan: "" }), {
+    jawaban: "Jawaban",
+    tautan: null,
+    attachmentPhotoUrl: null,
+  });
+  assert.deepEqual(parseSubmission({ jawaban: "", tautan: "https://example.com" }), {
+    jawaban: null,
+    tautan: "https://example.com/",
+    attachmentPhotoUrl: null,
+  });
+  assert.deepEqual(parseSubmission({ jawaban: "", tautan: "", attachmentPhotoUrl: validJpegDataUrl }), {
+    jawaban: null,
+    tautan: null,
+    attachmentPhotoUrl: validJpegDataUrl,
+  });
+  assert.deepEqual(parseSubmission({ attachmentPhotoUrl: "https://cdn.example.com/foto-tugas.jpg" }), {
+    jawaban: null,
+    tautan: null,
+    attachmentPhotoUrl: "https://cdn.example.com/foto-tugas.jpg",
+  });
+  assert.equal(parseSubmission({ jawaban: "", tautan: "", attachmentPhotoUrl: "" }), null);
   assert.equal(parseSubmission({ jawaban: "", tautan: "javascript:alert(1)" }), null);
+  assert.equal(parseSubmission({ attachmentPhotoUrl: "data:image/svg+xml;base64,PHN2Zz4=" }), null);
   assert.deepEqual(parseGrade({ nilai: 80.5, catatanGuru: "" }), { nilai: 80.5, catatanGuru: null });
   for (const nilai of [-1, 101, "80", Infinity]) assert.equal(parseGrade({ nilai, catatanGuru: "" }), null);
 });

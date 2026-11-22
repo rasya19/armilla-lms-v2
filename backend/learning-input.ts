@@ -70,13 +70,38 @@ export function parseLearningContentUpdate(input: unknown, kind: "materi" | "tug
   return { judul, isi, tautan: null, batasWaktu };
 }
 
+function optionalSubmissionPhoto(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^data:/i.test(trimmed)) {
+    const compact = trimmed.replace(/\s+/g, "");
+    if (compact.length > 2_500_000) return undefined;
+    if (!/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(compact)) {
+      return undefined;
+    }
+    return compact;
+  }
+
+  return optionalLink(trimmed);
+}
+
 export function parseSubmission(input: unknown) {
   const data = object(input);
   if (!data) return null;
-  const jawaban = optionalText(data.jawaban, 5000);
-  const tautan = optionalLink(data.tautan);
-  if (jawaban === undefined || tautan === undefined || (!jawaban && !tautan)) return null;
-  return { jawaban, tautan };
+  const rawJawaban = data.jawaban ?? data.jawabanTeks;
+  const rawTautan = data.tautan ?? data.tautanUrl;
+  const rawPhoto = data.attachmentPhotoUrl ?? data.fotoUrl ?? data.photoDataUrl;
+
+  const jawaban = rawJawaban === undefined || rawJawaban === null ? null : optionalText(rawJawaban, 5000);
+  const tautan = rawTautan === undefined || rawTautan === null ? null : optionalLink(rawTautan);
+  const attachmentPhotoUrl = optionalSubmissionPhoto(rawPhoto);
+
+  if (jawaban === undefined || tautan === undefined || attachmentPhotoUrl === undefined) return null;
+  if (!jawaban && !tautan && !attachmentPhotoUrl) return null;
+  return { jawaban, tautan, attachmentPhotoUrl };
 }
 
 export function parseGrade(input: unknown) {

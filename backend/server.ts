@@ -46,6 +46,7 @@ import { cbtPublicBankRoutes, tahap2CbtRoutes } from "./cbt-routes.js";
 import { tahap2ProRoutes } from "./pro-admin-routes.js";
 import { tahap2CollabRoutes } from "./collab-asset-routes.js";
 import { masterContentRoutes, moduleBulkImportRoutes, schoolMasterContentRoutes } from "./master-content-routes.js";
+import { moduleBankRoutes } from "./module-bank-routes.js";
 import { cloneMasterContentToSchool } from "./master-content-shared.js";
 import { resolveTeacherScope, type SchoolSessionInfo } from "./school-modules-shared.js";
 
@@ -70,7 +71,8 @@ app.use("/api/school", express.json({ limit: "2mb" }));
 app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/diskusi", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/cbt", express.json({ limit: "2mb" }));
-app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
+app.use("/api/sekolah/pembelajaran", express.json({ limit: "256kb" }));
+app.use("/api/lms/pembelajaran", express.json({ limit: "3mb" }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", tenantHostMiddleware(production, (slug) => resolveTenantHostSchool(prisma, slug), process.env.APP_ORIGIN));
 app.get("/api/tenant/context", (req, res) => res.json({
@@ -80,7 +82,7 @@ app.get("/api/tenant/context", (req, res) => res.json({
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;
   if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
-  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval)(?:\/|$)/.test(req.path)) {
+  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval|module-bank)(?:\/|$)/.test(req.path)) {
     if (/^\/auth\/(?:sekolah|lms)\/login$/.test(req.path)) return res.status(401).json({ error: "Akun tidak terdaftar pada instansi ini. Gunakan subdomain sekolah Anda." });
     return res.status(404).json({ error: "Fitur ini tersedia melalui subdomain sekolah." });
   }
@@ -1718,6 +1720,9 @@ app.get("/api/lms/guru/beranda", async (req, res) => {
             select: {
               id: true,
               dikumpulkanPada: true,
+              jawaban: true,
+              tautan: true,
+              attachmentPhotoUrl: true,
               siswa: { select: { id: true, nama: true, nisn: true } },
               tugas: { select: { id: true, judul: true, kelasId: true, kelas: { select: { nama: true } }, mapel: { select: { nama: true } } } },
             },
@@ -2557,6 +2562,7 @@ app.use(
     resolveAdminOrTeacherSession,
   ),
 );
+app.use("/api/module-bank", express.json({ limit: "2mb" }), moduleBankRoutes(resolveAdminOrTeacherSession));
 app.use("/api/verval", vervalRoutes(async (req) => {
   const adminSession = await getSession(req, "ADMIN");
   if (adminSession?.akun.sekolahId) {

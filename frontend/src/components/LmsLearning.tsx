@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { EmptyState, TableSkeleton } from "./DashboardUI";
@@ -10,7 +11,7 @@ type Named = { nama: string };
 type Assignment = { id: string; hari: number; jamMulai: string; jamSelesai: string; kelas: Named & { id: string }; mapel: Named & { id: string }; tahunAjaran: Named & { semester: string } };
 type Submission = { id: string; jawaban: string | null; tautan: string | null; dikumpulkanPada: string; nilai: number | null; catatanGuru: string | null };
 type StudentSubmission = Submission & { siswa: Named & { nisn: string } };
-type Content = { id: string; judul: string; kelas: Named; mapel: Named; guru: Named; tahunAjaran: Named & { semester: string }; deskripsi?: string | null; tautan?: string | null; instruksi?: string | null; batasWaktu?: string | null; pengumpulan?: Submission[]; bisaMenilai?: boolean };
+type Content = { id: string; judul: string; kelas: Named; mapel: Named; guru: Named; tahunAjaran: Named & { semester: string }; deskripsi?: string | null; tautan?: string | null; instruksi?: string | null; batasWaktu?: string | null; pengumpulan?: Submission[]; bisaMenilai?: boolean; bisaKelola?: boolean };
 type Page<T> = { rows: T[]; page: number; hasNext: boolean };
 type Kind = "materi" | "tugas";
 const field = "mt-1 w-full rounded-xl border border-slate-300 bg-white p-2";
@@ -24,7 +25,7 @@ function submission(v: unknown): v is Submission {
 }
 function content(v: unknown): v is Content {
   return obj(v) && typeof v.id === "string" && typeof v.judul === "string" && named(v.kelas) && named(v.mapel) && named(v.guru) && obj(v.tahunAjaran) && typeof v.tahunAjaran.nama === "string" && typeof v.tahunAjaran.semester === "string"
-    && (v.deskripsi === undefined || nullableString(v.deskripsi)) && (v.tautan === undefined || nullableString(v.tautan)) && (v.instruksi === undefined || nullableString(v.instruksi)) && (v.batasWaktu === undefined || nullableString(v.batasWaktu)) && (v.bisaMenilai === undefined || typeof v.bisaMenilai === "boolean") && (v.pengumpulan === undefined || (Array.isArray(v.pengumpulan) && v.pengumpulan.every(submission)));
+    && (v.deskripsi === undefined || nullableString(v.deskripsi)) && (v.tautan === undefined || nullableString(v.tautan)) && (v.instruksi === undefined || nullableString(v.instruksi)) && (v.batasWaktu === undefined || nullableString(v.batasWaktu)) && (v.bisaMenilai === undefined || typeof v.bisaMenilai === "boolean") && (v.bisaKelola === undefined || typeof v.bisaKelola === "boolean") && (v.pengumpulan === undefined || (Array.isArray(v.pengumpulan) && v.pengumpulan.every(submission)));
 }
 function assignment(v: unknown): v is Assignment {
   return obj(v) && typeof v.id === "string" && typeof v.hari === "number" && typeof v.jamMulai === "string" && typeof v.jamSelesai === "string" && named(v.kelas) && obj(v.kelas) && typeof v.kelas.id === "string" && named(v.mapel) && obj(v.mapel) && typeof v.mapel.id === "string" && obj(v.tahunAjaran) && typeof v.tahunAjaran.nama === "string" && typeof v.tahunAjaran.semester === "string";
@@ -58,6 +59,12 @@ function failureMessage(failure: unknown): string {
   return describeFetchError(failure, "Permintaan gagal.");
 }
 function time(value: string) { return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(new Date(value)) + " WIB"; }
+function toWibLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() + 7 * 3_600_000).toISOString().slice(0, 16);
+}
 function Link({ value }: { value: string | null | undefined }) {
   if (!value) return null;
   try {
@@ -101,6 +108,8 @@ export function LmsLearning({
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ jadwalId: "", kelasId: kelasId ?? "", mapelId: mapelId ?? "", judul: "", isi: "", tautan: "", batasWaktu: "" });
+  const [editing, setEditing] = useState<Content | null>(null);
+  const [editForm, setEditForm] = useState({ judul: "", isi: "", tautan: "", batasWaktu: "" });
   const [selected, setSelected] = useState<Content | null>(null);
   const [answers, setAnswers] = useState<Page<StudentSubmission> | null>(null);
   const [answerPage, setAnswerPage] = useState(1);
@@ -110,7 +119,7 @@ export function LmsLearning({
   const filteredAssignments = assignments?.filter((item) => (!kelasId || item.kelas.id === kelasId) && (!mapelId || item.mapel.id === mapelId));
   const useScheduleSelect = Boolean(filteredAssignments && filteredAssignments.length > 0);
 
-  useEffect(() => { setPage(1); setSelected(null); }, [kelasId, mapelId]);
+  useEffect(() => { setPage(1); setSelected(null); setEditing(null); }, [kelasId, mapelId]);
   useEffect(() => {
     const controller = new AbortController();
     const cached = getCached<Page<Content>>(listCacheKey);
@@ -152,7 +161,7 @@ export function LmsLearning({
     return () => controller.abort();
   }, [role, selected, answerPage, version, sandboxRole]);
 
-  async function mutate(path: string, method: string, body: object, success: string) {
+  async function mutate(path: string, method: string, body: object | undefined, success: string) {
     setBusy(true); setError(""); setMessage("");
     try { await request(path, method, body, undefined, role === "ADMIN", sandboxRole); invalidateCache(["/api/sekolah/pembelajaran", "/api/lms/pembelajaran", "/api/sekolah/rekap-akademik"]); setMessage(success); setVersion((v) => v + 1); return true; }
     catch (failure) { setError(failureMessage(failure)); return false; }
@@ -182,12 +191,49 @@ export function LmsLearning({
     if (!selected) return;
     await mutate(`/tugas/${encodeURIComponent(selected.id)}/pengumpulan/${encodeURIComponent(id)}`, "PATCH", { nilai: Number(nilai), catatanGuru }, "Nilai disimpan.");
   }
-  function switchKind(value: Kind) { setKind(value); setPage(1); setSelected(null); setMessage(""); setError(""); }
+  function openEdit(item: Content) {
+    setError("");
+    setMessage("");
+    setEditing(item);
+    setEditForm({
+      judul: item.judul,
+      isi: kind === "materi" ? item.deskripsi ?? "" : item.instruksi ?? "",
+      tautan: kind === "materi" ? item.tautan ?? "" : "",
+      batasWaktu: kind === "tugas" ? toWibLocalInput(item.batasWaktu) : "",
+    });
+  }
+  async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
+    let batasWaktu = "";
+    if (kind === "tugas" && editForm.batasWaktu) {
+      const parsed = new Date(`${editForm.batasWaktu}:00+07:00`);
+      if (Number.isNaN(parsed.getTime())) { setError("Batas waktu tidak valid."); return; }
+      batasWaktu = parsed.toISOString();
+    }
+    const payload = kind === "materi"
+      ? { judul: editForm.judul, isi: editForm.isi, tautan: editForm.tautan }
+      : { judul: editForm.judul, isi: editForm.isi, batasWaktu };
+    if (await mutate(`/${kind}/${encodeURIComponent(editing.id)}`, "PATCH", payload, `${kind === "materi" ? "Materi" : "Tugas"} diperbarui.`)) {
+      setEditing(null);
+    }
+  }
+  async function removeItem(item: Content) {
+    const warning = kind === "tugas"
+      ? `Hapus tugas "${item.judul}"? Seluruh jawaban pengumpulan siswa untuk tugas ini juga akan dihapus.`
+      : `Hapus materi "${item.judul}"?`;
+    if (!await confirm(warning)) return;
+    if (await mutate(`/${kind}/${encodeURIComponent(item.id)}`, "DELETE", undefined, `${kind === "materi" ? "Materi" : "Tugas"} dihapus.`)) {
+      if (selected?.id === item.id) setSelected(null);
+      if (editing?.id === item.id) setEditing(null);
+    }
+  }
+  function switchKind(value: Kind) { setKind(value); setPage(1); setSelected(null); setEditing(null); setMessage(""); setError(""); }
   const canCreate = useScheduleSelect || (Boolean(kelasId || schoolKelas.length > 0) && Boolean(mapelId || schoolMapel.length > 0));
   return <section className="mt-6 rounded-xl border border-[#e6dfd0] bg-[#f8f6ef] p-5">
     {!kelasId && <><h2 className="font-bold">Materi dan tugas</h2><p className="mt-2 text-sm text-slate-600">Hanya periode aktif dan kelas yang sesuai ditampilkan. Tautan harus HTTPS; pastikan penerima memiliki izin mengaksesnya.</p></>}
     <div className="mt-3 flex flex-wrap items-center gap-3">{!kelasId && <><button type="button" aria-pressed={kind === "materi"} onClick={() => switchKind("materi")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "materi" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Materi</button><button type="button" aria-pressed={kind === "tugas"} onClick={() => switchKind("tugas")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "tugas" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Tugas</button></>}{role === "GURU" && <button type="button" onClick={() => { setError(""); setForm((prev) => ({ ...prev, kelasId: kelasId ?? prev.kelasId ?? schoolKelas[0]?.id ?? "", mapelId: mapelId ?? prev.mapelId ?? schoolMapel[0]?.id ?? "" })); setCreateOpen(true); }} className="master-primary ml-auto">{kelasId && kind === "materi" ? "+ Bagikan Materi ke Kelas ini" : `+ Buat ${kind}`}</button>}</div>
-    {error && !createOpen && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-3 text-sm text-green-700">{message}</p>}
+    {error && !createOpen && !editing && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-3 text-sm text-green-700">{message}</p>}
     {role === "GURU" && createOpen && <SchoolModal title={`Buat ${kind}`} busy={busy} onClose={() => { setCreateOpen(false); setError(""); }}><form onSubmit={create}>
       {assignmentError && <p role="alert" className="mt-2 text-sm text-rose-700">{assignmentError} <button type="button" onClick={() => setVersion((v) => v + 1)} className="font-bold underline">Coba lagi</button></p>}
       {useScheduleSelect ? (
@@ -220,7 +266,14 @@ export function LmsLearning({
       {kind === "materi" ? <label className="mt-3 block text-sm font-semibold">Tautan HTTPS (opsional)<input type="url" maxLength={2000} className={field} value={form.tautan} onChange={(e) => setForm({ ...form, tautan: e.target.value })} /></label> : <label className="mt-3 block text-sm font-semibold">Batas waktu WIB (opsional)<input type="datetime-local" className={field} value={form.batasWaktu} onChange={(e) => setForm({ ...form, batasWaktu: e.target.value })} /></label>}
       {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}<button disabled={busy || !canCreate} className={button}>Simpan {kind}</button>
     </form></SchoolModal>}
-    {!data && !error ? <TableSkeleton rows={4} columns={3} /> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <EmptyState title={`Belum ada ${kind}`} description="Data pada halaman ini akan ditampilkan di sini." action={role === "GURU" ? <button type="button" className="master-primary" onClick={() => setCreateOpen(true)}>Buat {kind}</button> : undefined} /> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p>{kind === "materi" ? <ModulePdfPreview url={item.tautan} title={item.judul} defaultExpanded={role === "SISWA"} /> : <Link value={item.tautan} />}
+    {role !== "SISWA" && editing && <SchoolModal title={`Edit ${kind}`} busy={busy} onClose={() => { setEditing(null); setError(""); }}><form onSubmit={saveEdit}>
+      <p className="text-xs text-slate-600">{editing.mapel.nama} · {editing.kelas.nama} · {editing.tahunAjaran.nama} {editing.tahunAjaran.semester}</p>
+      <label className="mt-3 block text-sm font-semibold">Judul<input required maxLength={200} className={field} value={editForm.judul} onChange={(e) => setEditForm({ ...editForm, judul: e.target.value })} /></label>
+      <label className="mt-3 block text-sm font-semibold">{kind === "materi" ? "Isi materi (boleh kosong jika ada tautan)" : "Instruksi tugas"}<textarea required={kind === "tugas"} maxLength={5000} className={field} value={editForm.isi} onChange={(e) => setEditForm({ ...editForm, isi: e.target.value })} /></label>
+      {kind === "materi" ? <label className="mt-3 block text-sm font-semibold">Tautan HTTPS (opsional)<input type="url" maxLength={2000} className={field} value={editForm.tautan} onChange={(e) => setEditForm({ ...editForm, tautan: e.target.value })} /></label> : <label className="mt-3 block text-sm font-semibold">Batas waktu WIB (opsional)<input type="datetime-local" className={field} value={editForm.batasWaktu} onChange={(e) => setEditForm({ ...editForm, batasWaktu: e.target.value })} /></label>}
+      {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}<button disabled={busy} className={button}>Simpan perubahan</button>
+    </form></SchoolModal>}
+    {!data && !error ? <TableSkeleton rows={4} columns={3} /> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <EmptyState title={`Belum ada ${kind}`} description="Data pada halaman ini akan ditampilkan di sini." action={role === "GURU" ? <button type="button" className="master-primary" onClick={() => setCreateOpen(true)}>Buat {kind}</button> : undefined} /> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p></div>{role !== "SISWA" && item.bisaKelola && <div className="flex shrink-0 items-center gap-2"><button type="button" disabled={busy} onClick={() => openEdit(item)} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Pencil size={13} aria-hidden="true" />Edit</button><button type="button" disabled={busy} onClick={() => void removeItem(item)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"><Trash2 size={13} aria-hidden="true" />Hapus</button></div>}</div><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p>{kind === "materi" ? <ModulePdfPreview url={item.tautan} title={item.judul} defaultExpanded={role === "SISWA"} /> : <Link value={item.tautan} />}
       {kind === "tugas" && <><p className="mt-2">Batas: {item.batasWaktu ? time(item.batasWaktu) : "Tidak ada"}</p>{role === "SISWA" && item.pengumpulan?.[0] ? <div className="mt-2"><p>Sudah dikumpulkan: {time(item.pengumpulan[0].dikumpulkanPada)}{item.batasWaktu && new Date(item.pengumpulan[0].dikumpulkanPada) > new Date(item.batasWaktu) ? " · Terlambat" : ""}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].jawaban}</p><Link value={item.pengumpulan[0].tautan} /><p>Nilai: {item.pengumpulan[0].nilai ?? "Belum dinilai"}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].catatanGuru}</p></div> : (role === "SISWA" || (role === "GURU" && item.bisaMenilai)) && <button type="button" onClick={() => { setSelected(item); setAnswerPage(1); setAnswerText(""); setAnswerLink(""); }} className="mt-2 font-bold underline">{role === "GURU" ? "Periksa dan beri nilai" : "Kumpulkan jawaban"}</button>}</>}
     </li>)}</ul>}<div className="mt-4 flex gap-4 text-sm"><button type="button" disabled={page === 1} onClick={() => { setSelected(null); setPage((v) => v - 1); }} className="font-bold underline disabled:text-slate-400">Sebelumnya</button><span>Halaman {page}</span><button type="button" disabled={!data.hasNext} onClick={() => { setSelected(null); setPage((v) => v + 1); }} className="font-bold underline disabled:text-slate-400">Berikutnya</button></div></>}
     {selected && kind === "tugas" && <section className="mt-4 rounded-xl border border-[#e6dfd0] bg-white p-4"><h3 className="font-bold">{role === "GURU" ? "Pengumpulan" : "Jawaban"}: {selected.judul}</h3><button type="button" onClick={() => setSelected(null)} className="mt-2 text-sm font-bold underline">Tutup</button>

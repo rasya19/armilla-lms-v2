@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
-import { parseGrade, parseLearningContent, parseSubmission } from "./learning-input.js";
+import { parseGrade, parseLearningContent, parseLearningContentUpdate, parseSubmission } from "./learning-input.js";
 
 type LearningSession = { sekolahId: string; peran: "ADMIN" | "SISWA" | "GURU"; siswaId: string | null; kelasId: string | null; guruId: string | null; wajibGantiPassword: boolean };
 type GetSession = (req: Request) => Promise<LearningSession | null>;
@@ -82,17 +82,32 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
       if (req.params.kind === "materi") {
         const [validClass, rows] = await Promise.all([
           checkClass,
-          prisma.materiAjar.findMany({ ...common, select: { ...select, deskripsi: true, tautan: true } }),
+          prisma.materiAjar.findMany({ ...common, select: { ...select, guruId: true, deskripsi: true, tautan: true } }),
         ]);
         if (!validClass) return res.status(404).json({ error: "Kelas tidak ditemukan." });
-        return res.json({ rows: rows.slice(0, 25), page: p, hasNext: rows.length > 25 });
+        return res.json({
+          rows: rows.slice(0, 25).map(({ guruId, ...row }) => ({
+            ...row,
+            bisaKelola: s.peran === "ADMIN" || (s.peran === "GURU" && guruId === s.guruId),
+          })),
+          page: p,
+          hasNext: rows.length > 25,
+        });
       }
       const [validClass, rows] = await Promise.all([
         checkClass,
         prisma.tugas.findMany({ ...common, select: { ...select, guruId: true, instruksi: true, batasWaktu: true, pengumpulan: { where: { siswaId: s.peran === "SISWA" ? s.siswaId ?? "" : "" }, select: { id: true, jawaban: true, tautan: true, dikumpulkanPada: true, nilai: true, catatanGuru: true } } } }),
       ]);
       if (!validClass) return res.status(404).json({ error: "Kelas tidak ditemukan." });
-      return res.json({ rows: rows.slice(0, 25).map(({ guruId, ...row }) => ({ ...row, bisaMenilai: s.peran === "GURU" && guruId === s.guruId })), page: p, hasNext: rows.length > 25 });
+      return res.json({
+        rows: rows.slice(0, 25).map(({ guruId, ...row }) => ({
+          ...row,
+          bisaMenilai: s.peran === "GURU" && guruId === s.guruId,
+          bisaKelola: s.peran === "ADMIN" || (s.peran === "GURU" && guruId === s.guruId),
+        })),
+        page: p,
+        hasNext: rows.length > 25,
+      });
     } catch (error) {
       console.error("Gagal memuat materi atau tugas:", error);
       return res.status(503).json({ error: "Materi atau tugas belum dapat dimuat." });
@@ -149,6 +164,79 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     } catch (error) {
       console.error("Gagal membuat materi atau tugas:", error);
       return res.status(503).json({ error: "Materi atau tugas belum dapat disimpan." });
+    }
+  });
+
+  router.patch("/:kind(materi|tugas)/:id", async (req, res) => {
+    const s: LearningSession = res.locals.learning;
+    if (s.peran === "SISWA" || (s.peran === "GURU" && !s.guruId)) {
+      return res.status(403).json({ error: "Hanya admin atau guru pemilik yang dapat mengubah materi dan tugas." });
+    }
+    const kind = req.params.kind === "materi" ? "materi" : "tugas";
+    const id = req.params.id;
+    if (!id || id.length > 100) return res.status(400).json({ error: "ID materi atau tugas tidak valid." });
+    const data = parseLearningContentUpdate(req.body, kind);
+    if (!data) return res.status(400).json({ error: "Periksa judul, isi, tautan HTTPS, dan batas waktu." });
+    const where = {
+      id,
+      sekolahId: s.sekolahId,
+      ...(s.peran === "GURU" ? { guruId: s.guruId ?? "" } : {}),
+    };
+    try {
+      const result = kind === "materi"
+        ? await prisma.materiAjar.updateMany({
+            where,
+            data: { judul: data.judul, deskripsi: data.isi, tautan: data.tautan },
+          })
+        : await prisma.tugas.updateMany({
+            where,
+            data: { judul: data.judul, instruksi: data.isi, batasWaktu: data.batasWaktu },
+          });
+      if (!result.count) {
+        return res.status(404).json({ error: `${kind === "materi" ? "Materi" : "Tugas"} tidak ditemukan atau bukan milik Anda.` });
+      }
+      return res.json({ message: `${kind === "materi" ? "Materi" : "Tugas"} diperbarui.` });
+    } catch (error) {
+      console.error("Gagal memperbarui materi atau tugas:", error);
+      return res.status(503).json({ error: "Materi atau tugas belum dapat diperbarui." });
+    }
+  });
+
+  router.delete("/:kind(materi|tugas)/:id", async (req, res) => {
+    const s: LearningSession = res.locals.learning;
+    if (s.peran === "SISWA" || (s.peran === "GURU" && !s.guruId)) {
+      return res.status(403).json({ error: "Hanya admin atau guru pemilik yang dapat menghapus materi dan tugas." });
+    }
+    const kind = req.params.kind === "materi" ? "materi" : "tugas";
+    const id = req.params.id;
+    if (!id || id.length > 100) return res.status(400).json({ error: "ID materi atau tugas tidak valid." });
+    const where = {
+      id,
+      sekolahId: s.sekolahId,
+      ...(s.peran === "GURU" ? { guruId: s.guruId ?? "" } : {}),
+    };
+    try {
+      if (kind === "materi") {
+        const result = await prisma.materiAjar.deleteMany({ where });
+        if (!result.count) {
+          return res.status(404).json({ error: "Materi tidak ditemukan atau bukan milik Anda." });
+        }
+        return res.json({ message: "Materi dihapus." });
+      }
+      const deleted = await prisma.$transaction(async (tx) => {
+        const existing = await tx.tugas.findFirst({ where, select: { id: true } });
+        if (!existing) return false;
+        await tx.pengumpulanTugas.deleteMany({ where: { tugasId: existing.id } });
+        await tx.tugas.delete({ where: { id: existing.id } });
+        return true;
+      });
+      if (!deleted) {
+        return res.status(404).json({ error: "Tugas tidak ditemukan atau bukan milik Anda." });
+      }
+      return res.json({ message: "Tugas dihapus." });
+    } catch (error) {
+      console.error("Gagal menghapus materi atau tugas:", error);
+      return res.status(503).json({ error: "Materi atau tugas belum dapat dihapus." });
     }
   });
 

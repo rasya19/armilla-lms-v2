@@ -49,6 +49,27 @@ export function parseLearningContent(input: unknown, kind: "materi" | "tugas") {
   return { jadwalId, kelasId, mapelId, judul, isi, tautan: null, batasWaktu };
 }
 
+export function parseLearningContentUpdate(input: unknown, kind: "materi" | "tugas") {
+  const data = object(input);
+  if (!data) return null;
+  const judul = text(data.judul, 200);
+  const isi = optionalText(data.isi, 5000);
+  if (!judul || isi === undefined) return null;
+  if (kind === "materi") {
+    const tautan = optionalLink(data.tautan);
+    if (tautan === undefined || (!isi && !tautan)) return null;
+    return { judul, isi, tautan, batasWaktu: null };
+  }
+  if (!isi || (data.batasWaktu !== null && typeof data.batasWaktu !== "string")) return null;
+  let batasWaktu: Date | null = null;
+  if (typeof data.batasWaktu === "string" && data.batasWaktu) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(data.batasWaktu)) return null;
+    batasWaktu = new Date(data.batasWaktu);
+    if (Number.isNaN(batasWaktu.getTime()) || batasWaktu.toISOString() !== data.batasWaktu) return null;
+  }
+  return { judul, isi, tautan: null, batasWaktu };
+}
+
 export function parseSubmission(input: unknown) {
   const data = object(input);
   if (!data) return null;

@@ -21,17 +21,20 @@ import {
   MonitorCheck,
   RefreshCw,
   Save,
+  UploadCloud,
   UserCheck,
   UserRound,
   Users,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
+import { PWAInstallButton } from "./PWAInstallButton";
 import { Classroom } from "./Classroom";
 import { CardGridSkeleton, DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { PLAN_BADGE_STYLES, SIDEBAR_THEMES } from "./SchoolAccess";
-import { CbtBankSoalView, CbtJadwalView, CbtMonitoringView } from "./SchoolCbtModules";
+import { CbtBankSoalView, CbtImportView, CbtJadwalView, CbtMonitoringView } from "./SchoolCbtModules";
 import { AsistenAiView, RuangDiskusiView } from "./SchoolCollabAssetModules";
 import { CekRaportView } from "./SchoolEquivalenceRaport";
 import { TeacherPasswordReset } from "./TeacherPasswordReset";
@@ -218,7 +221,7 @@ export function TeacherPortal({
 
   const [view, setView] = useState<TeacherView>(() => HASH_TO_TEACHER_VIEW[window.location.hash] ?? "beranda");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [cbtTab, setCbtTab] = useState<"bank" | "jadwal" | "monitoring">("bank");
+  const [cbtTab, setCbtTab] = useState<"bank" | "impor" | "jadwal" | "monitoring">("bank");
   const [classroomTarget, setClassroomTarget] = useState<{ kelasId?: string | null; tab?: "materi" | "tugas"; seq: number }>({ seq: 0 });
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
 
@@ -304,9 +307,7 @@ export function TeacherPortal({
         >
           <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
             <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${palette.avatar}`}>
-                {effectiveSchool.charAt(0).toUpperCase()}
-              </span>
+              <BrandLogo alt={`Logo ${effectiveSchool}`} className="h-9 w-9 rounded-xl border border-white/20" />
               <div className="min-w-0 flex-1">
                 <p className={`truncate text-xs font-extrabold ${palette.schoolName}`}>{effectiveSchool}</p>
                 <p className={`truncate text-[10px] font-semibold ${palette.roleText}`}>
@@ -394,6 +395,11 @@ export function TeacherPortal({
                 </button>
               </div>
             </div>
+
+            <PWAInstallButton
+              compact
+              className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${palette.tierCard}`}
+            />
 
             {onBackToAdmin ? (
               <button
@@ -529,6 +535,7 @@ export function TeacherPortal({
                   <div className="flex flex-wrap gap-2">
                     {([
                       { id: "bank" as const, label: "Bank Soal & Ujian", icon: Database },
+                      { id: "impor" as const, label: "Impor Soal & Tugas", icon: UploadCloud },
                       { id: "jadwal" as const, label: "Jadwal & Token", icon: CalendarDays },
                       { id: "monitoring" as const, label: "Monitoring & Hasil CBT", icon: MonitorCheck },
                     ]).map(({ id, label, icon: Icon }) => (
@@ -558,6 +565,7 @@ export function TeacherPortal({
                 </div>
 
                 {cbtTab === "bank" && <CbtBankSoalView sandboxRole={sandboxRole} />}
+                {cbtTab === "impor" && <CbtImportView sandboxRole={sandboxRole} />}
                 {cbtTab === "jadwal" && <CbtJadwalView sandboxRole={sandboxRole} />}
                 {cbtTab === "monitoring" && <CbtMonitoringView sandboxRole={sandboxRole} />}
               </div>

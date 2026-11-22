@@ -34,13 +34,27 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     const s: LearningSession = res.locals.learning;
     if (s.peran !== "GURU" || !s.guruId) return res.status(403).json({ error: "Hanya guru dapat membuat materi dan tugas." });
     try {
-      const rows = await prisma.jadwalPelajaran.findMany({
-        where: { ...scope(s), guruId: s.guruId },
-        select: { id: true, hari: true, jamMulai: true, jamSelesai: true, kelas: { select: { id: true, nama: true } }, mapel: { select: { id: true, nama: true } }, tahunAjaran: { select: { nama: true, semester: true } } },
-        orderBy: [{ hari: "asc" }, { jamMulai: "asc" }, { id: "asc" }], take: 2001,
-      });
+      const [rows, kelas, mapel] = await Promise.all([
+        prisma.jadwalPelajaran.findMany({
+          where: { ...scope(s), guruId: s.guruId },
+          select: { id: true, hari: true, jamMulai: true, jamSelesai: true, kelas: { select: { id: true, nama: true } }, mapel: { select: { id: true, nama: true } }, tahunAjaran: { select: { nama: true, semester: true } } },
+          orderBy: [{ hari: "asc" }, { jamMulai: "asc" }, { id: "asc" }], take: 2001,
+        }),
+        prisma.kelas.findMany({
+          where: { sekolahId: s.sekolahId },
+          select: { id: true, nama: true },
+          orderBy: [{ nama: "asc" }, { id: "asc" }],
+          take: 500,
+        }),
+        prisma.mapel.findMany({
+          where: { sekolahId: s.sekolahId },
+          select: { id: true, nama: true },
+          orderBy: [{ nama: "asc" }, { id: "asc" }],
+          take: 500,
+        }),
+      ]);
       if (rows.length > 2000) return res.status(409).json({ error: "Terlalu banyak jadwal; hubungi admin sekolah." });
-      return res.json({ rows });
+      return res.json({ rows, kelas, mapel });
     } catch (error) {
       console.error("Gagal memuat penugasan guru:", error);
       return res.status(503).json({ error: "Penugasan guru belum dapat dimuat." });
@@ -90,11 +104,44 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     if (s.peran !== "GURU" || !s.guruId) return res.status(403).json({ error: "Hanya guru dapat membuat materi dan tugas." });
     const kind = req.params.kind === "materi" ? "materi" : "tugas";
     const data = parseLearningContent(req.body, kind);
-    if (!data) return res.status(400).json({ error: "Periksa jadwal, judul, isi, tautan HTTPS, dan batas waktu." });
+    if (!data) return res.status(400).json({ error: "Periksa kelas, mata pelajaran, judul, isi, tautan HTTPS, dan batas waktu." });
     try {
-      const schedule = await prisma.jadwalPelajaran.findFirst({ where: { ...scope(s), id: data.jadwalId, guruId: s.guruId }, select: { tahunAjaranId: true, kelasId: true, mapelId: true } });
-      if (!schedule) return res.status(404).json({ error: "Jadwal aktif tidak ditemukan." });
-      const base = { ...schedule, sekolahId: s.sekolahId, guruId: s.guruId, judul: data.judul };
+      let target: { tahunAjaranId: string; kelasId: string; mapelId: string } | null = null;
+      if (data.jadwalId) {
+        target = await prisma.jadwalPelajaran.findFirst({ where: { ...scope(s), id: data.jadwalId, guruId: s.guruId }, select: { tahunAjaranId: true, kelasId: true, mapelId: true } });
+        if (!target) return res.status(404).json({ error: "Jadwal aktif tidak ditemukan." });
+      } else if (data.kelasId && data.mapelId) {
+        const [kelas, mapel, activeYear] = await Promise.all([
+          prisma.kelas.findFirst({ where: { id: data.kelasId, sekolahId: s.sekolahId }, select: { id: true } }),
+          prisma.mapel.findFirst({ where: { id: data.mapelId, sekolahId: s.sekolahId }, select: { id: true } }),
+          prisma.tahunAjaran.findFirst({
+            where: { sekolahId: s.sekolahId, mulai: { lte: today() }, selesai: { gte: today() } },
+            select: { id: true },
+          }),
+        ]);
+        if (!kelas || !mapel) return res.status(404).json({ error: "Kelas atau mata pelajaran tidak ditemukan di sekolah ini." });
+        let year = activeYear ?? await prisma.tahunAjaran.findFirst({
+          where: { sekolahId: s.sekolahId },
+          orderBy: { mulai: "desc" },
+          select: { id: true },
+        });
+        if (!year) {
+          const y = today().getUTCFullYear();
+          year = await prisma.tahunAjaran.create({
+            data: {
+              sekolahId: s.sekolahId,
+              nama: `${y}/${y + 1}`,
+              semester: "Ganjil",
+              mulai: new Date(`${y}-01-01T00:00:00.000Z`),
+              selesai: new Date(`${y}-12-31T00:00:00.000Z`),
+            },
+            select: { id: true },
+          });
+        }
+        target = { tahunAjaranId: year.id, kelasId: kelas.id, mapelId: mapel.id };
+      }
+      if (!target) return res.status(400).json({ error: "Pilih kelas dan mata pelajaran terlebih dahulu." });
+      const base = { ...target, sekolahId: s.sekolahId, guruId: s.guruId, judul: data.judul };
       const result = kind === "materi"
         ? await prisma.materiAjar.create({ data: { ...base, deskripsi: data.isi, tautan: data.tautan, jenis: "TEKS_TAUTAN" }, select: { id: true } })
         : await prisma.tugas.create({ data: { ...base, instruksi: data.isi, batasWaktu: data.batasWaktu }, select: { id: true } });

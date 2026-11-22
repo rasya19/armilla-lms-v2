@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { BrandLogo } from "./BrandLogo";
 import { KopSurat } from "./KopSurat";
 import { RegistrationReceipt, type RegistrationData } from "./RegistrationReceipt";
 import { parseSchoolProfile, unwrapSchoolPayload, type SchoolProfile } from "./schoolProfile";
@@ -70,6 +71,13 @@ export function PortalLogin() {
     else setParams({ sekolah: value });
   }
   return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel w-full max-w-md rounded-3xl p-6">
+    <div className="mb-4 flex items-center gap-3">
+      <BrandLogo alt="Logo SIPUT PKBM" className="h-11 w-11 rounded-xl" />
+      <div>
+        <p className="master-eyebrow">SIPUT PKBM</p>
+        <p className="text-xs font-bold text-slate-600">Portal Pembelajaran</p>
+      </div>
+    </div>
     {slug && !error ? <p role="status">Mengalihkan ke login sekolah...</p> : <><h1 className="text-xl font-bold">Masuk Portal Belajar</h1><p className="mt-2 text-sm">Masukkan slug dari alamat portal sekolah Anda.</p><form onSubmit={chooseSchool} className="mt-4 space-y-3"><label className="block text-sm font-semibold">Slug sekolah<input className="glass-input mt-2 w-full rounded-xl px-4 py-3" value={schoolSlug} onChange={(event) => setSchoolSlug(event.target.value)} placeholder="Contoh: armilla" required /></label>{error && <p role="alert">{error}</p>}<button className="master-primary">Lanjutkan</button></form></>}
     <Link className="mt-4 inline-block underline" to="/">Kembali</Link>
   </div></main>;
@@ -116,7 +124,7 @@ function SchoolPortal({ slug }: { slug: string }) {
   return <div data-tenant-theme={school.themeKey}><main className="dashboard-canvas glass-area min-h-screen p-4 sm:p-8">
     <div className="mx-auto max-w-4xl space-y-5">
       <header className="dashboard-glass rounded-3xl p-6"><div className="flex flex-wrap items-center gap-4">
-        <div className="theme-brand flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-sky-600 text-2xl font-black text-white">{school.logoUrl ? <img src={school.logoUrl} alt={`Logo ${school.nama}`} className="h-full w-full object-contain" /> : school.nama.charAt(0).toUpperCase()}</div>
+        <BrandLogo src={school.logoUrl} alt={`Logo ${school.nama}`} className="h-16 w-16 rounded-2xl" />
         <div className="min-w-0 flex-1"><h1 className="text-2xl font-black">{school.nama}</h1><p className="mt-1 text-sm">NPSN: {school.npsn || "Belum tersedia"}</p><p className="mt-1 text-sm">{[school.alamatLengkap, school.kabupatenKota, school.provinsi].filter(Boolean).join(", ") || "Alamat belum tersedia"}</p></div>
         <Link className="master-primary" to={`/login?sekolah=${encodeURIComponent(slug)}`}>Masuk Portal Belajar (Login)</Link>
       </div></header>

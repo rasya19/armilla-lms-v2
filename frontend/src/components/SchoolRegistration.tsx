@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Check, Loader2 } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 import { getPlanBySlug, resolvePlanSlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
 import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 
@@ -60,8 +61,13 @@ export function SchoolRegistration() {
   }
 
   return <main className="glass-shell glass-area min-h-screen px-5 py-12"><div className="glass-panel mx-auto max-w-2xl rounded-3xl p-6 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-widest text-[#80643a]">Rasyatech Digital Zenith</p>
-    <h1 className="mt-3 text-3xl font-bold">Pendaftaran sekolah</h1>
+    <div className="flex items-center gap-3">
+      <BrandLogo alt="Logo SIPUT PKBM" className="h-11 w-11 rounded-xl" />
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest text-[#80643a]">SIPUT PKBM · Rasyatech Digital Zenith</p>
+        <h1 className="mt-0.5 text-2xl font-bold sm:text-3xl">Pendaftaran sekolah</h1>
+      </div>
+    </div>
     <p className="mt-3 text-sm leading-6 text-slate-600">Pendaftaran diteruskan ke Rasyatech Admin beserta paket langganan pilihan Anda. Akun sekolah dan admin LMS baru dibuat setelah verifikasi disetujui.</p>
     {message ? <div role="status" className="mt-6 rounded-xl bg-[#f8f6ef] p-5 text-sm leading-6">{message}</div> :
       <form onSubmit={submit} className="mt-6 space-y-5">

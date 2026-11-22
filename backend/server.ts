@@ -57,7 +57,7 @@ app.use("/api/sekolah/siswa/import", express.json({ limit: "2mb" }));
 app.use("/api/school", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/diskusi", express.json({ limit: "256kb" }));
-app.use("/api/sekolah/cbt", express.json({ limit: "256kb" }));
+app.use("/api/sekolah/cbt", express.json({ limit: "2mb" }));
 app.use("/api/lms/pembelajaran", express.json({ limit: "64kb" }));
 app.use(express.json({ limit: "16kb" }));
 app.use("/api", tenantHostMiddleware(production, (slug) => resolveTenantHostSchool(prisma, slug), process.env.APP_ORIGIN));

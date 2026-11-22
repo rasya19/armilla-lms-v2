@@ -33,6 +33,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  UploadCloud,
   UserCheck,
   Users,
   Wallet,
@@ -41,7 +42,9 @@ import {
 } from "lucide-react";
 import { SchoolData, type SchoolDataKind } from "./SchoolData";
 import { PasswordChangeForm } from "./PasswordChangeForm";
-import { LoginNavigation } from "./LoginNavigation";
+import { LoginNavigation, type LoginRole } from "./LoginNavigation";
+import { BrandLogo } from "./BrandLogo";
+import { PWAInstallButton } from "./PWAInstallButton";
 import { CardGridSkeleton, DashboardHero, PortalSpinner } from "./DashboardUI";
 import { Classroom } from "./Classroom";
 import { isThemeKey, normalizeThemeKey, savePreferredTheme, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
@@ -66,6 +69,7 @@ import {
 } from "./SchoolEquivalenceRaport";
 import {
   CbtBankSoalView,
+  CbtImportView,
   CbtJadwalView,
   CbtMonitoringView,
   CbtPengaturanView,
@@ -106,6 +110,7 @@ type SchoolModuleId =
   | "data-alumni"
   | "cek-raport"
   | "cbt-bank-soal"
+  | "cbt-impor"
   | "cbt-jadwal"
   | "cbt-monitoring"
   | "cbt-pengaturan"
@@ -194,6 +199,7 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
     icon: MonitorCheck,
     items: [
       { label: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler" },
+      { label: "Impor Soal & Tugas", icon: UploadCloud, target: "cbt-impor", requiredPlan: "reguler" },
       { label: "Jadwal & Token Ujian", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler" },
       { label: "Monitoring & Hasil CBT", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler" },
     ],
@@ -611,22 +617,24 @@ export function SchoolLogin() {
 
   return <main data-tenant-theme={theme} className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
     <div className="flex items-center gap-3">
-      {logoUrl ? (
-        <img src={logoUrl} alt={`Logo ${schoolName}`} className="h-11 w-11 rounded-xl border border-white/20 object-cover shadow-sm" />
-      ) : (
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-base font-black text-white shadow-sm">
-          {schoolName.charAt(0).toUpperCase()}
-        </span>
-      )}
+      <BrandLogo src={logoUrl} alt={`Logo ${schoolName}`} className="h-11 w-11 rounded-xl border border-white/20" />
       <div className="min-w-0">
-        <p className="master-eyebrow">KESETARAAN LMS / SEKOLAH</p>
+        <p className="master-eyebrow">SIPUT PKBM / SEKOLAH</p>
         <p className="truncate text-xs font-bold text-slate-600">{schoolName}</p>
       </div>
     </div>
     <h1 className="mt-3 text-2xl font-bold">Login Admin Sekolah</h1>
     <p className="mt-2 text-sm text-slate-700">Masuk menggunakan akun admin sekolah Anda.</p>
     {location.state?.passwordChanged === true && <p role="status" className="mt-4 text-sm text-green-700">Password berhasil diganti. Silakan masuk kembali.</p>}
-    <LoginNavigation />
+    <LoginNavigation
+      value="ADMIN"
+      disabled={busy}
+      onChange={(role: LoginRole) => {
+        if (role !== "ADMIN") {
+          navigate("/lms/login", { state: { role } });
+        }
+      }}
+    />
     <form onSubmit={submit} className="mt-4 space-y-4">
       <label className="block text-sm font-semibold">Email<input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} className="glass-input mt-2 w-full rounded-xl px-4 py-3" /></label>
       <div><div className="flex items-center justify-between gap-2"><label htmlFor="school-login-password" className="text-sm font-semibold">Kata sandi</label><button type="button" aria-expanded={showPasswordHelp} aria-controls="school-password-help" onClick={() => setShowPasswordHelp((visible) => !visible)} className="text-sm font-semibold text-indigo-800 underline">Lupa password</button></div><div className="relative mt-2"><input id="school-login-password" type={showPassword ? "text" : "password"} required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="glass-input w-full rounded-xl py-3 pl-4 pr-12" /><button type="button" aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"} aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)} className="absolute inset-y-0 right-0 flex items-center px-4 text-slate-600"><span aria-hidden="true">{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</span></button></div><p id="school-password-help" hidden={!showPasswordHelp} className="mt-2 text-sm text-slate-700">Pemulihan melalui email belum tersedia. Hubungi pengelola Rasyatech Admin untuk bantuan akses akun.</p></div>
@@ -1003,6 +1011,7 @@ export function SchoolHome() {
           {view === "cbt-bank-soal" && hasPlanAccess(plan, "reguler") && (
             <CbtBankSoalView onOpenSettings={() => selectView("cbt-pengaturan", "reguler", "Pengaturan Ujian CBT")} />
           )}
+          {view === "cbt-impor" && hasPlanAccess(plan, "reguler") && <CbtImportView />}
           {view === "cbt-jadwal" && hasPlanAccess(plan, "reguler") && (
             <CbtJadwalView onOpenSettings={() => selectView("cbt-pengaturan", "reguler", "Pengaturan Ujian CBT")} />
           )}
@@ -1149,9 +1158,7 @@ function SchoolSidebar({
     >
       <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
         <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-black ${palette.avatar}`}>
-            {school.charAt(0).toUpperCase()}
-          </span>
+          <BrandLogo alt={`Logo ${school}`} className="h-9 w-9 rounded-xl border border-white/20" />
           <div className="min-w-0 flex-1">
             <p className={`truncate text-xs font-black uppercase tracking-wide ${palette.schoolName}`}>{school}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -1220,6 +1227,10 @@ function SchoolSidebar({
             </button>
           </div>
         </div>
+        <PWAInstallButton
+          compact
+          className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${palette.tierCard}`}
+        />
         <button
           type="button"
           onClick={onLogout}
@@ -1260,9 +1271,7 @@ function SchoolPortalHeader({
         <Menu size={21} />
       </button>
       {isDark && (
-        <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-sm font-black text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)] sm:flex">
-          {school.charAt(0).toUpperCase()}
-        </span>
+        <BrandLogo alt={`Logo ${school}`} className="hidden h-9 w-9 rounded-xl border border-white/15 sm:block" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2.5">

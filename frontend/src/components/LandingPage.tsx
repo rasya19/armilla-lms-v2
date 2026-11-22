@@ -7,7 +7,6 @@ import {
   Building2,
   Check,
   Eye,
-  GraduationCap,
   LockKeyhole,
   LogIn,
   Menu,
@@ -15,6 +14,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
+import { PWAInstallButton } from './PWAInstallButton';
 import { SUBSCRIPTION_PLANS } from './subscriptionPlans';
 import { fetchWithTimeout, isCallerAborted } from './fetchWithTimeout';
 import {
@@ -371,16 +372,14 @@ export const LandingPage: React.FC = () => {
     <div data-tenant-theme={theme} className="landing-page min-h-screen antialiased">
       <header className="landing-header sticky top-0 z-40">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-5 px-5 sm:px-8">
-          <a href="#" className="flex items-center gap-3" aria-label="Rasyatech Digital Zenith, kembali ke beranda">
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${palette.logoBg}`}>
-              <BookOpen size={20} />
-            </span>
+          <a href="#" className="flex items-center gap-3" aria-label="SIPUT PKBM, kembali ke beranda">
+            <BrandLogo alt="Logo SIPUT PKBM" className="h-10 w-10 rounded-xl" />
             <span>
               <span className={`block text-sm font-bold tracking-tight sm:text-base ${palette.heading}`}>
-                Rasyatech Digital Zenith
+                SIPUT PKBM
               </span>
               <span className={`block text-[9px] font-semibold uppercase tracking-[0.18em] ${palette.brandSub}`}>
-                Platform pendidikan
+                Rasyatech Digital Zenith
               </span>
             </span>
           </a>
@@ -388,6 +387,10 @@ export const LandingPage: React.FC = () => {
             {nav}
           </nav>
           <div className="flex items-center gap-3">
+            <PWAInstallButton
+              compact
+              className="landing-secondary hidden items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:inline-flex"
+            />
             <Link to="/dinas" className="landing-secondary hidden items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:flex">
               Portal Dinas
             </Link>
@@ -411,6 +414,10 @@ export const LandingPage: React.FC = () => {
         {menuOpen && (
           <nav aria-label="Navigasi seluler" className={`flex flex-col gap-5 px-6 py-6 text-sm font-semibold lg:hidden ${palette.mobileDrawer}`}>
             {nav}
+            <PWAInstallButton
+              compact
+              className="landing-secondary inline-flex w-fit items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
+            />
             <Link to="/dinas" onClick={() => setMenuOpen(false)}>Portal Dinas</Link>
             <Link to="/login" onClick={() => setMenuOpen(false)}>Masuk LMS</Link>
             <Link to="/daftar" onClick={() => setMenuOpen(false)} className={palette.mobileCta}>
@@ -485,11 +492,9 @@ export const LandingPage: React.FC = () => {
                   </div>
                   <div className="glass-panel absolute bottom-9 left-7 right-7 rounded-2xl p-5">
                     <div className="flex items-center gap-3">
-                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${palette.logoBg}`}>
-                        <GraduationCap size={22} />
-                      </span>
+                      <BrandLogo alt="Logo SIPUT PKBM" className="h-11 w-11 rounded-xl" />
                       <div>
-                        <p className={`text-sm font-bold ${palette.heading}`}>Platform pendidikan</p>
+                        <p className={`text-sm font-bold ${palette.heading}`}>SIPUT PKBM</p>
                         <p className={`mt-1 text-xs ${palette.heroArtBadgeText}`}>Langkah baru, kesempatan baru.</p>
                       </div>
                     </div>
@@ -684,11 +689,14 @@ export const LandingPage: React.FC = () => {
 
       <footer className="landing-footer px-5 py-10 sm:px-8">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-5 text-xs sm:flex-row sm:items-center">
-          <div>
-            <p className={`text-lg font-bold ${palette.heading}`}>
-              Rasyatech Digital Zenith<span className={palette.footerDot}>.</span>
-            </p>
-            <p className={`mt-2 ${palette.bodyText}`}>Platform digital untuk mendukung lembaga pendidikan.</p>
+          <div className="flex items-center gap-3">
+            <BrandLogo alt="Logo SIPUT PKBM" className="h-10 w-10 rounded-xl" />
+            <div>
+              <p className={`text-lg font-bold ${palette.heading}`}>
+                SIPUT PKBM<span className={palette.footerDot}>.</span>
+              </p>
+              <p className={`mt-1 ${palette.bodyText}`}>Rasyatech Digital Zenith — Platform digital untuk lembaga pendidikan kesetaraan.</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Link to="/dinas" className="landing-secondary rounded-full px-4 py-2 font-semibold transition">

@@ -29,6 +29,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 import { PortalSpinner } from "./DashboardUI";
 import {
   clearAuthCache,
@@ -705,11 +706,9 @@ export function DinasLogin({ onAuthenticated }: { onAuthenticated?: (nama: strin
       }}
     >
       <div className="w-full max-w-md rounded-3xl border border-white/95 bg-white/90 p-7 shadow-[0_24px_60px_rgba(37,99,235,0.14)] backdrop-blur-2xl">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25">
-          <Landmark size={22} />
-        </span>
+        <BrandLogo alt="Logo SIPUT PKBM" className="h-12 w-12 rounded-2xl" />
         <p className="mt-4 text-[11px] font-extrabold uppercase tracking-[0.16em] text-blue-700">
-          KESETARAAN LMS / PORTAL DINAS PENDIDIKAN
+          SIPUT PKBM / PORTAL DINAS PENDIDIKAN
         </p>
         <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950">Login Verifikator Dinas</h1>
         <p className="mt-2 text-sm font-medium leading-6 text-slate-700">
@@ -1481,9 +1480,7 @@ export function DinasHome() {
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-4">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/25">
-                <Landmark size={20} />
-              </span>
+              <BrandLogo alt="Logo SIPUT PKBM" className="h-11 w-11 rounded-xl" />
               <div className="min-w-0">
                 <p className="truncate text-sm font-extrabold tracking-tight text-slate-950">Portal Dinas</p>
                 <p className="truncate text-[10px] font-extrabold uppercase tracking-wider text-blue-700">

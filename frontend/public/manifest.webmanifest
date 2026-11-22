@@ -1,16 +1,32 @@
 {
-  "name": "Kesetaraan LMS",
-  "short_name": "Kesetaraan LMS",
-  "description": "Platform pembelajaran dan pengelolaan lembaga pendidikan.",
+  "name": "SIPUT PKBM - Kesetaraan LMS",
+  "short_name": "SIPUT PKBM",
+  "description": "Platform pembelajaran digital, ujian CBT, dan pengelolaan administrasi PKBM Kesetaraan.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#e6ecfb",
-  "theme_color": "#e6ecfb",
+  "background_color": "#041a33",
+  "theme_color": "#063b54",
   "lang": "id",
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

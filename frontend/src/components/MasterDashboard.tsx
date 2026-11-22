@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart3, Bell, Building2, CalendarDays, ClipboardList, CreditCard, Database,
-  FileText, GraduationCap, Landmark, LayoutDashboard, LogOut, MoreHorizontal, Search, Settings,
+  FileText, Landmark, LayoutDashboard, LogOut, MoreHorizontal, Search, Settings,
   ShieldCheck, Target, UsersRound, WalletCards, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
 import { MasterDinasPanel, MasterGlobalThemePanel, MasterSchools } from "./MasterSchools";
 import { MasterSchoolRegistrations } from "./MasterSchoolRegistrations";
 import { CardGridSkeleton, TableSkeleton } from "./DashboardUI";
@@ -142,7 +143,7 @@ export function MasterDashboard({ name, error, onLogout }: MasterDashboardProps)
   return <div className="master-shell master-dashboard">
     {menuOpen && <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className="fixed inset-0 z-30 bg-slate-950/70 md:hidden" />}
     <aside id="master-menu" className={`master-sidebar ${menuOpen ? "master-sidebar-open" : ""}`}>
-      <div className="flex items-center justify-between gap-3 px-3 pb-7 pt-2"><div className="flex items-center gap-3"><span className="master-logo"><GraduationCap size={21} /></span><div><p className="font-bold tracking-tight text-white">Kesetaraan LMS</p><p className="mt-0.5 text-[11px] text-slate-400">PANEL PLATFORM</p></div></div><button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className="text-slate-300 md:hidden"><X size={20} /></button></div>
+      <div className="flex items-center justify-between gap-3 px-3 pb-7 pt-2"><div className="flex items-center gap-3"><BrandLogo alt="Logo SIPUT PKBM" className="h-10 w-10 rounded-xl border border-white/15" /><div><p className="font-bold tracking-tight text-white">SIPUT PKBM</p><p className="mt-0.5 text-[11px] text-slate-400">PANEL PLATFORM</p></div></div><button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className="text-slate-300 md:hidden"><X size={20} /></button></div>
       <p className="px-3 pb-3 text-[10px] font-bold tracking-[0.18em] text-slate-500">MENU UTAMA</p>
       <nav aria-label="Menu master admin" className="min-h-0 flex-1 space-y-1 overflow-y-auto">{menuItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => selectMenu(item.id)} aria-current={activeId === item.id ? "page" : undefined} className={`master-nav-item ${activeId === item.id ? "master-nav-active" : ""}`}><Icon size={18} /><span>{item.label}</span></button>; })}</nav>
       <div className="master-profile"><span className="master-avatar">{initials}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{name}</p><p className="mt-1 text-xs text-slate-400">Master Admin <span className="text-emerald-400">●</span> Online</p></div><button type="button" onClick={onLogout} aria-label="Keluar" title="Keluar" className="text-slate-400 hover:text-white"><LogOut size={18} /></button></div>

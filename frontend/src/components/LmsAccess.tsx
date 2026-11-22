@@ -6,9 +6,10 @@ import { Classroom } from "./Classroom";
 import { normalizeThemeKey, savePreferredTheme, TenantThemeProvider, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
 import { unwrapSchoolPayload } from "./schoolProfile";
 import { PasswordChangeForm } from "./PasswordChangeForm";
-import { LoginNavigation } from "./LoginNavigation";
+import { LoginNavigation, type LoginRole } from "./LoginNavigation";
+import { BrandLogo } from "./BrandLogo";
 import { DashboardHero, PortalSpinner } from "./DashboardUI";
-import { BookOpen, CalendarDays, Home, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, Eye, EyeOff, Home, UserRound } from "lucide-react";
 import { StudentVervalForm } from "./StudentVervalForm";
 import {
   clearAuthCache,
@@ -66,13 +67,22 @@ export function LmsLogin() {
   const [schoolName, setSchoolName] = useState<string>(() => initialProfile?.nama ?? formatSlugDisplayName(hostSlug));
   const [logoUrl, setLogoUrl] = useState<string | null>(() => initialProfile?.logoUrl ?? null);
   const [theme, setTheme] = useState<ThemeKey>(() => normalizeThemeKey(initialProfile?.themeKey, "ocean"));
-  const [peran, setPeran] = useState<"SISWA" | "GURU">("SISWA");
-  const [identitas, setIdentitas] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
+  const initialRole = (location.state as { role?: string } | null)?.role === "GURU" ? "GURU" : "SISWA";
+  const [peran, setPeran] = useState<"SISWA" | "GURU">(initialRole);
+  const [identitas, setIdentitas] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const requested = (location.state as { role?: string } | null)?.role;
+    if (requested === "GURU" || requested === "SISWA") {
+      setPeran(requested);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -147,27 +157,64 @@ export function LmsLogin() {
 
   return <main data-tenant-theme={theme} className="glass-shell glass-login-shell flex min-h-screen items-center justify-center px-5 py-5"><div className="glass-panel glass-login w-full max-w-md rounded-3xl p-6">
     <div className="flex items-center gap-3">
-      {logoUrl ? (
-        <img src={logoUrl} alt={`Logo ${schoolName}`} className="h-10 w-10 rounded-xl border border-white/20 object-cover shadow-sm" />
-      ) : (
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 text-sm font-black text-white shadow-sm">
-          {schoolName.charAt(0).toUpperCase()}
-        </span>
-      )}
+      <BrandLogo src={logoUrl} alt={`Logo ${schoolName}`} className="h-11 w-11 rounded-xl border border-white/20" />
       <div className="min-w-0">
-        <p className="master-eyebrow">KESETARAAN LMS / PEMBELAJARAN</p>
+        <p className="master-eyebrow">SIPUT PKBM / PEMBELAJARAN</p>
         <p className="truncate text-xs font-bold text-slate-600">{schoolName}</p>
       </div>
     </div>
-    <h1 className="mt-3 text-2xl font-bold">Login Guru dan Siswa</h1><p className="mt-2 text-sm text-slate-700">Gunakan akun LMS yang dibuat oleh admin sekolah.</p>
+    <h1 className="mt-3 text-2xl font-bold">{peran === "GURU" ? "Login Guru / Tutor" : "Login Siswa"}</h1>
+    <p className="mt-2 text-sm text-slate-700">
+      {peran === "GURU"
+        ? "Masuk menggunakan email dan kata sandi akun guru dari admin sekolah."
+        : "Masuk menggunakan NISN dan kata sandi akun siswa dari admin sekolah."}
+    </p>
     {location.state?.changed === true && <p role="status" className="mt-4 text-sm text-green-700">Password berhasil diganti. Silakan masuk kembali.</p>}
-    <LoginNavigation />
+    <LoginNavigation
+      value={peran}
+      disabled={busy}
+      onChange={(role: LoginRole) => {
+        if (role === "ADMIN") {
+          navigate("/login");
+          return;
+        }
+        setPeran(role);
+        setIdentitas("");
+        setError("");
+      }}
+    />
     <form onSubmit={submit} className="mt-4 space-y-4">
-      <label className="block text-sm font-semibold">Peran<select className={input} value={peran} onChange={(e) => { setPeran(e.target.value === "GURU" ? "GURU" : "SISWA"); setIdentitas(""); }}><option value="SISWA">Siswa</option><option value="GURU">Guru</option></select></label>
-      <label className="block text-sm font-semibold">{peran === "SISWA" ? "NISN" : "Email"}<input className={input} required maxLength={254} autoComplete="username" value={identitas} onChange={(e) => setIdentitas(e.target.value)} /></label>
-      <label className="block text-sm font-semibold">Kata sandi<input className={input} type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-      {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}<button disabled={busy} className={button}>{busy ? "Memeriksa..." : "Masuk"}</button>
-    </form><Link className="mt-4 inline-block text-sm font-semibold text-indigo-800 underline" to="/">Kembali ke beranda</Link>
+      <label className="block text-sm font-semibold">
+        {peran === "SISWA" ? "NISN" : "Email"}
+        <input className={input} required maxLength={254} autoComplete="username" value={identitas} onChange={(e) => setIdentitas(e.target.value)} />
+      </label>
+      <div>
+        <label htmlFor="lms-login-password" className="block text-sm font-semibold">Kata sandi</label>
+        <div className="relative mt-2">
+          <input
+            id="lms-login-password"
+            className="glass-input w-full rounded-xl py-3 pl-4 pr-12"
+            type={showPassword ? "text" : "password"}
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            type="button"
+            aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+            aria-pressed={showPassword}
+            onClick={() => setShowPassword((visible) => !visible)}
+            className="absolute inset-y-0 right-0 flex items-center px-4 text-slate-600"
+          >
+            <span aria-hidden="true">{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</span>
+          </button>
+        </div>
+      </div>
+      {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
+      <button disabled={busy} className={button}>{busy ? "Memeriksa..." : "Masuk"}</button>
+    </form>
+    <Link className="mt-4 inline-block text-sm font-semibold text-indigo-800 underline" to="/">Kembali ke beranda</Link>
   </div></main>;
 }
 
@@ -337,15 +384,7 @@ function LmsPortalShell({
     <main className="dashboard-canvas glass-area min-h-screen text-slate-800">
       <header id="profil-lms" className="dashboard-header sticky top-0 z-30 border-b px-5 py-3">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <span
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-black ${
-              isDark
-                ? "bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)]"
-                : "bg-gradient-to-br from-sky-600 to-cyan-500 text-white shadow-sm"
-            }`}
-          >
-            {schoolDisplay.charAt(0).toUpperCase()}
-          </span>
+          <BrandLogo alt={`Logo ${schoolDisplay}`} className="h-10 w-10 rounded-xl border border-white/20" />
           <div className="min-w-0 flex-1">
             <h1 className={`truncate font-extrabold ${isDark ? "text-white" : "text-slate-900"}`}>{schoolDisplay}</h1>
             <p className={`text-xs font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>

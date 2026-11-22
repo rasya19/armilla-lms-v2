@@ -24,20 +24,8 @@ export function classroomRoutes(getSession: GetSession, today: () => Date) {
     if (s.peran === "SISWA" && !s.kelasId) return res.json({ rows: [] });
     try {
       const activeYear = { sekolahId: s.sekolahId, mulai: { lte: today() }, selesai: { gte: today() } };
-      let classes = await prisma.kelas.findMany({ where: { sekolahId: s.sekolahId, ...(s.peran === "SISWA" ? { id: s.kelasId ?? "" } : {}) }, select: { id: true, nama: true, waliGuruId: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 });
+      const classes = await prisma.kelas.findMany({ where: { sekolahId: s.sekolahId, ...(s.peran === "SISWA" ? { id: s.kelasId ?? "" } : {}) }, select: { id: true, nama: true, waliGuruId: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 });
       if (classes.length > 500) return res.status(409).json({ error: "Terlalu banyak kelas untuk ditampilkan." });
-      if (s.peran === "GURU" && s.guruId) {
-        const isWali = classes.some((item) => item.waliGuruId === s.guruId);
-        if (!isWali) {
-          const teacherSchedules = await prisma.jadwalPelajaran.findMany({
-            where: { sekolahId: s.sekolahId, guruId: s.guruId },
-            select: { kelasId: true },
-            take: 2000,
-          });
-          const assignedIds = new Set(teacherSchedules.map((item) => item.kelasId));
-          classes = classes.filter((item) => assignedIds.has(item.id));
-        }
-      }
       const ids = classes.map((item) => item.id);
       if (!ids.length) return res.json({ rows: [] });
       const [teachers, counts, schedules, tasks] = await Promise.all([
@@ -73,7 +61,15 @@ export function classroomRoutes(getSession: GetSession, today: () => Date) {
         s.peran === "SISWA" && s.siswaId ? prisma.presensi.findUnique({ where: { sekolahId_siswaId_tanggal: { sekolahId: s.sekolahId, siswaId: s.siswaId, tanggal: today() } }, select: { status: true } }) : Promise.resolve(null),
       ]);
       if (students.length > 2000 || schedules.length > 2000) return res.status(409).json({ error: "Anggota atau jadwal kelas melebihi batas tampilan." });
-      const mapel = [...new Map(schedules.map((item) => [item.mapel.id, item.mapel])).values()].sort((a, b) => a.nama.localeCompare(b.nama));
+      let mapel = [...new Map(schedules.map((item) => [item.mapel.id, item.mapel])).values()].sort((a, b) => a.nama.localeCompare(b.nama));
+      if (!mapel.length && (s.peran === "GURU" || s.peran === "ADMIN")) {
+        mapel = await prisma.mapel.findMany({
+          where: { sekolahId: s.sekolahId },
+          select: { id: true, nama: true },
+          orderBy: { nama: "asc" },
+          take: 200,
+        });
+      }
       const guru = [...new Map(schedules.map((item) => [item.guru.id, item.guru])).values()].sort((a, b) => a.nama.localeCompare(b.nama));
       return res.json({ id: kelas.id, nama: kelas.nama, wali: wali?.nama ?? null, siswa: students, guru, mapel, presensi: attendance?.status ?? null });
     } catch (error) {

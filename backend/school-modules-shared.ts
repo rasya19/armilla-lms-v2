@@ -21,11 +21,16 @@ export type TeacherScope = {
 };
 
 export async function resolveTeacherScope(sekolahId: string, guruId: string): Promise<TeacherScope> {
-  const [waliClasses, schedules] = await Promise.all([
+  const [allClasses, allMapel, schedules] = await Promise.all([
     prisma.kelas.findMany({
-      where: { sekolahId, waliGuruId: guruId },
+      where: { sekolahId },
+      select: { id: true, waliGuruId: true },
+      take: 500,
+    }),
+    prisma.mapel.findMany({
+      where: { sekolahId },
       select: { id: true },
-      take: 200,
+      take: 500,
     }),
     prisma.jadwalPelajaran.findMany({
       where: { sekolahId, guruId },
@@ -34,9 +39,9 @@ export async function resolveTeacherScope(sekolahId: string, guruId: string): Pr
     }),
   ]);
 
-  const waliKelasIds = waliClasses.map((k) => k.id);
-  const kelasSet = new Set<string>(waliKelasIds);
-  const mapelSet = new Set<string>();
+  const waliKelasIds = allClasses.filter((k) => k.waliGuruId === guruId).map((k) => k.id);
+  const kelasSet = new Set<string>(allClasses.map((k) => k.id));
+  const mapelSet = new Set<string>(allMapel.map((m) => m.id));
   const kelasMapelMap = new Map<string, Set<string>>();
 
   for (const row of schedules) {

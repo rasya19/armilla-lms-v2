@@ -92,12 +92,14 @@ export function LmsLearning({
   const listCacheKey = `/api/${role === "ADMIN" ? "sekolah" : "lms"}/pembelajaran/${kind}?${queryStr}::${sandboxRole ?? "real"}`;
   const [data, setData] = useState<Page<Content> | null>(() => getCached<Page<Content>>(listCacheKey));
   const [assignments, setAssignments] = useState<Assignment[] | null>(null);
+  const [schoolKelas, setSchoolKelas] = useState<Array<{ id: string; nama: string }>>([]);
+  const [schoolMapel, setSchoolMapel] = useState<Array<{ id: string; nama: string }>>([]);
   const [assignmentError, setAssignmentError] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ jadwalId: "", judul: "", isi: "", tautan: "", batasWaktu: "" });
+  const [form, setForm] = useState({ jadwalId: "", kelasId: kelasId ?? "", mapelId: mapelId ?? "", judul: "", isi: "", tautan: "", batasWaktu: "" });
   const [selected, setSelected] = useState<Content | null>(null);
   const [answers, setAnswers] = useState<Page<StudentSubmission> | null>(null);
   const [answerPage, setAnswerPage] = useState(1);
@@ -105,6 +107,7 @@ export function LmsLearning({
   const [answerText, setAnswerText] = useState("");
   const [answerLink, setAnswerLink] = useState("");
   const filteredAssignments = assignments?.filter((item) => (!kelasId || item.kelas.id === kelasId) && (!mapelId || item.mapel.id === mapelId));
+  const useScheduleSelect = Boolean(filteredAssignments && filteredAssignments.length > 0);
 
   useEffect(() => { setPage(1); setSelected(null); }, [kelasId, mapelId]);
   useEffect(() => {
@@ -128,6 +131,12 @@ export function LmsLearning({
     request("/penugasan", "GET", undefined, controller.signal, false, sandboxRole).then((value) => {
       if (!obj(value) || !Array.isArray(value.rows) || !value.rows.every(assignment)) throw new Error("Respons jadwal tidak valid.");
       setAssignments(value.rows);
+      if (Array.isArray(value.kelas)) {
+        setSchoolKelas(value.kelas.filter((k): k is { id: string; nama: string } => obj(k) && typeof k.id === "string" && typeof k.nama === "string"));
+      }
+      if (Array.isArray(value.mapel)) {
+        setSchoolMapel(value.mapel.filter((m): m is { id: string; nama: string } => obj(m) && typeof m.id === "string" && typeof m.nama === "string"));
+      }
     }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setAssignmentError(failureMessage(failure)); } });
     return () => controller.abort();
   }, [role, version, sandboxRole]);
@@ -156,8 +165,11 @@ export function LmsLearning({
       if (Number.isNaN(parsed.getTime())) { setError("Batas waktu tidak valid."); return; }
       batasWaktu = parsed.toISOString();
     }
-    if (await mutate(`/${kind}`, "POST", { ...form, batasWaktu }, `${kind === "materi" ? "Materi" : "Tugas"} disimpan.`)) {
-      setForm({ jadwalId: "", judul: "", isi: "", tautan: "", batasWaktu: "" }); setPage(1); setCreateOpen(false);
+    const payload = useScheduleSelect && form.jadwalId
+      ? { jadwalId: form.jadwalId, judul: form.judul, isi: form.isi, tautan: form.tautan, batasWaktu }
+      : { kelasId: kelasId || form.kelasId, mapelId: mapelId || form.mapelId, judul: form.judul, isi: form.isi, tautan: form.tautan, batasWaktu };
+    if (await mutate(`/${kind}`, "POST", payload, `${kind === "materi" ? "Materi" : "Tugas"} disimpan.`)) {
+      setForm({ jadwalId: "", kelasId: kelasId ?? "", mapelId: mapelId ?? "", judul: "", isi: "", tautan: "", batasWaktu: "" }); setPage(1); setCreateOpen(false);
     }
   }
   async function submitAnswer(event: React.FormEvent<HTMLFormElement>) {
@@ -170,18 +182,42 @@ export function LmsLearning({
     await mutate(`/tugas/${encodeURIComponent(selected.id)}/pengumpulan/${encodeURIComponent(id)}`, "PATCH", { nilai: Number(nilai), catatanGuru }, "Nilai disimpan.");
   }
   function switchKind(value: Kind) { setKind(value); setPage(1); setSelected(null); setMessage(""); setError(""); }
+  const canCreate = useScheduleSelect || (Boolean(kelasId || schoolKelas.length > 0) && Boolean(mapelId || schoolMapel.length > 0));
   return <section className="mt-6 rounded-xl border border-[#e6dfd0] bg-[#f8f6ef] p-5">
     {!kelasId && <><h2 className="font-bold">Materi dan tugas</h2><p className="mt-2 text-sm text-slate-600">Hanya periode aktif dan kelas yang sesuai ditampilkan. Tautan harus HTTPS; pastikan penerima memiliki izin mengaksesnya.</p></>}
-    <div className="mt-3 flex flex-wrap items-center gap-3">{!kelasId && <><button type="button" aria-pressed={kind === "materi"} onClick={() => switchKind("materi")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "materi" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Materi</button><button type="button" aria-pressed={kind === "tugas"} onClick={() => switchKind("tugas")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "tugas" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Tugas</button></>}{role === "GURU" && <button type="button" onClick={() => { setError(""); setCreateOpen(true); }} className="master-primary ml-auto">{kelasId && kind === "materi" ? "+ Bagikan Materi ke Kelas ini" : `+ Buat ${kind}`}</button>}</div>
+    <div className="mt-3 flex flex-wrap items-center gap-3">{!kelasId && <><button type="button" aria-pressed={kind === "materi"} onClick={() => switchKind("materi")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "materi" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Materi</button><button type="button" aria-pressed={kind === "tugas"} onClick={() => switchKind("tugas")} className={`rounded-full px-4 py-2 text-sm font-bold ${kind === "tugas" ? "bg-indigo-600 text-white" : "bg-indigo-50 text-indigo-700"}`}>Tugas</button></>}{role === "GURU" && <button type="button" onClick={() => { setError(""); setForm((prev) => ({ ...prev, kelasId: kelasId ?? prev.kelasId ?? schoolKelas[0]?.id ?? "", mapelId: mapelId ?? prev.mapelId ?? schoolMapel[0]?.id ?? "" })); setCreateOpen(true); }} className="master-primary ml-auto">{kelasId && kind === "materi" ? "+ Bagikan Materi ke Kelas ini" : `+ Buat ${kind}`}</button>}</div>
     {error && !createOpen && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}{message && <p role="status" className="mt-3 text-sm text-green-700">{message}</p>}
     {role === "GURU" && createOpen && <SchoolModal title={`Buat ${kind}`} busy={busy} onClose={() => { setCreateOpen(false); setError(""); }}><form onSubmit={create}>
       {assignmentError && <p role="alert" className="mt-2 text-sm text-rose-700">{assignmentError} <button type="button" onClick={() => setVersion((v) => v + 1)} className="font-bold underline">Coba lagi</button></p>}
-      <label className="mt-3 block text-sm font-semibold">Jadwal mengajar<select required className={field} value={form.jadwalId} onChange={(e) => setForm({ ...form, jadwalId: e.target.value })}><option value="">Pilih jadwal aktif</option>{filteredAssignments?.map((a) => <option key={a.id} value={a.id}>{a.mapel.nama} · {a.kelas.nama} · {a.tahunAjaran.nama} {a.tahunAjaran.semester} · {days[a.hari]} {a.jamMulai}–{a.jamSelesai}</option>)}</select></label>
-      {filteredAssignments?.length === 0 && <p className="mt-2 text-sm">Tidak ada jadwal mengajar aktif yang sesuai. Hubungi admin sekolah.</p>}
+      {useScheduleSelect ? (
+        <label className="mt-3 block text-sm font-semibold">Jadwal mengajar<select required className={field} value={form.jadwalId} onChange={(e) => setForm({ ...form, jadwalId: e.target.value })}><option value="">Pilih jadwal aktif</option>{filteredAssignments?.map((a) => <option key={a.id} value={a.id}>{a.mapel.nama} · {a.kelas.nama} · {a.tahunAjaran.nama} {a.tahunAjaran.semester} · {days[a.hari]} {a.jamMulai}–{a.jamSelesai}</option>)}</select></label>
+      ) : (
+        <>
+          {!kelasId && (
+            <label className="mt-3 block text-sm font-semibold">
+              Kelas tujuan
+              <select required className={field} value={form.kelasId} onChange={(e) => setForm({ ...form, kelasId: e.target.value })}>
+                <option value="">Pilih kelas</option>
+                {schoolKelas.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
+              </select>
+            </label>
+          )}
+          {!mapelId && (
+            <label className="mt-3 block text-sm font-semibold">
+              Mata pelajaran
+              <select required className={field} value={form.mapelId} onChange={(e) => setForm({ ...form, mapelId: e.target.value })}>
+                <option value="">Pilih mata pelajaran</option>
+                {schoolMapel.map((m) => <option key={m.id} value={m.id}>{m.nama}</option>)}
+              </select>
+            </label>
+          )}
+          {!canCreate && <p className="mt-2 text-sm text-amber-800">Belum ada kelas atau mata pelajaran terdaftar di sekolah ini.</p>}
+        </>
+      )}
       <label className="mt-3 block text-sm font-semibold">Judul<input required maxLength={200} className={field} value={form.judul} onChange={(e) => setForm({ ...form, judul: e.target.value })} /></label>
       <label className="mt-3 block text-sm font-semibold">{kind === "materi" ? "Isi materi (boleh kosong jika ada tautan)" : "Instruksi tugas"}<textarea required={kind === "tugas"} maxLength={5000} className={field} value={form.isi} onChange={(e) => setForm({ ...form, isi: e.target.value })} /></label>
       {kind === "materi" ? <label className="mt-3 block text-sm font-semibold">Tautan HTTPS (opsional)<input type="url" maxLength={2000} className={field} value={form.tautan} onChange={(e) => setForm({ ...form, tautan: e.target.value })} /></label> : <label className="mt-3 block text-sm font-semibold">Batas waktu WIB (opsional)<input type="datetime-local" className={field} value={form.batasWaktu} onChange={(e) => setForm({ ...form, batasWaktu: e.target.value })} /></label>}
-      {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}<button disabled={busy || !filteredAssignments?.length} className={button}>Simpan {kind}</button>
+      {error && <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p>}<button disabled={busy || !canCreate} className={button}>Simpan {kind}</button>
     </form></SchoolModal>}
     {!data && !error ? <TableSkeleton rows={4} columns={3} /> : error && !data ? <button type="button" onClick={() => setVersion((v) => v + 1)} className="mt-3 font-bold underline">Coba lagi</button> : data && <>{data.rows.length === 0 ? <EmptyState title={`Belum ada ${kind}`} description="Data pada halaman ini akan ditampilkan di sini." action={role === "GURU" ? <button type="button" className="master-primary" onClick={() => setCreateOpen(true)}>Buat {kind}</button> : undefined} /> : <ul className="mt-4 space-y-3">{data.rows.map((item) => <li key={item.id} className="dashboard-glass p-4 text-sm"><h3 className="font-bold">{item.judul}</h3><p className="mt-1">{item.mapel.nama} · {item.kelas.nama} · {item.guru.nama}</p><p className="text-slate-600">{item.tahunAjaran.nama} · {item.tahunAjaran.semester}</p><p className="mt-2 whitespace-pre-wrap break-words">{kind === "materi" ? item.deskripsi : item.instruksi}</p><Link value={item.tautan} />
       {kind === "tugas" && <><p className="mt-2">Batas: {item.batasWaktu ? time(item.batasWaktu) : "Tidak ada"}</p>{role === "SISWA" && item.pengumpulan?.[0] ? <div className="mt-2"><p>Sudah dikumpulkan: {time(item.pengumpulan[0].dikumpulkanPada)}{item.batasWaktu && new Date(item.pengumpulan[0].dikumpulkanPada) > new Date(item.batasWaktu) ? " · Terlambat" : ""}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].jawaban}</p><Link value={item.pengumpulan[0].tautan} /><p>Nilai: {item.pengumpulan[0].nilai ?? "Belum dinilai"}</p><p className="whitespace-pre-wrap break-words">{item.pengumpulan[0].catatanGuru}</p></div> : (role === "SISWA" || (role === "GURU" && item.bisaMenilai)) && <button type="button" onClick={() => { setSelected(item); setAnswerPage(1); setAnswerText(""); setAnswerLink(""); }} className="mt-2 font-bold underline">{role === "GURU" ? "Periksa dan beri nilai" : "Kumpulkan jawaban"}</button>}</>}

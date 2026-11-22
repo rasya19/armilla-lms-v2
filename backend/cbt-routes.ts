@@ -9,6 +9,14 @@ import {
   resolveTeacherScope,
   type SchoolContextResolver,
 } from "./school-modules-shared.js";
+import {
+  cbtCategoryPrefix,
+  cbtCategoryTag,
+  normalizeCbtCategory,
+  normalizeLookupKey,
+  parseBulkQuestions,
+  parseBulkTasks,
+} from "./cbt-import.js";
 
 function generateExamToken(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -200,7 +208,9 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       const settings = await prisma.cbtPengaturan.findUnique({ where: { sekolahId } }).catch(() => null);
       const tokenKode = generateExamToken();
       const tokenHash = createHash("sha256").update(tokenKode).digest("hex");
-      const kode = cleanText(req.body?.kode, 40).toUpperCase() || `CBT-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const kategori = req.body?.kategori ? normalizeCbtCategory(req.body.kategori, "UTS") : null;
+      const prefix = kategori ? cbtCategoryPrefix(kategori) : "CBT";
+      const kode = cleanText(req.body?.kode, 40).toUpperCase() || `${prefix}-${randomBytes(3).toString("hex").toUpperCase()}`;
 
       const created = await prisma.ujian.create({
         data: {
@@ -450,6 +460,476 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menghapus soal CBT:", error);
       return res.status(503).json({ error: "Butir soal belum dapat dihapus." });
+    }
+  });
+
+  // ==========================================
+  // 2B. IMPOR MASSAL SOAL CBT (UTS / AS / UJIAN AKHIR / TUGAS)
+  // ==========================================
+  async function resolveOrCreateSchoolYear(sekolahId: string, requestedId?: string): Promise<string | null> {
+    if (requestedId) {
+      const found = await prisma.tahunAjaran.findFirst({ where: { id: requestedId, sekolahId }, select: { id: true } });
+      if (found) return found.id;
+    }
+    const now = new Date();
+    const active = await prisma.tahunAjaran.findFirst({
+      where: { sekolahId, mulai: { lte: now }, selesai: { gte: now } },
+      select: { id: true },
+    });
+    if (active) return active.id;
+    const latest = await prisma.tahunAjaran.findFirst({ where: { sekolahId }, orderBy: { mulai: "desc" }, select: { id: true } });
+    if (latest) return latest.id;
+    const yearNow = now.getUTCFullYear();
+    const createdYear = await prisma.tahunAjaran.create({
+      data: {
+        sekolahId,
+        nama: `${yearNow}/${yearNow + 1}`,
+        semester: "Ganjil",
+        mulai: new Date(`${yearNow}-01-01T00:00:00.000Z`),
+        selesai: new Date(`${yearNow}-12-31T23:59:59.000Z`),
+      },
+      select: { id: true },
+    });
+    return createdYear.id;
+  }
+
+  router.post("/cbt/ujian/:id/soal/import", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const ujian = await prisma.ujian.findFirst({
+        where: { id: req.params.id, sekolahId },
+        select: { id: true, judul: true, guruId: true, kelasId: true, mapelId: true },
+      });
+      if (!ujian) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (!await canTeacherAccessExam(auth.session, ujian)) {
+        return res.status(403).json({ error: "Anda tidak memiliki akses untuk mengimpor soal pada ujian ini." });
+      }
+
+      const parsed = parseBulkQuestions(req.body?.soal);
+      if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+      if (parsed.valid.length === 0) {
+        return res.status(400).json({
+          error: "Tidak ada butir soal valid yang dapat diimpor.",
+          skipped: parsed.skipped,
+        });
+      }
+
+      const mode = req.body?.mode === "replace" ? "replace" : "append";
+
+      const totalSoal = await prisma.$transaction(async (tx) => {
+        let startUrutan = 1;
+        if (mode === "replace") {
+          await tx.soalUjian.deleteMany({ where: { ujianId: ujian.id } });
+        } else {
+          const last = await tx.soalUjian.findFirst({
+            where: { ujianId: ujian.id },
+            orderBy: { urutan: "desc" },
+            select: { urutan: true },
+          });
+          startUrutan = (last?.urutan ?? 0) + 1;
+        }
+
+        for (let i = 0; i < parsed.valid.length; i++) {
+          const item = parsed.valid[i];
+          await tx.soalUjian.create({
+            data: {
+              ujianId: ujian.id,
+              urutan: startUrutan + i,
+              tipe: item.tipe,
+              teks: item.teks,
+              bobot: item.bobot,
+              kunciEsai: item.kunciEsai,
+              pembahasan: item.pembahasan,
+              ...(item.opsi.length ? { opsi: { create: item.opsi } } : {}),
+            },
+          });
+        }
+
+        return tx.soalUjian.count({ where: { ujianId: ujian.id } });
+      });
+
+      return res.status(201).json({
+        importedCount: parsed.valid.length,
+        skippedCount: parsed.skipped.length,
+        skipped: parsed.skipped,
+        totalSoal,
+        message: `${parsed.valid.length} butir soal berhasil diimpor ke "${ujian.judul}".`,
+      });
+    } catch (error) {
+      console.error("Gagal mengimpor soal CBT:", error);
+      return res.status(503).json({ error: "Soal CBT belum dapat diimpor." });
+    }
+  });
+
+  router.post("/cbt/ujian/import", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const kategori = normalizeCbtCategory(req.body?.kategori, "UTS");
+      const judul = cleanText(req.body?.judul, 180);
+      const mapelId = cleanText(req.body?.mapelId, 100);
+      let guruId = peran === "GURU" && sessionGuruId ? sessionGuruId : cleanText(req.body?.guruId, 100);
+      const durasiMenit = cleanInt(req.body?.durasiMenit, 5, 360, 60);
+      const kkm = Math.max(0, Math.min(100, Number(req.body?.kkm ?? 75)));
+      const mulaiRaw = cleanText(req.body?.mulai, 40);
+      const selesaiRaw = cleanText(req.body?.selesai, 40);
+      const dipublikasikan = Boolean(req.body?.dipublikasikan);
+
+      const rawKelasIds: unknown[] = Array.isArray(req.body?.kelasIds)
+        ? req.body.kelasIds
+        : req.body?.kelasId
+          ? [req.body.kelasId]
+          : [];
+      const kelasIds = Array.from(
+        new Set(
+          rawKelasIds
+            .map((id) => cleanText(id, 100))
+            .filter(Boolean),
+        ),
+      );
+
+      if (!judul || !mapelId || kelasIds.length === 0) {
+        return res.status(400).json({ error: "Judul paket, mata pelajaran, dan minimal satu kelas target wajib diisi." });
+      }
+      if (kelasIds.length > 30) {
+        return res.status(400).json({ error: "Maksimal 30 kelas target per sekali impor paket." });
+      }
+
+      const parsed = parseBulkQuestions(req.body?.soal);
+      if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+      if (parsed.valid.length === 0) {
+        return res.status(400).json({
+          error: "Tidak ada butir soal valid yang dapat diimpor.",
+          skipped: parsed.skipped,
+        });
+      }
+
+      if (!guruId) {
+        const firstGuru = await prisma.guru.findFirst({ where: { sekolahId, status: "Aktif" }, select: { id: true } });
+        if (!firstGuru) return res.status(400).json({ error: "Tambahkan minimal satu guru aktif terlebih dahulu." });
+        guruId = firstGuru.id;
+      }
+
+      const tahunAjaranId = await resolveOrCreateSchoolYear(sekolahId, cleanText(req.body?.tahunAjaranId, 100) || undefined);
+      if (!tahunAjaranId) return res.status(400).json({ error: "Tahun ajaran tidak ditemukan." });
+
+      const [kelasRows, mapel, guru, settings] = await Promise.all([
+        prisma.kelas.findMany({ where: { id: { in: kelasIds }, sekolahId }, select: { id: true, nama: true } }),
+        prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true, nama: true } }),
+        prisma.guru.findFirst({ where: { id: guruId, sekolahId }, select: { id: true } }),
+        prisma.cbtPengaturan.findUnique({ where: { sekolahId } }).catch(() => null),
+      ]);
+
+      if (kelasRows.length !== kelasIds.length || !mapel || !guru) {
+        return res.status(400).json({ error: "Referensi kelas, mata pelajaran, atau guru tidak valid untuk sekolah ini." });
+      }
+
+      if (peran === "GURU" && sessionGuruId) {
+        const scope = await resolveTeacherScope(sekolahId, sessionGuruId);
+        if (!scope.isWaliKelas && (!scope.assignedMapelIds.includes(mapelId) || kelasIds.some((id) => !scope.assignedKelasIds.includes(id)))) {
+          return res.status(403).json({ error: "Anda tidak memiliki akses pada kelas atau mata pelajaran yang dipilih." });
+        }
+      }
+
+      const now = new Date();
+      const mulai = mulaiRaw ? new Date(mulaiRaw) : now;
+      const selesai = selesaiRaw ? new Date(selesaiRaw) : new Date(mulai.getTime() + 7 * 24 * 60 * 60 * 1000);
+      if (Number.isNaN(mulai.getTime()) || Number.isNaN(selesai.getTime()) || selesai <= mulai) {
+        return res.status(400).json({ error: "Rentang waktu mulai & selesai ujian tidak valid." });
+      }
+
+      const prefix = cbtCategoryPrefix(kategori);
+      const createdList = await prisma.$transaction(async (tx) => {
+        const results = [];
+        for (const kelas of kelasRows) {
+          const tokenKode = generateExamToken();
+          const tokenHash = createHash("sha256").update(tokenKode).digest("hex");
+          const kode = `${prefix}-${randomBytes(3).toString("hex").toUpperCase()}`;
+          const created = await tx.ujian.create({
+            data: {
+              sekolahId,
+              tahunAjaranId,
+              kelasId: kelas.id,
+              mapelId: mapel.id,
+              guruId,
+              kode,
+              judul,
+              durasiMenit,
+              mulai,
+              selesai,
+              kkm: Number.isFinite(kkm) ? kkm : (settings?.kkmDefault ?? 75),
+              tokenKode,
+              tokenHash,
+              acakSoal: settings?.acakUrutanSoal ?? true,
+              acakOpsi: settings?.acakOpsiJawaban ?? true,
+              tampilNilai: settings?.tampilkanNilaiLangsung ?? true,
+              toleransiKeluarTab: settings?.batasToleransiKeluarTab ?? 3,
+              dipublikasikan,
+              soal: {
+                create: parsed.valid.map((item, idx) => ({
+                  urutan: idx + 1,
+                  tipe: item.tipe,
+                  teks: item.teks,
+                  bobot: item.bobot,
+                  kunciEsai: item.kunciEsai,
+                  pembahasan: item.pembahasan,
+                  ...(item.opsi.length ? { opsi: { create: item.opsi } } : {}),
+                })),
+              },
+            },
+            include: {
+              kelas: { select: { id: true, nama: true } },
+              mapel: { select: { id: true, nama: true } },
+              guru: { select: { id: true, nama: true } },
+              _count: { select: { soal: true, percobaan: true } },
+            },
+          });
+          results.push(created);
+        }
+        return results;
+      });
+
+      return res.status(201).json({
+        createdCount: createdList.length,
+        importedQuestions: parsed.valid.length,
+        skippedCount: parsed.skipped.length,
+        skipped: parsed.skipped,
+        ujian: createdList,
+        message: `${createdList.length} paket ${prefix} (${parsed.valid.length} soal) berhasil dibuat & diimpor.`,
+      });
+    } catch (error) {
+      console.error("Gagal mengimpor paket ujian CBT:", error);
+      return res.status(503).json({ error: "Paket ujian & soal CBT belum dapat diimpor." });
+    }
+  });
+
+  // ==========================================
+  // 2C. IMPOR & DAFTAR TUGAS (UTS / AS / UJIAN AKHIR / TUGAS CBT)
+  // ==========================================
+  router.get("/cbt/tugas", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const rows = await prisma.tugas.findMany({
+        where: { sekolahId },
+        include: {
+          kelas: { select: { id: true, nama: true } },
+          mapel: { select: { id: true, nama: true } },
+          guru: { select: { id: true, nama: true } },
+          _count: { select: { pengumpulan: true } },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 100,
+      });
+
+      return res.json({ tugas: rows });
+    } catch (error) {
+      console.error("Gagal memuat daftar tugas CBT:", error);
+      return res.status(503).json({ error: "Daftar tugas belum dapat dimuat." });
+    }
+  });
+
+  router.post("/cbt/tugas/import", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const defaultKategori = normalizeCbtCategory(req.body?.kategori, "UTS");
+      const defaultMapelId = cleanText(req.body?.defaultMapelId, 100);
+      let guruId = peran === "GURU" && sessionGuruId ? sessionGuruId : cleanText(req.body?.guruId, 100);
+      const rawDefaultKelasIds: unknown[] = Array.isArray(req.body?.defaultKelasIds)
+        ? req.body.defaultKelasIds
+        : req.body?.defaultKelasId
+          ? [req.body.defaultKelasId]
+          : [];
+      const defaultKelasIds = Array.from(
+        new Set(rawDefaultKelasIds.map((id) => cleanText(id, 100)).filter(Boolean)),
+      ).slice(0, 30);
+
+      const parsed = parseBulkTasks(req.body?.tugas, defaultKategori);
+      if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+      if (parsed.valid.length === 0) {
+        return res.status(400).json({
+          error: "Tidak ada tugas valid yang dapat diimpor.",
+          skipped: parsed.skipped,
+        });
+      }
+
+      if (!guruId) {
+        const firstGuru = await prisma.guru.findFirst({ where: { sekolahId, status: "Aktif" }, select: { id: true } });
+        if (!firstGuru) return res.status(400).json({ error: "Tambahkan minimal satu guru aktif terlebih dahulu." });
+        guruId = firstGuru.id;
+      }
+
+      const tahunAjaranId = await resolveOrCreateSchoolYear(sekolahId, cleanText(req.body?.tahunAjaranId, 100) || undefined);
+      if (!tahunAjaranId) return res.status(400).json({ error: "Tahun ajaran tidak ditemukan." });
+
+      const [allKelas, allMapel, guru] = await Promise.all([
+        prisma.kelas.findMany({ where: { sekolahId }, select: { id: true, nama: true, kode: true } }),
+        prisma.mapel.findMany({ where: { sekolahId }, select: { id: true, nama: true, kode: true } }),
+        prisma.guru.findFirst({ where: { id: guruId, sekolahId }, select: { id: true } }),
+      ]);
+      if (!guru) return res.status(400).json({ error: "Guru pembuat tugas tidak ditemukan." });
+
+      const kelasById = new Map(allKelas.map((k) => [k.id, k]));
+      const kelasByKey = new Map<string, string>();
+      for (const k of allKelas) {
+        kelasByKey.set(normalizeLookupKey(k.nama), k.id);
+        kelasByKey.set(normalizeLookupKey(k.kode), k.id);
+      }
+      const mapelById = new Map(allMapel.map((m) => [m.id, m]));
+      const mapelByKey = new Map<string, string>();
+      for (const m of allMapel) {
+        mapelByKey.set(normalizeLookupKey(m.nama), m.id);
+        mapelByKey.set(normalizeLookupKey(m.kode), m.id);
+      }
+
+      const validDefaultKelasIds = defaultKelasIds.filter((id) => kelasById.has(id));
+      const validDefaultMapelId = defaultMapelId && mapelById.has(defaultMapelId) ? defaultMapelId : "";
+
+      const rowsToCreate: Array<{
+        kelasId: string;
+        mapelId: string;
+        judul: string;
+        instruksi: string;
+        batasWaktu: Date | null;
+      }> = [];
+      const skipped = [...parsed.skipped];
+
+      for (let i = 0; i < parsed.valid.length; i++) {
+        const task = parsed.valid[i];
+        const rowNum = i + 1;
+
+        let targetMapelId = "";
+        if (task.mapelNama) {
+          const key = normalizeLookupKey(task.mapelNama);
+          targetMapelId = mapelByKey.get(key) ?? "";
+          if (!targetMapelId) {
+            const partial = allMapel.find((m) => normalizeLookupKey(m.nama).includes(key) || key.includes(normalizeLookupKey(m.nama)));
+            if (partial) targetMapelId = partial.id;
+          }
+        }
+        if (!targetMapelId) targetMapelId = validDefaultMapelId;
+        if (!targetMapelId) {
+          skipped.push({ row: rowNum, reason: `Mata pelajaran "${task.mapelNama || "-"}" tidak ditemukan; pilih mapel default.` });
+          continue;
+        }
+
+        let targetKelasIds: string[] = [];
+        if (task.kelasNama) {
+          const tokens = task.kelasNama.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+          for (const token of tokens) {
+            const key = normalizeLookupKey(token);
+            let matchedId = kelasByKey.get(key) ?? "";
+            if (!matchedId) {
+              const partial = allKelas.find((k) => normalizeLookupKey(k.nama).includes(key) || key.includes(normalizeLookupKey(k.nama)));
+              if (partial) matchedId = partial.id;
+            }
+            if (matchedId) targetKelasIds.push(matchedId);
+          }
+          targetKelasIds = Array.from(new Set(targetKelasIds));
+        }
+        if (targetKelasIds.length === 0) targetKelasIds = validDefaultKelasIds;
+        if (targetKelasIds.length === 0) {
+          skipped.push({ row: rowNum, reason: `Kelas "${task.kelasNama || "-"}" tidak ditemukan; pilih minimal satu kelas target.` });
+          continue;
+        }
+
+        const tag = cbtCategoryTag(task.kategori);
+        const alreadyTagged = /^\[(UTS|AS|UAS|PAS|UJIAN AKHIR|UPK|TUGAS|TUGAS CBT)\]/i.test(task.judul);
+        const finalJudul = (alreadyTagged ? task.judul : `${tag} ${task.judul}`).slice(0, 200);
+        const finalInstruksi = task.tautan
+          ? `${task.instruksi}\n\nTautan referensi: ${task.tautan}`.slice(0, 5000)
+          : task.instruksi;
+
+        for (const kelasId of targetKelasIds) {
+          rowsToCreate.push({
+            kelasId,
+            mapelId: targetMapelId,
+            judul: finalJudul,
+            instruksi: finalInstruksi,
+            batasWaktu: task.batasWaktu,
+          });
+        }
+      }
+
+      if (rowsToCreate.length === 0) {
+        return res.status(400).json({
+          error: "Tidak ada tugas yang dapat disimpan karena kelas atau mata pelajaran belum sesuai.",
+          skipped,
+        });
+      }
+
+      const createdTasks = await prisma.$transaction(async (tx) => {
+        const created = [];
+        for (const entry of rowsToCreate) {
+          const saved = await tx.tugas.create({
+            data: {
+              sekolahId,
+              tahunAjaranId,
+              kelasId: entry.kelasId,
+              mapelId: entry.mapelId,
+              guruId,
+              judul: entry.judul,
+              instruksi: entry.instruksi,
+              batasWaktu: entry.batasWaktu,
+            },
+            include: {
+              kelas: { select: { id: true, nama: true } },
+              mapel: { select: { id: true, nama: true } },
+              guru: { select: { id: true, nama: true } },
+              _count: { select: { pengumpulan: true } },
+            },
+          });
+          created.push(saved);
+        }
+        return created;
+      });
+
+      return res.status(201).json({
+        createdCount: createdTasks.length,
+        skippedCount: skipped.length,
+        skipped,
+        tugas: createdTasks,
+        message: `${createdTasks.length} tugas berhasil diimpor dan dibagikan ke ruang kelas.`,
+      });
+    } catch (error) {
+      console.error("Gagal mengimpor tugas CBT:", error);
+      return res.status(503).json({ error: "Daftar tugas belum dapat diimpor." });
+    }
+  });
+
+  router.delete("/cbt/tugas/:id", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const target = await prisma.tugas.findFirst({
+        where: { id: req.params.id, sekolahId },
+        select: { id: true, guruId: true },
+      });
+      if (!target) return res.status(404).json({ error: "Tugas tidak ditemukan." });
+      if (peran === "GURU" && guruId && target.guruId !== guruId) {
+        return res.status(403).json({ error: "Anda hanya dapat menghapus tugas yang Anda buat." });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.pengumpulanTugas.deleteMany({ where: { tugasId: target.id } });
+        await tx.tugas.delete({ where: { id: target.id } });
+      });
+      return res.json({ message: "Tugas berhasil dihapus." });
+    } catch (error) {
+      console.error("Gagal menghapus tugas CBT:", error);
+      return res.status(503).json({ error: "Tugas belum dapat dihapus." });
     }
   });
 

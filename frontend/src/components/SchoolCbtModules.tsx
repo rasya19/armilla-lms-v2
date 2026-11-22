@@ -12,8 +12,16 @@ import {
   Save,
   SlidersHorizontal,
   Trash2,
+  UploadCloud,
 } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
+import { CbtImportPanel } from "./CbtImportPanel";
+import {
+  CBT_CATEGORIES,
+  categoryBadgeLabel,
+  detectCbtCategory,
+  type CbtCategory,
+} from "./cbtImportData";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
@@ -143,8 +151,11 @@ export function CbtBankSoalView({ onOpenSettings, sandboxRole }: { onOpenSetting
   const [soalList, setSoalList] = useState<SoalItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | CbtCategory>("ALL");
 
   // Create exam form
+  const [kategori, setKategori] = useState<CbtCategory>("UTS");
   const [judul, setJudul] = useState("");
   const [kelasId, setKelasId] = useState("");
   const [mapelId, setMapelId] = useState("");
@@ -205,7 +216,7 @@ export function CbtBankSoalView({ onOpenSettings, sandboxRole }: { onOpenSetting
       const res = await fetchWithTimeout("/api/sekolah/cbt/ujian", {
         method: "POST",
         headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
-        body: JSON.stringify({ judul, kelasId, mapelId, guruId, durasiMenit, kkm }),
+        body: JSON.stringify({ kategori, judul, kelasId, mapelId, guruId, durasiMenit, kkm }),
       });
       const body = (await res.json()) as { ujian?: UjianItem; message?: string; error?: string };
       if (!res.ok) throw new Error(body.error || "Gagal membuat paket ujian.");
@@ -287,36 +298,78 @@ export function CbtBankSoalView({ onOpenSettings, sandboxRole }: { onOpenSetting
     }
   }
 
-  const activeUjian = ujianList.find((u) => u.id === selectedUjianId) ?? null;
+  const filteredUjianList =
+    categoryFilter === "ALL"
+      ? ujianList
+      : ujianList.filter((u) => detectCbtCategory(u.kode, u.judul) === categoryFilter);
+  const activeUjian = filteredUjianList.find((u) => u.id === selectedUjianId) ?? ujianList.find((u) => u.id === selectedUjianId) ?? null;
 
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         eyebrow="Ujian Online (CBT) · Paket Reguler+"
         title="Kelola Bank Soal & Paket Ujian"
-        description="Susun paket ujian per mata pelajaran dan tingkatan kelas, lengkap dengan butir soal Pilihan Ganda (A–E), Esai, kunci jawaban, dan bobot skor."
+        description="Susun dan impor paket soal serta tugas untuk UTS, Asesmen Sumatif (AS/UAS), dan Ujian Akhir Kelas Akhir (UPK) lengkap dengan Pilihan Ganda (A–E), Esai, kunci jawaban, dan bobot skor."
         action={
-          onOpenSettings ? (
-            <button type="button" onClick={onOpenSettings} className="dashboard-hero-action dashboard-hero-secondary">
-              <SlidersHorizontal size={15} aria-hidden="true" />
-              Pengaturan Ujian
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowImport((prev) => !prev)}
+              className="dashboard-hero-action whitespace-nowrap"
+            >
+              <UploadCloud size={15} aria-hidden="true" />
+              {showImport ? "Tutup Panel Impor" : "Impor Soal & Tugas"}
             </button>
-          ) : undefined
+            {onOpenSettings && (
+              <button type="button" onClick={onOpenSettings} className="dashboard-hero-action dashboard-hero-secondary whitespace-nowrap">
+                <SlidersHorizontal size={15} aria-hidden="true" />
+                Pengaturan Ujian
+              </button>
+            )}
+          </div>
         }
       />
 
       {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
       {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{notice}</p>}
 
+      {showImport && (
+        <CbtImportPanel
+          ujianList={ujianList}
+          kelasList={kelasList}
+          mapelList={mapelList}
+          guruList={guruList}
+          initialUjianId={selectedUjianId}
+          sandboxRole={sandboxRole}
+          onImported={(createdId) => {
+            void reload().then(() => {
+              const target = createdId || selectedUjianId;
+              if (target) {
+                setSelectedUjianId(target);
+                void loadQuestions(target);
+              }
+            });
+          }}
+        />
+      )}
+
       <form onSubmit={handleCreateUjian} className={`space-y-4 rounded-2xl p-5 ${panelCls(isDark)}`}>
         <h3 className="flex items-center gap-2 text-base font-bold">
           <Database size={18} className="text-sky-600" />
           Buat Paket Ujian Baru
         </h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <label className="block text-xs font-bold">
+            Kategori Ujian
+            <select value={kategori} onChange={(e) => setKategori(e.target.value as CbtCategory)} className={fieldCls(isDark)}>
+              {CBT_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </label>
           <label className="block text-xs font-bold lg:col-span-2">
             Judul Paket Ujian
-            <input required value={judul} onChange={(e) => setJudul(e.target.value)} placeholder="Contoh: Penilaian Akhir Semester Matematika" className={fieldCls(isDark)} />
+            <input required value={judul} onChange={(e) => setJudul(e.target.value)} placeholder="Contoh: UTS / AS / Ujian Akhir Matematika" className={fieldCls(isDark)} />
           </label>
           <label className="block text-xs font-bold">
             Kelas Target
@@ -358,14 +411,48 @@ export function CbtBankSoalView({ onOpenSettings, sandboxRole }: { onOpenSetting
       {loading ? (
         <CardGridSkeleton count={2} columns={2} />
       ) : ujianList.length === 0 ? (
-        <EmptyState title="Belum ada paket ujian CBT" description="Buat paket ujian pertama Anda melalui form di atas untuk mulai mengisi butir soal." />
+        <EmptyState title="Belum ada paket ujian CBT" description="Buat paket ujian pertama Anda atau klik Impor Soal & Tugas di atas untuk mengunggah soal UTS, AS, atau Ujian Akhir Kelas Akhir." />
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
           <div className={`space-y-3 rounded-2xl p-4 ${panelCls(isDark)}`}>
-            <h4 className="text-sm font-bold">Daftar Paket Ujian ({ujianList.length})</h4>
             <div className="space-y-2">
-              {ujianList.map((u) => {
+              <h4 className="text-sm font-bold">Daftar Paket Ujian ({filteredUjianList.length})</h4>
+              <div className={`flex flex-wrap gap-1 rounded-xl p-1 ${isDark ? "bg-slate-950/70" : "bg-slate-100"}`}>
+                {([
+                  { id: "ALL" as const, label: "Semua" },
+                  { id: "UTS" as const, label: "UTS" },
+                  { id: "AS" as const, label: "AS / UAS" },
+                  { id: "UJIAN_AKHIR" as const, label: "Ujian Akhir" },
+                  { id: "TUGAS" as const, label: "Tugas" },
+                ]).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    aria-pressed={categoryFilter === tab.id}
+                    onClick={() => setCategoryFilter(tab.id)}
+                    className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                      categoryFilter === tab.id
+                        ? isDark
+                          ? "bg-amber-400 text-slate-950"
+                          : "bg-white text-slate-900 shadow-xs"
+                        : isDark
+                          ? "text-slate-400 hover:text-white"
+                          : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {filteredUjianList.length === 0 ? (
+                <p className={`py-4 text-center text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  Belum ada paket pada kategori ini.
+                </p>
+              ) : filteredUjianList.map((u) => {
                 const selected = u.id === selectedUjianId;
+                const cat = detectCbtCategory(u.kode, u.judul);
                 return (
                   <div
                     key={u.id}
@@ -380,7 +467,9 @@ export function CbtBankSoalView({ onOpenSettings, sandboxRole }: { onOpenSetting
                     }`}
                   >
                     <button type="button" onClick={() => setSelectedUjianId(u.id)} className="w-full text-left">
-                      <p className="text-[10px] font-bold uppercase text-sky-600">{u.kode} · {u.durasiMenit} Menit</p>
+                      <p className="text-[11px] font-semibold text-sky-600">
+                        {categoryBadgeLabel(cat)} · {u.kode} · {u.durasiMenit} Menit
+                      </p>
                       <p className="font-bold text-sm">{u.judul}</p>
                       <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         {u.mapel.nama} · {u.kelas.nama} · <strong>{u._count.soal} Soal</strong>
@@ -960,3 +1049,40 @@ export function CbtPengaturanView() {
     </section>
   );
 }
+
+// ==========================================
+// 5. IMPOR SOAL & TUGAS (UTS / AS / UJIAN AKHIR)
+// ==========================================
+export function CbtImportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
+  const { ujianList, kelasList, mapelList, guruList, loading, error, reload } = useCbtOverview(sandboxRole);
+
+  return (
+    <section className="dashboard-glass space-y-6 rounded-2xl p-6">
+      <DashboardHero
+        eyebrow="Ujian Online (CBT) · Impor Massal"
+        title="Impor Soal & Tugas (UTS, AS, Ujian Akhir Kelas Akhir)"
+        description="Unggah bank soal Pilihan Ganda (A–E) atau Esai dari Excel/CSV/Word serta impor daftar tugas evaluasi untuk UTS, Asesmen Sumatif (AS/UAS), maupun Ujian Akhir Kelas Akhir (Kelas 6, 9, dan 12)."
+      />
+
+      {error && (
+        <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <CardGridSkeleton count={3} columns={3} />
+      ) : (
+        <CbtImportPanel
+          ujianList={ujianList}
+          kelasList={kelasList}
+          mapelList={mapelList}
+          guruList={guruList}
+          sandboxRole={sandboxRole}
+          onImported={() => void reload()}
+        />
+      )}
+    </section>
+  );
+}
+

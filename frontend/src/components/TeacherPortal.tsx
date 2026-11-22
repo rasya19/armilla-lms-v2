@@ -24,6 +24,10 @@ import {
   Menu,
   MessageSquare,
   MonitorCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pin,
+  PinOff,
   RefreshCw,
   Save,
   Search,
@@ -227,6 +231,8 @@ export function TeacherPortal({
 
   const [view, setView] = useState<TeacherView>(() => HASH_TO_TEACHER_VIEW[window.location.hash] ?? "beranda");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(false);
   const [cbtTab, setCbtTab] = useState<"bank" | "publik" | "impor" | "jadwal" | "monitoring">("bank");
   const [classroomTarget, setClassroomTarget] = useState<{ kelasId?: string | null; tab?: "materi" | "tugas"; seq: number }>({ seq: 0 });
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
@@ -280,6 +286,14 @@ export function TeacherPortal({
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  function toggleSidebar() {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setMenuOpen((prev) => !prev);
+    } else {
+      setDesktopSidebarOpen((prev) => !prev);
+    }
+  }
+
   function selectView(next: TeacherView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) {
     if (requiredPlan && !hasPlanAccess(effectivePlan, requiredPlan)) {
       setUpgradePrompt({ featureName: label ?? next, requiredPlan });
@@ -288,6 +302,7 @@ export function TeacherPortal({
     }
     setView(next);
     setMenuOpen(false);
+    if (autoHideSidebar) setDesktopSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -295,6 +310,7 @@ export function TeacherPortal({
     setClassroomTarget((prev) => ({ kelasId: kelasId ?? null, tab, seq: prev.seq + 1 }));
     setView("materi-tugas");
     setMenuOpen(false);
+    if (autoHideSidebar) setDesktopSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -309,7 +325,15 @@ export function TeacherPortal({
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
         {/* Sidebar Navigasi Guru */}
         <aside
-          className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-72 flex-col border-r p-3.5 transition-colors duration-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 ${palette.aside}`}
+          className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-300 ease-in-out ${
+            menuOpen
+              ? "visible w-72 translate-x-0 p-3.5 opacity-100"
+              : "pointer-events-none invisible w-72 -translate-x-full p-3.5 opacity-0"
+          } ${
+            desktopSidebarOpen
+              ? "lg:pointer-events-auto lg:visible lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:translate-x-0 lg:p-3.5 lg:opacity-100"
+              : "lg:pointer-events-none lg:invisible lg:sticky lg:top-0 lg:h-screen lg:w-0 lg:shrink-0 lg:-translate-x-full lg:overflow-hidden lg:border-r-0 lg:p-0 lg:opacity-0"
+          } ${palette.aside}`}
         >
           <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
             <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
@@ -321,14 +345,37 @@ export function TeacherPortal({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setMenuOpen(false)}
-              aria-label="Tutup menu guru"
-              className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}
-            >
-              <X size={18} />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setAutoHideSidebar((prev) => !prev)}
+                aria-pressed={autoHideSidebar}
+                title={autoHideSidebar ? "Auto-hide aktif: sidebar menutup otomatis setelah menu dipilih" : "Aktifkan auto-hide sidebar"}
+                aria-label={autoHideSidebar ? "Nonaktifkan auto-hide sidebar" : "Aktifkan auto-hide sidebar"}
+                className={`hidden rounded-lg p-1.5 transition lg:inline-flex ${
+                  autoHideSidebar ? "bg-white/25 text-white ring-1 ring-white/40" : palette.closeBtn
+                }`}
+              >
+                {autoHideSidebar ? <PinOff size={15} aria-hidden="true" /> : <Pin size={15} aria-hidden="true" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDesktopSidebarOpen(false)}
+                title="Sembunyikan sidebar"
+                aria-label="Sembunyikan sidebar"
+                className={`hidden rounded-lg p-1.5 transition lg:inline-flex ${palette.closeBtn}`}
+              >
+                <PanelLeftClose size={16} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Tutup menu guru"
+                className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <nav aria-label="Navigasi Portal Guru" className="mt-3 flex-1 space-y-4 overflow-y-auto pr-0.5">
@@ -437,21 +484,27 @@ export function TeacherPortal({
             type="button"
             aria-label="Tutup menu guru"
             onClick={() => setMenuOpen(false)}
-            className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden"
+            className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-[1px] lg:hidden"
           />
         )}
 
         {/* Konten Utama */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 transition-all duration-300">
           <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
             <button
               type="button"
-              onClick={() => setMenuOpen(true)}
-              aria-label="Buka menu guru"
-              aria-expanded={menuOpen}
-              className={`rounded-lg p-2 lg:hidden ${palette.headerMenuBtn}`}
+              onClick={toggleSidebar}
+              title={desktopSidebarOpen ? "Sembunyikan sidebar" : "Tampilkan sidebar"}
+              aria-label="Buka atau tutup menu guru"
+              aria-expanded={menuOpen || desktopSidebarOpen}
+              className={`inline-flex shrink-0 items-center justify-center rounded-xl p-2 transition ${palette.headerMenuBtn}`}
             >
-              <Menu size={21} />
+              <Menu size={20} className="lg:hidden" aria-hidden="true" />
+              {desktopSidebarOpen ? (
+                <PanelLeftClose size={20} className="hidden lg:block" aria-hidden="true" />
+              ) : (
+                <PanelLeftOpen size={20} className="hidden lg:block" aria-hidden="true" />
+              )}
             </button>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -508,7 +561,7 @@ export function TeacherPortal({
             </p>
           )}
 
-          <div className="animate-page-enter mx-auto max-w-7xl space-y-6 p-4 pb-28 sm:p-6 md:pb-10">
+          <div className={`animate-page-enter mx-auto ${desktopSidebarOpen ? "max-w-7xl" : "max-w-full"} space-y-6 p-4 pb-28 transition-all duration-300 sm:p-6 md:pb-10`}>
             {view === "beranda" && (
               <TeacherBerandaSection
                 data={beranda}

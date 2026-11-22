@@ -28,6 +28,10 @@ import {
   MonitorCheck,
   Package,
   Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pin,
+  PinOff,
   QrCode,
   RefreshCw,
   Server,
@@ -669,6 +673,8 @@ export function SchoolHome() {
   const [dataKind, setDataKind] = useState<ActiveDataKind>("siswa");
   const [mapelSkkTab, setMapelSkkTab] = useState<"mapel" | "skk">("mapel");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<SchoolNavGroupId, boolean>>({
     master: true,
     kbm: true,
@@ -855,6 +861,14 @@ export function SchoolHome() {
     setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
   }
 
+  function toggleSidebar() {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setMenuOpen((prev) => !prev);
+    } else {
+      setDesktopSidebarOpen((prev) => !prev);
+    }
+  }
+
   function selectView(next: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) {
     if (requiredPlan && !hasPlanAccess(plan, requiredPlan)) {
       openUpgradePrompt(label ?? "Fitur Premium", requiredPlan);
@@ -868,6 +882,7 @@ export function SchoolHome() {
     }
     setView(next);
     setMenuOpen(false);
+    if (autoHideSidebar) setDesktopSidebarOpen(false);
   }
 
   const planStyle = PLAN_BADGE_STYLES[plan];
@@ -895,7 +910,11 @@ export function SchoolHome() {
         planStyle={planStyle}
         view={view}
         menuOpen={menuOpen}
+        desktopSidebarOpen={desktopSidebarOpen}
+        autoHideSidebar={autoHideSidebar}
         setMenuOpen={setMenuOpen}
+        onCloseDesktop={() => setDesktopSidebarOpen(false)}
+        onToggleAutoHide={() => setAutoHideSidebar((prev) => !prev)}
         openGroups={openGroups}
         onToggleGroup={toggleGroup}
         refreshingPlan={refreshingPlan}
@@ -903,16 +922,17 @@ export function SchoolHome() {
         onSelectView={selectView}
         onLogout={logout}
       />
-      {menuOpen && <button type="button" aria-label="Tutup menu sekolah" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" />}
-      <div className="min-w-0 flex-1">
+      {menuOpen && <button type="button" aria-label="Tutup menu sekolah" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-[1px] lg:hidden" />}
+      <div className="min-w-0 flex-1 transition-all duration-300">
         <SchoolPortalHeader
           school={school}
           planStyle={planStyle}
           menuOpen={menuOpen}
-          onOpenMenu={() => setMenuOpen(true)}
+          desktopSidebarOpen={desktopSidebarOpen}
+          onToggleSidebar={toggleSidebar}
         />
         {error && <p role="alert" className="glass-panel m-4 rounded-xl p-4 text-rose-700">{error}</p>}
-        <div className={`animate-page-enter ${transitionAlternate ? "page-enter-alternate" : ""} mx-auto max-w-7xl space-y-6 p-6 pb-28 md:pb-6`}>
+        <div className={`animate-page-enter ${transitionAlternate ? "page-enter-alternate" : ""} mx-auto ${desktopSidebarOpen ? "max-w-7xl" : "max-w-full"} space-y-6 p-6 pb-28 transition-all duration-300 md:pb-6`}>
           {view === "dashboard" && (
             <SchoolOverview
               school={school}
@@ -1069,7 +1089,11 @@ function SchoolSidebar({
   planStyle,
   view,
   menuOpen,
+  desktopSidebarOpen,
+  autoHideSidebar,
   setMenuOpen,
+  onCloseDesktop,
+  onToggleAutoHide,
   openGroups,
   onToggleGroup,
   refreshingPlan,
@@ -1082,7 +1106,11 @@ function SchoolSidebar({
   planStyle: { label: string; sidebarClass: string; headerClass: string };
   view: SchoolView;
   menuOpen: boolean;
+  desktopSidebarOpen: boolean;
+  autoHideSidebar: boolean;
   setMenuOpen: (open: boolean) => void;
+  onCloseDesktop: () => void;
+  onToggleAutoHide: () => void;
   openGroups: Record<SchoolNavGroupId, boolean>;
   onToggleGroup: (groupId: SchoolNavGroupId) => void;
   refreshingPlan: boolean;
@@ -1149,7 +1177,15 @@ function SchoolSidebar({
 
   return (
     <aside
-      className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-72 flex-col border-r p-3.5 transition-colors duration-300 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 ${palette.aside}`}
+      className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-300 ease-in-out ${
+        menuOpen
+          ? "visible w-72 translate-x-0 p-3.5 opacity-100"
+          : "pointer-events-none invisible w-72 -translate-x-full p-3.5 opacity-0"
+      } ${
+        desktopSidebarOpen
+          ? "lg:pointer-events-auto lg:visible lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:translate-x-0 lg:p-3.5 lg:opacity-100"
+          : "lg:pointer-events-none lg:invisible lg:sticky lg:top-0 lg:h-screen lg:w-0 lg:shrink-0 lg:-translate-x-full lg:overflow-hidden lg:border-r-0 lg:p-0 lg:opacity-0"
+      } ${palette.aside}`}
     >
       <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
         <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
@@ -1164,9 +1200,32 @@ function SchoolSidebar({
             </div>
           </div>
         </div>
-        <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}>
-          <X size={18} />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onToggleAutoHide}
+            aria-pressed={autoHideSidebar}
+            title={autoHideSidebar ? "Auto-hide aktif: sidebar menutup otomatis setelah menu dipilih" : "Aktifkan auto-hide sidebar"}
+            aria-label={autoHideSidebar ? "Nonaktifkan auto-hide sidebar" : "Aktifkan auto-hide sidebar"}
+            className={`hidden rounded-lg p-1.5 transition lg:inline-flex ${
+              autoHideSidebar ? "bg-white/25 text-white ring-1 ring-white/40" : palette.closeBtn
+            }`}
+          >
+            {autoHideSidebar ? <PinOff size={15} aria-hidden="true" /> : <Pin size={15} aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            onClick={onCloseDesktop}
+            title="Sembunyikan sidebar"
+            aria-label="Sembunyikan sidebar"
+            className={`hidden rounded-lg p-1.5 transition lg:inline-flex ${palette.closeBtn}`}
+          >
+            <PanelLeftClose size={16} aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => setMenuOpen(false)} aria-label="Tutup menu" className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}>
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
@@ -1273,12 +1332,14 @@ function SchoolPortalHeader({
   school,
   planStyle,
   menuOpen,
-  onOpenMenu,
+  desktopSidebarOpen,
+  onToggleSidebar,
 }: {
   school: string;
   planStyle: { label: string; sidebarClass: string; headerClass: string };
   menuOpen: boolean;
-  onOpenMenu: () => void;
+  desktopSidebarOpen: boolean;
+  onToggleSidebar: () => void;
 }) {
   const theme = useTenantTheme();
   const isDark = theme === "dark";
@@ -1288,12 +1349,18 @@ function SchoolPortalHeader({
     <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
       <button
         type="button"
-        onClick={onOpenMenu}
-        aria-label="Buka menu sekolah"
-        aria-expanded={menuOpen}
-        className={`rounded-lg p-2 lg:hidden ${palette.headerMenuBtn}`}
+        onClick={onToggleSidebar}
+        title={desktopSidebarOpen ? "Sembunyikan sidebar" : "Tampilkan sidebar"}
+        aria-label="Buka atau tutup menu sekolah"
+        aria-expanded={menuOpen || desktopSidebarOpen}
+        className={`inline-flex shrink-0 items-center justify-center rounded-xl p-2 transition ${palette.headerMenuBtn}`}
       >
-        <Menu size={21} />
+        <Menu size={20} className="lg:hidden" aria-hidden="true" />
+        {desktopSidebarOpen ? (
+          <PanelLeftClose size={20} className="hidden lg:block" aria-hidden="true" />
+        ) : (
+          <PanelLeftOpen size={20} className="hidden lg:block" aria-hidden="true" />
+        )}
       </button>
       {isDark && (
         <BrandLogo alt={`Logo ${school}`} className="hidden h-9 w-9 rounded-xl border border-white/15 sm:block" />

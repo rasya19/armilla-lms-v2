@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  ArrowLeft,
   Award,
   BookOpen,
   CalendarDays,
@@ -13,8 +14,12 @@ import {
   KeyRound,
   Lock,
   LogOut,
+  Menu,
   MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pin,
+  PinOff,
   Printer,
   RefreshCw,
   Search,
@@ -22,6 +27,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  X,
 } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 import { Classroom } from "./Classroom";
@@ -29,6 +35,8 @@ import { CardGridSkeleton, TableSkeleton } from "./DashboardUI";
 import { useGlassConfirm } from "./GlassConfirm";
 import { LmsSchedule } from "./LmsSchedule";
 import { PasswordChangeForm } from "./PasswordChangeForm";
+import { PWAInstallButton } from "./PWAInstallButton";
+import { SIDEBAR_THEMES } from "./SchoolAccess";
 import { StudentVervalForm } from "./StudentVervalForm";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
@@ -290,7 +298,12 @@ export function StudentPortal({
   onBackToAdmin,
   onPasswordChanged,
 }: StudentPortalProps) {
-  const isDark = useTenantTheme() === "dark";
+  const theme = useTenantTheme();
+  const isDark = theme === "dark";
+  const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [autoHideSidebar, setAutoHideSidebar] = useState(false);
   const [activeTab, setActiveTab] = useState<StudentTab>(() => {
     const hash = window.location.hash;
     if (hash === "#diskusi-siswa") return "diskusi";
@@ -344,86 +357,236 @@ export function StudentPortal({
       .join("")
       .toUpperCase() || nama.charAt(0).toUpperCase();
 
+  function toggleSidebar() {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setMenuOpen((prev) => !prev);
+    } else {
+      setDesktopSidebarOpen((prev) => !prev);
+    }
+  }
+
   function selectTab(next: StudentTab) {
     setActiveTab(next);
+    setMenuOpen(false);
+    if (autoHideSidebar) setDesktopSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
     <main className="dashboard-canvas glass-area min-h-screen text-slate-800">
-      {/* Top Sticky Header */}
-      <header className="dashboard-header sticky top-0 z-30 border-b px-4 py-3 print:hidden sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <BrandLogo alt={`Logo ${schoolDisplay}`} className="h-10 w-10 shrink-0 rounded-xl border border-white/20" />
-          <div className="min-w-0 flex-1">
-            <h1 className={`truncate text-sm font-extrabold sm:text-base ${isDark ? "text-white" : "text-slate-900"}`}>
-              {schoolDisplay}
-            </h1>
-            <p className={`truncate text-xs font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
-              Portal Siswa · {resolvedKelasNama ? resolvedKelasNama : "Warga Belajar"}
-              {sandboxRole ? " · Sandbox Preview" : ""}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => selectTab("profil")}
-            title="Profil & Berkas Dapodik"
-            className={`flex shrink-0 items-center gap-2.5 rounded-full border py-1 pl-3 pr-1 transition ${
-              isDark
-                ? "border-slate-700/80 bg-slate-800/80 hover:border-amber-400/50"
-                : "border-slate-200/90 bg-white/90 hover:border-indigo-200 hover:bg-indigo-50/50"
-            }`}
-          >
-            <div className="hidden min-w-0 text-right sm:block">
-              <p className={`max-w-[160px] truncate text-xs font-bold leading-tight ${isDark ? "text-white" : "text-slate-900"}`}>
-                {nama}
-              </p>
-              <p className={`inline-flex items-center justify-end gap-1 text-[10px] font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
-                <UserRound size={10} aria-hidden="true" />
-                {nisn ? `NISN ${nisn}` : "Profil Siswa"}
-              </p>
+      <div className="mx-auto flex min-h-screen max-w-[1600px]">
+        {/* Sidebar Navigasi Siswa */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-300 ease-in-out print:hidden ${
+            menuOpen
+              ? "visible w-72 translate-x-0 p-3.5 opacity-100"
+              : "pointer-events-none invisible w-72 -translate-x-full p-3.5 opacity-0"
+          } ${
+            desktopSidebarOpen
+              ? "lg:pointer-events-auto lg:visible lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:translate-x-0 lg:p-3.5 lg:opacity-100"
+              : "lg:pointer-events-none lg:invisible lg:sticky lg:top-0 lg:h-screen lg:w-0 lg:shrink-0 lg:-translate-x-full lg:overflow-hidden lg:border-r-0 lg:p-0 lg:opacity-0"
+          } ${palette.aside}`}
+        >
+          <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
+            <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
+              <BrandLogo alt={`Logo ${schoolDisplay}`} className="h-9 w-9 rounded-xl border border-white/20" />
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-xs font-black uppercase tracking-wide ${palette.schoolName}`}>
+                  {schoolDisplay}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  <span className={`text-[10px] font-bold uppercase ${palette.roleText}`}>
+                    WARGA BELAJAR / SISWA
+                  </span>
+                </div>
+              </div>
             </div>
-            <span
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black shadow-sm ${
-                isDark
-                  ? "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950"
-                  : "bg-gradient-to-br from-indigo-500 to-cyan-500 text-white"
-              }`}
-            >
-              {userInitials}
-            </span>
-          </button>
-
-          {onBackToAdmin ? (
-            <button
-              type="button"
-              onClick={onBackToAdmin}
-              className="whitespace-nowrap rounded-xl border border-indigo-200 bg-white/90 px-3.5 py-2 text-xs font-bold text-indigo-800 transition hover:bg-indigo-50"
-            >
-              Kembali ke Admin
-            </button>
-          ) : (
-            onLogout && (
+            <div className="flex shrink-0 items-center gap-1">
               <button
-                disabled={busy}
                 type="button"
-                onClick={onLogout}
-                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3.5 py-2 text-xs font-bold transition disabled:opacity-50 ${
-                  isDark
-                    ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/50 hover:text-amber-300"
-                    : "border-indigo-200 bg-white/90 text-indigo-700 hover:bg-white"
+                onClick={() => setAutoHideSidebar((prev) => !prev)}
+                aria-pressed={autoHideSidebar}
+                title={autoHideSidebar ? "Auto-hide aktif: sidebar menutup otomatis setelah menu dipilih" : "Aktifkan auto-hide sidebar"}
+                aria-label={autoHideSidebar ? "Nonaktifkan auto-hide sidebar" : "Aktifkan auto-hide sidebar"}
+                className={`hidden rounded-lg p-1.5 transition lg:inline-flex ${
+                  autoHideSidebar ? "bg-white/25 text-white ring-1 ring-white/40" : palette.closeBtn
                 }`}
               >
-                <LogOut size={14} aria-hidden="true" />
-                <span>Keluar</span>
+                {autoHideSidebar ? <PinOff size={15} aria-hidden="true" /> : <Pin size={15} aria-hidden="true" />}
               </button>
-            )
-          )}
-        </div>
-      </header>
+              <button
+                type="button"
+                onClick={() => setDesktopSidebarOpen(false)}
+                title="Sembunyikan sidebar"
+                aria-label="Sembunyikan sidebar"
+                className={`hidden rounded-lg p-1.5 transition lg:inline-flex ${palette.closeBtn}`}
+              >
+                <PanelLeftClose size={16} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Tutup menu siswa"
+                className={`rounded-lg p-1.5 lg:hidden ${palette.closeBtn}`}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
 
-      <div className="animate-page-enter mx-auto max-w-6xl space-y-5 px-4 py-5 pb-28 sm:px-6 md:pb-8">
+          <nav aria-label="Navigasi Portal Siswa" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 space-y-1 overflow-y-auto pr-0.5">
+            <p className={`mb-2 px-3 text-[10px] font-black uppercase tracking-wider ${palette.sectionLabel}`}>
+              NAVIGASI WARGA BELAJAR
+            </p>
+            {STUDENT_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  title={tab.label}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => selectTab(tab.id)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
+                    active ? palette.itemActive : palette.itemInactive
+                  }`}
+                >
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                      active ? palette.itemActiveIcon : palette.itemIcon
+                    }`}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                  </span>
+                  <span className="leading-snug">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className={`mt-3 shrink-0 space-y-2.5 border-t pt-3 ${palette.footerDivider}`}>
+            <div className={`rounded-2xl border p-3 ${palette.tierCard}`}>
+              <p className={`truncate text-xs font-extrabold ${palette.schoolName}`}>{nama}</p>
+              <p className={`mt-0.5 truncate text-[11px] font-semibold ${palette.tierLabel}`}>
+                {resolvedKelasNama ? resolvedKelasNama : "Belum Ditempatkan di Kelas"}
+              </p>
+              {nisn && (
+                <p className={`mt-1 font-mono text-[10px] font-bold opacity-85 ${palette.tierLabel}`}>
+                  NISN {nisn}
+                </p>
+              )}
+            </div>
+
+            <PWAInstallButton
+              compact
+              className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${palette.tierCard}`}
+            />
+
+            {onBackToAdmin ? (
+              <button
+                type="button"
+                onClick={onBackToAdmin}
+                className={`flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2.5 text-xs font-bold transition ${palette.logoutBtn}`}
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+                Kembali ke Admin
+              </button>
+            ) : (
+              onLogout && (
+                <button
+                  disabled={busy}
+                  type="button"
+                  onClick={onLogout}
+                  className={`flex w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2.5 text-xs font-bold transition disabled:opacity-50 ${palette.logoutBtn}`}
+                >
+                  <LogOut size={14} aria-hidden="true" />
+                  Keluar
+                </button>
+              )
+            )}
+          </div>
+        </aside>
+
+        {menuOpen && (
+          <button
+            type="button"
+            aria-label="Tutup menu siswa"
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-[1px] print:hidden lg:hidden"
+          />
+        )}
+
+        {/* Konten Utama */}
+        <div className="min-w-0 flex-1 transition-all duration-300">
+          <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 print:hidden sm:mx-6 sm:mt-6 sm:px-6">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              title={desktopSidebarOpen ? "Sembunyikan sidebar" : "Tampilkan sidebar"}
+              aria-label="Buka atau tutup menu siswa"
+              aria-expanded={menuOpen || desktopSidebarOpen}
+              className={`inline-flex shrink-0 items-center justify-center rounded-xl p-2 transition ${palette.headerMenuBtn}`}
+            >
+              <Menu size={20} className="lg:hidden" aria-hidden="true" />
+              {desktopSidebarOpen ? (
+                <PanelLeftClose size={20} className="hidden lg:block" aria-hidden="true" />
+              ) : (
+                <PanelLeftOpen size={20} className="hidden lg:block" aria-hidden="true" />
+              )}
+            </button>
+            {isDark && (
+              <BrandLogo alt={`Logo ${schoolDisplay}`} className="hidden h-9 w-9 rounded-xl border border-white/15 sm:block" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className={`inline-block max-w-full truncate rounded-lg text-sm font-extrabold ${isDark ? "px-0 py-0.5 text-white sm:text-base" : `px-3 py-1 ${palette.headerSchoolPill}`}`}>
+                  {schoolDisplay}
+                </h1>
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                    isDark
+                      ? "border-amber-400/35 bg-amber-500/15 text-amber-200"
+                      : "border-indigo-200 bg-indigo-50 text-indigo-800"
+                  }`}
+                >
+                  Warga Belajar · {resolvedKelasNama ? resolvedKelasNama : "Siswa"}
+                  {sandboxRole ? " · Sandbox" : ""}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => selectTab("profil")}
+              aria-current={activeTab === "profil" ? "page" : undefined}
+              title="Profil & Berkas Dapodik"
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border py-1 pl-3 pr-1 text-left transition ${
+                activeTab === "profil"
+                  ? isDark
+                    ? "border-amber-400/60 bg-amber-500/15 ring-2 ring-amber-400/30"
+                    : "border-indigo-300 bg-indigo-50/90 ring-2 ring-indigo-200"
+                  : isDark
+                    ? "border-slate-700/80 bg-slate-800/80 hover:border-amber-400/50"
+                    : "border-slate-200/90 bg-white/90 hover:border-indigo-200 hover:bg-indigo-50/50"
+              }`}
+            >
+              <div className="hidden min-w-0 text-right sm:block">
+                <p className={`max-w-[160px] truncate text-xs font-bold leading-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+                  {nama}
+                </p>
+                <p className={`inline-flex items-center justify-end gap-1 text-[10px] font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
+                  <UserRound size={10} aria-hidden="true" />
+                  {nisn ? `NISN ${nisn}` : "Profil Siswa"}
+                </p>
+              </div>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black text-white shadow-sm ${palette.headerAvatar}`}>
+                {userInitials}
+              </span>
+            </button>
+          </header>
+
+          <div className={`animate-page-enter mx-auto ${desktopSidebarOpen ? "max-w-7xl" : "max-w-full"} space-y-5 p-4 pb-28 transition-all duration-300 sm:p-6 md:pb-8`}>
         {/* Welcome Hero Banner with Automatic Attendance Badge & Active Class/Paket */}
         <section
           className={`relative overflow-hidden rounded-3xl border p-5 shadow-sm print:hidden sm:p-6 ${
@@ -552,40 +715,7 @@ export function StudentPortal({
           </div>
         </section>
 
-        {/* 6-Tab Main Navigation Bar */}
-        <nav
-          aria-label="Navigasi Portal Siswa"
-          className={`rounded-2xl border p-2 shadow-xs print:hidden ${
-            isDark ? "border-slate-700/80 bg-slate-900/85" : "border-white/85 bg-white/90 backdrop-blur-xl"
-          }`}
-        >
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
-            {STUDENT_TABS.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => selectTab(tab.id)}
-                  className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-extrabold transition sm:text-[13px] ${
-                    active
-                      ? isDark
-                        ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-sm"
-                        : "bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-sm"
-                      : isDark
-                        ? "text-slate-300 hover:bg-slate-800 hover:text-white"
-                        : "text-slate-700 hover:bg-indigo-50/80 hover:text-indigo-800"
-                  }`}
-                >
-                  <Icon size={16} className="shrink-0" aria-hidden="true" />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
+        {/* Konten menu aktif dirender dari Sidebar Kiri */}
 
         {error && (
           <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800 print:hidden">
@@ -663,6 +793,8 @@ export function StudentPortal({
             </div>
           )}
         </div>
+        </div>
+      </div>
       </div>
 
       {/* Mobile Bottom Navigation Bar (PWA-friendly, all 6 items) */}

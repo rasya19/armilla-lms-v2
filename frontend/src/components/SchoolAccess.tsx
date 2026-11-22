@@ -146,7 +146,7 @@ type SchoolMenuItem = {
   requiredPlan?: Exclude<PlanSlug, "basic">;
 };
 
-type SchoolNavGroupId = "beranda" | "master" | "kbm" | "cbt" | "rapor" | "pengaturan";
+type SchoolNavGroupId = "master" | "kbm" | "cbt" | "rapor" | "pengaturan";
 
 type SchoolNavGroup = {
   id: SchoolNavGroupId;
@@ -161,16 +161,12 @@ function isSchoolDataKind(view: SchoolView): view is ActiveDataKind {
   return DATA_KINDS.has(view);
 }
 
+const SIDEBAR_TOP_LEVEL_ITEMS: SchoolMenuItem[] = [
+  { label: "Dashboard Utama", icon: LayoutDashboard, target: "dashboard" },
+  { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
+];
+
 const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
-  {
-    id: "beranda",
-    label: "Beranda & Penerimaan",
-    icon: Home,
-    items: [
-      { label: "Dashboard Utama", icon: LayoutDashboard, target: "dashboard" },
-      { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
-    ],
-  },
   {
     id: "master",
     label: "Master Data",
@@ -674,7 +670,6 @@ export function SchoolHome() {
   const [mapelSkkTab, setMapelSkkTab] = useState<"mapel" | "skk">("mapel");
   const [menuOpen, setMenuOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<SchoolNavGroupId, boolean>>({
-    beranda: true,
     master: true,
     kbm: true,
     cbt: false,
@@ -1176,6 +1171,36 @@ function SchoolSidebar({
 
       <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
         <p className={`mb-2 px-3 text-[10px] font-black uppercase tracking-wider ${palette.sectionLabel}`}>NAVIGASI PORTAL E-UJIAN</p>
+
+        <div className="mb-2.5 space-y-1">
+          {SIDEBAR_TOP_LEVEL_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = view === item.target;
+            return (
+              <button
+                key={item.target}
+                type="button"
+                title={item.label}
+                data-sidebar-nav="true"
+                aria-current={active ? "page" : undefined}
+                onMouseEnter={() => prefetchForView(item.target)}
+                onClick={() => onSelectView(item.target, item.requiredPlan, item.label)}
+                className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
+                  active ? palette.dashboardActive : palette.dashboardInactive
+                }`}
+              >
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                    active ? palette.dashboardActiveIcon : palette.dashboardInactiveIcon
+                  }`}
+                >
+                  <Icon size={15} />
+                </span>
+                <span className="truncate leading-snug">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
 
         <div className="space-y-2">
           {SIDEBAR_NAV_GROUPS.map((group) => {

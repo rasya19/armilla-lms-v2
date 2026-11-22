@@ -30,11 +30,11 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
   const router = Router();
 
   // ==========================================
-  // 1. MODUL KESETARAAN & SKK (REGULER+)
+  // 1. MODUL KESETARAAN & SKK (BASIC+)
   // ==========================================
   router.get("/modul-kesetaraan", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -64,7 +64,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.post("/modul-kesetaraan/seed", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -116,7 +116,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.post("/modul-kesetaraan", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -165,7 +165,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.patch("/modul-kesetaraan/:id", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -215,7 +215,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.delete("/modul-kesetaraan/:id", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 

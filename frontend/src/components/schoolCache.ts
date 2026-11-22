@@ -190,19 +190,53 @@ export function prefetchForView(view: string): void {
     case "mapel":
     case "akademik":
       void prefetchEndpoint("/api/sekolah/akademik");
+      void prefetchEndpoint("/api/sekolah/modul-kesetaraan");
+      break;
+    case "modul-kesetaraan":
+      void prefetchEndpoint("/api/sekolah/modul-kesetaraan");
       break;
     case "ppdb":
       void prefetchEndpoint("/api/sekolah/ppdb?page=1&limit=10");
       break;
     case "ruang-kbm":
+    case "materi-ajar":
+    case "tugas-penilaian":
       void prefetchEndpoint("/api/sekolah/ruang-kbm");
       break;
-    case "rekap-akademik":
     case "presensi":
+      void prefetchEndpoint("/api/sekolah/rekap-akademik?scope=presensi");
+      break;
+    case "rekap-akademik":
       void prefetchEndpoint("/api/sekolah/rekap-akademik");
       break;
     case "verval-dapodik":
       void prefetchEndpoint("/api/verval/siswa?page=1&limit=25");
+      break;
+    case "ruang-diskusi":
+      void prefetchEndpoint("/api/sekolah/diskusi");
+      break;
+    case "cbt-bank-soal":
+    case "cbt-jadwal":
+    case "cbt-monitoring":
+      void prefetchEndpoint("/api/sekolah/cbt/ujian");
+      break;
+    case "cek-raport":
+      void prefetchEndpoint("/api/sekolah/raport");
+      break;
+    case "kartu-digital-qr":
+      void prefetchEndpoint("/api/sekolah/kartu-digital");
+      break;
+    case "keuangan-spp":
+      void prefetchEndpoint("/api/sekolah/keuangan");
+      break;
+    case "data-alumni":
+      void prefetchEndpoint("/api/sekolah/alumni");
+      break;
+    case "manajemen-aset":
+      void prefetchEndpoint("/api/sekolah/aset");
+      break;
+    case "akreditasi-snp":
+      void prefetchEndpoint("/api/sekolah/akreditasi-snp");
       break;
     case "tema-identitas":
       void prefetchEndpoint("/api/sekolah/identitas");

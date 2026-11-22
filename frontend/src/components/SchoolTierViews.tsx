@@ -8,6 +8,7 @@ import {
   Copy,
   FileSpreadsheet,
   Globe,
+  KeyRound,
   Lock,
   Palette,
   RefreshCw,
@@ -366,7 +367,8 @@ export function SchoolAcademicRecap({
   mode?: "rekap" | "presensi";
 }) {
   const isDark = useTenantTheme() === "dark";
-  const endpoint = "/api/sekolah/rekap-akademik";
+  const isPresensiMode = mode === "presensi";
+  const endpoint = isPresensiMode ? "/api/sekolah/rekap-akademik?scope=presensi" : "/api/sekolah/rekap-akademik";
   const [data, setData] = useState<RecapData | null>(() => getCached<RecapData>(endpoint));
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
@@ -395,14 +397,13 @@ export function SchoolAcademicRecap({
         }
       });
     return () => controller.abort();
-  }, [version]);
+  }, [endpoint, version]);
 
   const presensiPct =
     data && data.summary.presensi.total > 0
       ? Math.round((data.summary.presensi.hadir / data.summary.presensi.total) * 100)
       : null;
 
-  const isPresensiMode = mode === "presensi";
   const cardSurface = isDark
     ? "rounded-2xl border border-slate-700/60 bg-slate-900/75 p-4 text-slate-100 shadow-lg"
     : "rounded-2xl border border-white bg-white p-4 text-slate-900 shadow-xs";
@@ -416,7 +417,7 @@ export function SchoolAcademicRecap({
             ? "Pantau rekapitulasi kehadiran (Hadir, Sakit, Izin, Alpa) warga belajar per kelas secara real-time dari aktivitas Ruang KBM."
             : "Ringkasan nilai tugas, evaluasi akhir, materi ajar, serta tingkat kehadiran siswa per kelas secara real-time."
         }
-        badge="Paket Reguler+"
+        badge={isPresensiMode ? "Paket Basic+" : "Paket Reguler+"}
         action={
           <button type="button" onClick={onOpenClassroom} className="dashboard-hero-action">
             <ClipboardCheck size={17} aria-hidden="true" />
@@ -624,7 +625,15 @@ type IdentityPayload = {
   };
 };
 
-export function SchoolThemeIdentityView() {
+export function SchoolThemeIdentityView({
+  onOpenPassword,
+  onOpenAdvanced,
+  canUsePro = false,
+}: {
+  onOpenPassword?: () => void;
+  onOpenAdvanced?: () => void;
+  canUsePro?: boolean;
+} = {}) {
   const isDark = useTenantTheme() === "dark";
   const initialIdentity = getCached<IdentityPayload>("/api/sekolah/identitas");
   const [selectedTheme, setSelectedTheme] = useState<ThemeKey>(() =>
@@ -753,8 +762,27 @@ export function SchoolThemeIdentityView() {
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         eyebrow="TAMPILAN & BRANDING"
-        title="Tema & Identitas Sekolah"
-        description="Seluruh paket menggunakan tema platform seragam dari Master Admin, serta kustomisasi identitas lembaga PKBM Anda."
+        title="Profil & Identitas Sekolah"
+        description="Seluruh paket menggunakan tema platform seragam dari Master Admin, serta kelola identitas portal dan keamanan akun sekolah Anda."
+        action={
+          (onOpenPassword || onOpenAdvanced) ? (
+            <div className="flex flex-wrap gap-2">
+              {onOpenPassword && (
+                <button type="button" onClick={onOpenPassword} className="dashboard-hero-action">
+                  <KeyRound size={15} aria-hidden="true" />
+                  Ganti Password
+                </button>
+              )}
+              {onOpenAdvanced && (
+                <button type="button" onClick={onOpenAdvanced} className="dashboard-hero-action dashboard-hero-secondary">
+                  {!canUsePro && <Lock size={14} aria-hidden="true" />}
+                  <Settings2 size={15} aria-hidden="true" />
+                  Pengaturan Lanjutan
+                </button>
+              )}
+            </div>
+          ) : undefined
+        }
       />
 
       {error && (

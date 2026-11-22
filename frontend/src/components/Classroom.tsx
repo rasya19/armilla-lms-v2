@@ -31,7 +31,7 @@ function failureMessage(failure: unknown) {
   return describeFetchError(failure, "Ruang kelas belum dapat dimuat.");
 }
 
-export function Classroom({ role, sandboxRole }: { role: Role; sandboxRole?: "GURU" | "SISWA" }) {
+export function Classroom({ role, sandboxRole, initialTab }: { role: Role; sandboxRole?: "GURU" | "SISWA"; initialTab?: "materi" | "tugas" }) {
   const base = `/api/${role === "ADMIN" ? "sekolah" : "lms"}/ruang-kbm`;
   const cacheKey = `${base}::${sandboxRole ?? "real"}`;
   const [rooms, setRooms] = useState<Room[] | null>(() => getCached<Room[]>(cacheKey));
@@ -52,9 +52,13 @@ export function Classroom({ role, sandboxRole }: { role: Role; sandboxRole?: "GU
     });
     return () => controller.abort();
   }, [base, cacheKey, version, sandboxRole]);
-  if (selected) return <ClassroomWorkspace key={selected} role={role} sandboxRole={sandboxRole} base={base} kelasId={selected} onExit={() => { setSelected(null); setVersion((value) => value + 1); }} />;
+  if (selected) return <ClassroomWorkspace key={`${selected}-${initialTab ?? "materi"}`} role={role} sandboxRole={sandboxRole} initialTab={initialTab} base={base} kelasId={selected} onExit={() => { setSelected(null); setVersion((value) => value + 1); }} />;
+  const lobbyTitle = initialTab === "tugas" ? "Tugas & Penilaian KBM" : initialTab === "materi" ? "Materi Ajar (Modul KBM)" : "Ruang KBM & Materi";
+  const lobbyDescription = initialTab === "tugas"
+    ? "Pilih kelas untuk membuat tugas, memantau pengumpulan, dan memberi nilai warga belajar."
+    : "Masuk ke kelas untuk mengelola modul bahan ajar, pengumuman, dan aktivitas belajar bersama.";
   return <section className="dashboard-glass space-y-6 rounded-2xl p-6">
-    <DashboardHero title="Ruang KBM & Materi" description="Masuk ke kelas untuk mengikuti kegiatan belajar, materi ajar, dan tugas bersama." />
+    <DashboardHero title={lobbyTitle} description={lobbyDescription} />
     {error ? <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error} <button type="button" className="font-bold underline" onClick={() => setVersion((value) => value + 1)}>Coba lagi</button></p> : !rooms ? <CardGridSkeleton count={3} columns={3} /> : rooms.length === 0 ? <EmptyState title={role === "SISWA" ? "Belum tergabung di ruang kelas" : "Belum ada ruang kelas"} description={role === "SISWA" ? "Anda belum tergabung di ruang kelas. Hubungi operator sekolah untuk penempatan kelas." : "Tambahkan kelas di Manajemen Kelas terlebih dahulu."} /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rooms.map((item) => <article key={item.id} className="dashboard-glass space-y-3 rounded-2xl p-5">
       <div className="flex items-center gap-3"><span className="rounded-xl bg-indigo-100 p-3 text-indigo-700"><GraduationCap size={22} /></span><div><h2 className="font-bold text-slate-900">{role === "SISWA" ? `Selamat Datang di ${item.nama}` : item.nama}</h2><p className="text-sm text-slate-700">Wali Kelas: {item.wali ?? "Belum ditentukan"}</p></div></div>
       <p className="text-sm text-slate-700">{item.jumlahSiswa} siswa · {item.jumlahMapel} mapel · {item.tugasAktif} tugas aktif</p>
@@ -63,7 +67,7 @@ export function Classroom({ role, sandboxRole }: { role: Role; sandboxRole?: "GU
   </section>;
 }
 
-function ClassroomWorkspace({ role, sandboxRole, base, kelasId, onExit }: { role: Role; sandboxRole?: "GURU" | "SISWA"; base: string; kelasId: string; onExit: () => void }) {
+function ClassroomWorkspace({ role, sandboxRole, initialTab, base, kelasId, onExit }: { role: Role; sandboxRole?: "GURU" | "SISWA"; initialTab?: "materi" | "tugas"; base: string; kelasId: string; onExit: () => void }) {
   const endpoint = `${base}/${encodeURIComponent(kelasId)}`;
   const detailCacheKey = `${endpoint}::${sandboxRole ?? "real"}`;
   const [data, setData] = useState<Details | null>(() => getCached<Details>(detailCacheKey));
@@ -71,7 +75,7 @@ function ClassroomWorkspace({ role, sandboxRole, base, kelasId, onExit }: { role
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
-  const [tab, setTab] = useState<"materi" | "tugas" | "warga">("materi");
+  const [tab, setTab] = useState<"materi" | "tugas" | "warga">(initialTab ?? "materi");
   const [mapelId, setMapelId] = useState("");
   useEffect(() => {
     const controller = new AbortController();

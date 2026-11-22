@@ -405,11 +405,11 @@ export function tahap2ProRoutes(getSchoolSession: SchoolContextResolver) {
   });
 
   // ==========================================
-  // 3. KARTU PELAJAR DIGITAL QR (PRO)
+  // 3. KARTU PELAJAR DIGITAL QR (REGULER+)
   // ==========================================
   router.get("/kartu-digital", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "pro");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -471,11 +471,11 @@ export function tahap2ProRoutes(getSchoolSession: SchoolContextResolver) {
   });
 
   // ==========================================
-  // 4. DATA ALUMNI & TRACER STUDY (REGULER+)
+  // 4. DATA ALUMNI & TRACER STUDY (PRO)
   // ==========================================
   router.get("/alumni", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "pro");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -505,7 +505,7 @@ export function tahap2ProRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.post("/alumni", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "pro");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -556,7 +556,7 @@ export function tahap2ProRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.patch("/alumni/:id", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "pro");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
@@ -591,7 +591,7 @@ export function tahap2ProRoutes(getSchoolSession: SchoolContextResolver) {
 
   router.delete("/alumni/:id", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "pro");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const deleted = await prisma.alumniTracer.deleteMany({
         where: { id: req.params.id, sekolahId: auth.session.sekolahId },

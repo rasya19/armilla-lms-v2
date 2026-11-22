@@ -50,7 +50,8 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
 
   router.get("/rekap-akademik", async (req, res) => {
     try {
-      const gate = await requirePlan(req, "reguler");
+      const scope = typeof req.query.scope === "string" ? req.query.scope.trim().toLowerCase() : "";
+      const gate = await requirePlan(req, scope === "presensi" ? "basic" : "reguler");
       if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
       const { sekolahId } = gate;
 

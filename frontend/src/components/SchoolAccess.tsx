@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
-  ArrowLeftRight,
   Award,
   BarChart3,
   BookOpen,
@@ -17,10 +16,8 @@ import {
   Database,
   Eye,
   EyeOff,
-  FileText,
   GraduationCap,
   Home,
-  KeyRound,
   Layers,
   LayoutDashboard,
   LayoutGrid,
@@ -35,9 +32,7 @@ import {
   RefreshCw,
   Server,
   Settings,
-  Settings2,
   ShieldCheck,
-  SlidersHorizontal,
   UserCheck,
   Users,
   Wallet,
@@ -66,7 +61,6 @@ import {
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { getPlanBySlug, hasPlanAccess, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import {
-  AgendaMengajarView,
   CekRaportView,
   ModulKesetaraanView,
 } from "./SchoolEquivalenceRaport";
@@ -109,7 +103,6 @@ const DEVELOPER_EMAIL = "ismantoj88@gmail.com";
 type SchoolModuleId =
   | "modul-kesetaraan"
   | "akreditasi-snp"
-  | "agenda-mengajar"
   | "data-alumni"
   | "cek-raport"
   | "cbt-bank-soal"
@@ -122,12 +115,16 @@ type SchoolModuleId =
   | "manajemen-aset"
   | "kartu-digital-qr";
 
+type ActiveDataKind = Exclude<SchoolDataKind, "akademik">;
+
 type SchoolView =
-  | SchoolDataKind
+  | ActiveDataKind
   | SchoolModuleId
   | "dashboard"
   | "password"
   | "ruang-kbm"
+  | "materi-ajar"
+  | "tugas-penilaian"
   | "impor-dapodik"
   | "penempatan-kelas"
   | "verval-dapodik"
@@ -139,53 +136,90 @@ type SchoolView =
 type SchoolMenuItem = {
   label: string;
   icon: LucideIcon;
-  target: Exclude<SchoolView, "dashboard">;
+  target: SchoolView;
   requiredPlan?: Exclude<PlanSlug, "basic">;
 };
 
-const DATA_KINDS = new Set<SchoolView>(["siswa", "guru", "ppdb", "kelas", "mapel", "akademik"]);
+type SchoolNavGroupId = "beranda" | "master" | "kbm" | "cbt" | "rapor" | "pengaturan";
 
-function isSchoolDataKind(view: SchoolView): view is SchoolDataKind {
+type SchoolNavGroup = {
+  id: SchoolNavGroupId;
+  label: string;
+  icon: LucideIcon;
+  items: SchoolMenuItem[];
+};
+
+const DATA_KINDS = new Set<SchoolView>(["siswa", "guru", "ppdb", "kelas", "mapel"]);
+
+function isSchoolDataKind(view: SchoolView): view is ActiveDataKind {
   return DATA_KINDS.has(view);
 }
 
-const masterItems: SchoolMenuItem[] = [
-  { label: "Data Siswa", icon: Users, target: "siswa" },
-  { label: "Data Guru", icon: GraduationCap, target: "guru" },
-  { label: "Kelola Mapel", icon: BookOpen, target: "mapel" },
-  { label: "Manajemen Kelas", icon: Building2, target: "kelas" },
-  { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
-  { label: "Verval Dapodik", icon: ClipboardCheck, target: "verval-dapodik" },
-  { label: "Modul Kesetaraan", icon: Layers, target: "modul-kesetaraan", requiredPlan: "reguler" },
-  { label: "Akreditasi 8 SNP", icon: ShieldCheck, target: "akreditasi-snp", requiredPlan: "pro" },
-];
-
-const academicItems: SchoolMenuItem[] = [
-  { label: "Tahun & Jadwal", icon: CalendarDays, target: "akademik" },
-  { label: "Agenda & Jurnal Mengajar", icon: FileText, target: "agenda-mengajar" },
-  { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi", requiredPlan: "reguler" },
-  { label: "Ruang KBM & Materi", icon: BookOpen, target: "ruang-kbm" },
-  { label: "Data Alumni (Tracer Study)", icon: Briefcase, target: "data-alumni", requiredPlan: "reguler" },
-  { label: "Kenaikan Kelas Massal", icon: ArrowLeftRight, target: "penempatan-kelas", requiredPlan: "reguler" },
-  { label: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler" },
-  { label: "Analitik & Rekap Nilai", icon: BarChart3, target: "rekap-akademik", requiredPlan: "reguler" },
-];
-
-const cbtItems: SchoolMenuItem[] = [
-  { label: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler" },
-  { label: "Jadwal Ujian CBT", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler" },
-  { label: "Monitoring Ujian Live", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler" },
-  { label: "Pengaturan Ujian", icon: SlidersHorizontal, target: "cbt-pengaturan", requiredPlan: "reguler" },
-];
-
-const standaloneItems: SchoolMenuItem[] = [
-  { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
-  { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
-  { label: "Asisten Belajar AI", icon: Bot, target: "asisten-ai", requiredPlan: "pro" },
-  { label: "Tema & Identitas Sekolah", icon: Palette, target: "tema-identitas" },
-  { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro" },
-  { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "pro" },
-  { label: "Ganti Password", icon: KeyRound, target: "password" },
+const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
+  {
+    id: "beranda",
+    label: "Beranda & Penerimaan",
+    icon: Home,
+    items: [
+      { label: "Dashboard Utama", icon: LayoutDashboard, target: "dashboard" },
+      { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
+    ],
+  },
+  {
+    id: "master",
+    label: "Master Data",
+    icon: Database,
+    items: [
+      { label: "Data Siswa (Warga Belajar)", icon: Users, target: "siswa" },
+      { label: "Verval Siswa / Dapodik", icon: ClipboardCheck, target: "verval-dapodik" },
+      { label: "Data Guru / Tutor", icon: GraduationCap, target: "guru" },
+      { label: "Manajemen Kelas (Rombel)", icon: Building2, target: "kelas" },
+      { label: "Kelola Mapel & Bobot SKK", icon: Layers, target: "mapel" },
+    ],
+  },
+  {
+    id: "kbm",
+    label: "Ruang Belajar (KBM)",
+    icon: BookOpen,
+    items: [
+      { label: "Materi Ajar (Modul)", icon: BookOpen, target: "materi-ajar" },
+      { label: "Tugas & Penilaian", icon: ClipboardList, target: "tugas-penilaian" },
+      { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi" },
+      { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
+    ],
+  },
+  {
+    id: "cbt",
+    label: "Ujian Online (CBT)",
+    icon: MonitorCheck,
+    items: [
+      { label: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler" },
+      { label: "Jadwal & Token Ujian", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler" },
+      { label: "Monitoring & Hasil CBT", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler" },
+    ],
+  },
+  {
+    id: "rapor",
+    label: "Rapor & Administrasi",
+    icon: Award,
+    items: [
+      { label: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler" },
+      { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "reguler" },
+      { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
+      { label: "Data Alumni & Tracer Study", icon: Briefcase, target: "data-alumni", requiredPlan: "pro" },
+      { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro" },
+      { label: "Akreditasi 8 SNP", icon: ShieldCheck, target: "akreditasi-snp", requiredPlan: "pro" },
+    ],
+  },
+  {
+    id: "pengaturan",
+    label: "Pengaturan & AI",
+    icon: Settings,
+    items: [
+      { label: "Asisten Belajar AI", icon: Bot, target: "asisten-ai", requiredPlan: "pro" },
+      { label: "Profil & Identitas Sekolah", icon: Palette, target: "tema-identitas" },
+    ],
+  },
 ];
 
 const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string; headerClass: string }> = {
@@ -628,11 +662,17 @@ export function SchoolHome() {
   const [error, setError] = useState("");
   const [view, setView] = useState<SchoolView>("dashboard");
   const [transitionAlternate, setTransitionAlternate] = useState(false);
-  const [dataKind, setDataKind] = useState<SchoolDataKind>("siswa");
+  const [dataKind, setDataKind] = useState<ActiveDataKind>("siswa");
+  const [mapelSkkTab, setMapelSkkTab] = useState<"mapel" | "skk">("mapel");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [masterOpen, setMasterOpen] = useState(true);
-  const [academicOpen, setAcademicOpen] = useState(false);
-  const [cbtOpen, setCbtOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<SchoolNavGroupId, boolean>>({
+    beranda: true,
+    master: true,
+    kbm: true,
+    cbt: false,
+    rapor: false,
+    pengaturan: true,
+  });
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
   const [refreshingPlan, setRefreshingPlan] = useState(false);
   const navigate = useNavigate();
@@ -808,6 +848,10 @@ export function SchoolHome() {
     setUpgradePrompt({ featureName, requiredPlan });
   }
 
+  function toggleGroup(groupId: SchoolNavGroupId) {
+    setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  }
+
   function selectView(next: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) {
     if (requiredPlan && !hasPlanAccess(plan, requiredPlan)) {
       openUpgradePrompt(label ?? "Fitur Premium", requiredPlan);
@@ -815,6 +859,10 @@ export function SchoolHome() {
     }
     if (next !== view) setTransitionAlternate((previous) => !previous);
     if (isSchoolDataKind(next)) setDataKind(next);
+    const parentGroup = SIDEBAR_NAV_GROUPS.find((g) => g.items.some((i) => i.target === next));
+    if (parentGroup) {
+      setOpenGroups((prev) => (prev[parentGroup.id] ? prev : { ...prev, [parentGroup.id]: true }));
+    }
     setView(next);
     setMenuOpen(false);
   }
@@ -822,11 +870,6 @@ export function SchoolHome() {
   const planStyle = PLAN_BADGE_STYLES[plan];
   const effectiveMode: SandboxMode = isDeveloper ? sandboxMode : "client";
   const effectiveRole: SandboxRole = isDeveloper ? sandboxRole : "ADMIN";
-
-  const visibleMasterItems = masterItems;
-  const visibleAcademicItems = academicItems;
-  const visibleCbtItems = cbtItems;
-  const visibleStandaloneItems = standaloneItems;
 
   if (status === "unauthorized") return <Navigate to="/login" replace />;
   if (status === "loading") return <PortalSpinner label="Memuat portal sekolah" />;
@@ -850,16 +893,8 @@ export function SchoolHome() {
         view={view}
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
-        masterOpen={masterOpen}
-        setMasterOpen={setMasterOpen}
-        academicOpen={academicOpen}
-        setAcademicOpen={setAcademicOpen}
-        cbtOpen={cbtOpen}
-        setCbtOpen={setCbtOpen}
-        visibleMasterItems={visibleMasterItems}
-        visibleAcademicItems={visibleAcademicItems}
-        visibleCbtItems={visibleCbtItems}
-        visibleStandaloneItems={visibleStandaloneItems}
+        openGroups={openGroups}
+        onToggleGroup={toggleGroup}
         refreshingPlan={refreshingPlan}
         onRefreshPlan={() => void refreshSessionProfile({ manual: true })}
         onSelectView={selectView}
@@ -902,7 +937,9 @@ export function SchoolHome() {
               />
             </section>
           )}
-          {view === "ruang-kbm" && <Classroom role="ADMIN" />}
+          {view === "ruang-kbm" && <Classroom key="kbm" role="ADMIN" />}
+          {view === "materi-ajar" && <Classroom key="materi" role="ADMIN" initialTab="materi" />}
+          {view === "tugas-penilaian" && <Classroom key="tugas" role="ADMIN" initialTab="tugas" />}
           {view === "verval-dapodik" && <VervalDapodikView />}
           {view === "impor-dapodik" && hasPlanAccess(plan, "reguler") && (
             <SchoolImportPanel onGoToStudents={() => selectView("siswa")} />
@@ -910,37 +947,78 @@ export function SchoolHome() {
           {view === "penempatan-kelas" && hasPlanAccess(plan, "reguler") && (
             <SchoolBulkPlacementView />
           )}
-          {view === "presensi" && hasPlanAccess(plan, "reguler") && (
-            <SchoolAcademicRecap mode="presensi" onOpenClassroom={() => selectView("ruang-kbm")} />
+          {view === "presensi" && (
+            <SchoolAcademicRecap mode="presensi" onOpenClassroom={() => selectView("materi-ajar")} />
           )}
           {view === "rekap-akademik" && hasPlanAccess(plan, "reguler") && (
-            <SchoolAcademicRecap mode="rekap" onOpenClassroom={() => selectView("ruang-kbm")} />
+            <SchoolAcademicRecap mode="rekap" onOpenClassroom={() => selectView("materi-ajar")} />
           )}
-          {view === "tema-identitas" && <SchoolThemeIdentityView />}
+          {view === "tema-identitas" && (
+            <SchoolThemeIdentityView
+              canUsePro={hasPlanAccess(plan, "pro")}
+              onOpenPassword={() => selectView("password")}
+              onOpenAdvanced={() => selectView("pengaturan-lanjutan", "pro", "Pengaturan Lanjutan Tenant")}
+            />
+          )}
           {view === "pengaturan-lanjutan" && hasPlanAccess(plan, "pro") && (
             <SchoolAdvancedSettingsView
               onOpenTheme={() => selectView("tema-identitas")}
               onOpenClasses={() => selectView("kelas")}
             />
           )}
-          {view === "modul-kesetaraan" && hasPlanAccess(plan, "reguler") && <ModulKesetaraanView />}
-          {view === "agenda-mengajar" && <AgendaMengajarView />}
+          {view === "modul-kesetaraan" && <ModulKesetaraanView />}
+          {view === "mapel" && (
+            <div className="dashboard-glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  aria-pressed={mapelSkkTab === "mapel"}
+                  onClick={() => setMapelSkkTab("mapel")}
+                  className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
+                    mapelSkkTab === "mapel"
+                      ? "bg-sky-700 text-white shadow-xs"
+                      : "bg-white/75 text-slate-700 hover:bg-white"
+                  }`}
+                >
+                  Daftar Mata Pelajaran &amp; KKM
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={mapelSkkTab === "skk"}
+                  onClick={() => setMapelSkkTab("skk")}
+                  className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
+                    mapelSkkTab === "skk"
+                      ? "bg-sky-700 text-white shadow-xs"
+                      : "bg-white/75 text-slate-700 hover:bg-white"
+                  }`}
+                >
+                  Modul Kesetaraan &amp; Bobot SKK
+                </button>
+              </div>
+              <span className="px-2 text-xs font-semibold text-slate-600">Paket Basic+ · Paket A, B &amp; C</span>
+            </div>
+          )}
+          {view === "mapel" && mapelSkkTab === "skk" && <ModulKesetaraanView />}
           {view === "cek-raport" && hasPlanAccess(plan, "reguler") && <CekRaportView />}
-          {view === "cbt-bank-soal" && hasPlanAccess(plan, "reguler") && <CbtBankSoalView />}
-          {view === "cbt-jadwal" && hasPlanAccess(plan, "reguler") && <CbtJadwalView />}
+          {view === "cbt-bank-soal" && hasPlanAccess(plan, "reguler") && (
+            <CbtBankSoalView onOpenSettings={() => selectView("cbt-pengaturan", "reguler", "Pengaturan Ujian CBT")} />
+          )}
+          {view === "cbt-jadwal" && hasPlanAccess(plan, "reguler") && (
+            <CbtJadwalView onOpenSettings={() => selectView("cbt-pengaturan", "reguler", "Pengaturan Ujian CBT")} />
+          )}
           {view === "cbt-monitoring" && hasPlanAccess(plan, "reguler") && <CbtMonitoringView />}
           {view === "cbt-pengaturan" && hasPlanAccess(plan, "reguler") && <CbtPengaturanView />}
           {view === "akreditasi-snp" && hasPlanAccess(plan, "pro") && <AkreditasiSnpView />}
           {view === "keuangan-spp" && hasPlanAccess(plan, "pro") && <KeuanganSppView />}
-          {view === "kartu-digital-qr" && hasPlanAccess(plan, "pro") && <KartuDigitalQrView />}
-          {view === "data-alumni" && hasPlanAccess(plan, "reguler") && <DataAlumniView />}
+          {view === "kartu-digital-qr" && hasPlanAccess(plan, "reguler") && <KartuDigitalQrView />}
+          {view === "data-alumni" && hasPlanAccess(plan, "pro") && <DataAlumniView />}
           {view === "asisten-ai" && hasPlanAccess(plan, "pro") && <AsistenAiView />}
           {view === "manajemen-aset" && hasPlanAccess(plan, "pro") && <ManajemenAsetView />}
           {view === "ruang-diskusi" && <RuangDiskusiView />}
           <SchoolData
             slug={slug}
             kind={dataKind}
-            visible={isSchoolDataKind(view)}
+            visible={isSchoolDataKind(view) && (view !== "mapel" || mapelSkkTab === "mapel")}
             plan={plan}
             onRequireUpgrade={openUpgradePrompt}
           />
@@ -988,16 +1066,8 @@ function SchoolSidebar({
   view,
   menuOpen,
   setMenuOpen,
-  masterOpen,
-  setMasterOpen,
-  academicOpen,
-  setAcademicOpen,
-  cbtOpen,
-  setCbtOpen,
-  visibleMasterItems,
-  visibleAcademicItems,
-  visibleCbtItems,
-  visibleStandaloneItems,
+  openGroups,
+  onToggleGroup,
   refreshingPlan,
   onRefreshPlan,
   onSelectView,
@@ -1009,16 +1079,8 @@ function SchoolSidebar({
   view: SchoolView;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
-  masterOpen: boolean;
-  setMasterOpen: (open: boolean) => void;
-  academicOpen: boolean;
-  setAcademicOpen: (open: boolean) => void;
-  cbtOpen: boolean;
-  setCbtOpen: (open: boolean) => void;
-  visibleMasterItems: SchoolMenuItem[];
-  visibleAcademicItems: SchoolMenuItem[];
-  visibleCbtItems: SchoolMenuItem[];
-  visibleStandaloneItems: SchoolMenuItem[];
+  openGroups: Record<SchoolNavGroupId, boolean>;
+  onToggleGroup: (groupId: SchoolNavGroupId) => void;
   refreshingPlan: boolean;
   onRefreshPlan: () => void;
   onSelectView: (next: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
@@ -1030,7 +1092,11 @@ function SchoolSidebar({
 
   function renderMenuItem(item: SchoolMenuItem) {
     const Icon = item.icon;
-    const active = view === item.target;
+    const active =
+      view === item.target ||
+      (item.target === "mapel" && view === "modul-kesetaraan") ||
+      (item.target === "materi-ajar" && view === "ruang-kbm") ||
+      (item.target === "cbt-bank-soal" && view === "cbt-pengaturan");
     const locked = item.requiredPlan ? !hasPlanAccess(plan, item.requiredPlan) : false;
     return (
       <button
@@ -1043,7 +1109,7 @@ function SchoolSidebar({
           if (!locked) prefetchForView(item.target);
         }}
         onClick={() => onSelectView(item.target, item.requiredPlan, item.label)}
-        className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-bold transition-colors duration-200 ${
+        className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors duration-200 ${
           active ? palette.itemActive : locked ? palette.itemLocked : palette.itemInactive
         }`}
       >
@@ -1102,100 +1168,36 @@ function SchoolSidebar({
       </div>
 
       <nav aria-label="Menu sekolah" className="dashboard-scrollbar mt-3.5 min-h-0 flex-1 overflow-y-auto pr-0.5">
-        <button
-          type="button"
-          data-sidebar-nav="true"
-          aria-current={view === "dashboard" ? "page" : undefined}
-          onMouseEnter={() => prefetchForView("dashboard")}
-          onClick={() => onSelectView("dashboard")}
-          className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition ${
-            view === "dashboard" ? palette.dashboardActive : palette.dashboardInactive
-          }`}
-        >
-          <span
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-              view === "dashboard" ? palette.dashboardActiveIcon : palette.dashboardInactiveIcon
-            }`}
-          >
-            <LayoutDashboard size={15} />
-          </span>
-          <span className="truncate">Dashboard Utama</span>
-        </button>
+        <p className={`mb-2 px-3 text-[10px] font-black uppercase tracking-wider ${palette.sectionLabel}`}>NAVIGASI PORTAL E-UJIAN</p>
 
-        <p className={`mb-2 mt-4 px-3 text-[10px] font-black uppercase tracking-wider ${palette.sectionLabel}`}>MENU NAVIGASI</p>
-
-        <div className="space-y-1.5">
-          <div>
-            <button
-              type="button"
-              aria-expanded={masterOpen}
-              onClick={() => setMasterOpen(!masterOpen)}
-              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
-            >
-              <span className="flex items-center gap-2.5">
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
-                  <Database size={14} />
-                </span>
-                <span>Master Data</span>
-              </span>
-              {masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
-            {masterOpen && (
-              <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
-                {visibleMasterItems.map((item) => renderMenuItem(item))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <button
-              type="button"
-              aria-expanded={academicOpen}
-              onClick={() => setAcademicOpen(!academicOpen)}
-              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
-            >
-              <span className="flex items-center gap-2.5">
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
-                  <GraduationCap size={14} />
-                </span>
-                <span>Akademik &amp; Rapor</span>
-              </span>
-              {academicOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
-            {academicOpen && (
-              <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
-                {visibleAcademicItems.map((item) => renderMenuItem(item))}
-              </div>
-            )}
-          </div>
-
-          {visibleCbtItems.length > 0 && (
-            <div>
-              <button
-                type="button"
-                aria-expanded={cbtOpen}
-                onClick={() => setCbtOpen(!cbtOpen)}
-                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${palette.groupButton}`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
-                    <MonitorCheck size={14} />
+        <div className="space-y-2">
+          {SIDEBAR_NAV_GROUPS.map((group) => {
+            const GroupIcon = group.icon;
+            const isOpen = openGroups[group.id];
+            return (
+              <div key={group.id}>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => onToggleGroup(group.id)}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-bold transition ${palette.groupButton}`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${palette.groupIcon}`}>
+                      <GroupIcon size={14} />
+                    </span>
+                    <span>{group.label}</span>
                   </span>
-                  <span>Ujian Online (CBT)</span>
-                </span>
-                {cbtOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {cbtOpen && (
-                <div className={`ml-3 mt-1.5 space-y-1.5 border-l pl-2.5 ${palette.groupBorder}`}>
-                  {visibleCbtItems.map((item) => renderMenuItem(item))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className={`mt-2 space-y-1.5 border-t pt-2 ${palette.standaloneDivider}`}>
-          {visibleStandaloneItems.map((item) => renderMenuItem(item))}
+                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+                {isOpen && (
+                  <div className={`ml-3 mt-1 space-y-1 border-l pl-2.5 ${palette.groupBorder}`}>
+                    {group.items.map((item) => renderMenuItem(item))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </nav>
 
@@ -1331,9 +1333,9 @@ function SchoolMobileNav({
       {([
         { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => onSelectView("dashboard") },
         { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => onSelectView("siswa") },
-        { label: "Jadwal", icon: CalendarDays, active: !menuOpen && view === "akademik", click: () => onSelectView("akademik") },
+        { label: "Materi", icon: BookOpen, active: !menuOpen && (view === "materi-ajar" || view === "ruang-kbm"), click: () => onSelectView("materi-ajar") },
         { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => onSelectView("ppdb") },
-        { label: "Menu", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "akademik" && view !== "ppdb"), click: onOpenMenu },
+        { label: "Menu", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "materi-ajar" && view !== "ruang-kbm" && view !== "ppdb"), click: onOpenMenu },
       ] as const).map(({ label, icon: Icon, active, click }) =>
         isDark ? (
           <button
@@ -1362,7 +1364,7 @@ function SchoolMobileNav({
           >
             <span
               className={
-                label === "Jadwal"
+                label === "Materi"
                   ? `-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ${palette.mobileFab}`
                   : `rounded-xl p-1.5 ${active ? palette.mobileAccentBg : ""}`
               }

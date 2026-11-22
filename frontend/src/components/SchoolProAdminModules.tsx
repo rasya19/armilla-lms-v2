@@ -1297,7 +1297,7 @@ export function KartuDigitalQrView() {
     <div className="space-y-6">
       <div className="no-print space-y-6">
         <DashboardHero
-          eyebrow="IDENTITAS DIGITAL WARGA BELAJAR (PAKET PRO)"
+          eyebrow="IDENTITAS DIGITAL WARGA BELAJAR (PAKET REGULER+)"
           title="Kartu Pelajar Digital QR"
           description="Cetak kartu identitas warga belajar Paket A, B, dan C dengan kode QR verifikasi keaktifan unik secara satuan atau massal per kelas."
           action={
@@ -1384,7 +1384,7 @@ export function KartuDigitalQrView() {
 }
 
 // ==========================================
-// 4. DATA ALUMNI & TRACER STUDY (REGULER+)
+// 4. DATA ALUMNI & TRACER STUDY (PAKET PRO)
 // ==========================================
 type AlumniRow = {
   id: string;
@@ -1614,7 +1614,7 @@ export function DataAlumniView() {
   return (
     <div className="space-y-6">
       <DashboardHero
-        eyebrow="JEJAK LULUSAN & TRACER STUDY (PAKET REGULER+)"
+        eyebrow="JEJAK LULUSAN & TRACER STUDY (PAKET PRO)"
         title="Data Alumni & Tracer Study"
         description="Catat lulusan PKBM beserta nomor ijazah/SKL dan telusuri sebaran alumni yang bekerja, berwirausaha, atau melanjutkan pendidikan."
         action={

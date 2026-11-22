@@ -41,7 +41,7 @@ function inputClass(isDark: boolean) {
 }
 
 // ==========================================
-// 1. MODUL KESETARAAN & SKK (REGULER+)
+// 1. MODUL KESETARAAN & SKK (BASIC+)
 // ==========================================
 type ModulKesetaraanRow = {
   id: string;
@@ -245,7 +245,7 @@ export function ModulKesetaraanView() {
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
-        eyebrow="Kurikulum Kesetaraan · Paket Reguler+"
+        eyebrow="Kurikulum Kesetaraan · Paket Basic+"
         title="Modul Kesetaraan & Bobot SKK"
         description="Kelola struktur kelompok mata pelajaran Umum, Pemberdayaan, dan Keterampilan beserta Satuan Kredit Kompetensi (SKK) untuk Paket A, B, dan C."
         action={

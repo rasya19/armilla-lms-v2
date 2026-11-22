@@ -127,7 +127,7 @@ function useCbtOverview() {
 // ==========================================
 // 1. KELOLA BANK SOAL & UJIAN
 // ==========================================
-export function CbtBankSoalView() {
+export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => void } = {}) {
   const isDark = useTenantTheme() === "dark";
   const { ujianList, kelasList, mapelList, guruList, loading, error, setError, reload } = useCbtOverview();
   const [selectedUjianId, setSelectedUjianId] = useState("");
@@ -283,6 +283,14 @@ export function CbtBankSoalView() {
         eyebrow="Ujian Online (CBT) · Paket Reguler+"
         title="Kelola Bank Soal & Paket Ujian"
         description="Susun paket ujian per mata pelajaran dan tingkatan kelas, lengkap dengan butir soal Pilihan Ganda (A–E), Esai, kunci jawaban, dan bobot skor."
+        action={
+          onOpenSettings ? (
+            <button type="button" onClick={onOpenSettings} className="dashboard-hero-action dashboard-hero-secondary">
+              <SlidersHorizontal size={15} aria-hidden="true" />
+              Pengaturan Ujian
+            </button>
+          ) : undefined
+        }
       />
 
       {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
@@ -477,7 +485,7 @@ export function CbtBankSoalView() {
 // ==========================================
 // 2. JADWAL UJIAN CBT & TOKEN 6 KARAKTER
 // ==========================================
-export function CbtJadwalView() {
+export function CbtJadwalView({ onOpenSettings }: { onOpenSettings?: () => void } = {}) {
   const isDark = useTenantTheme() === "dark";
   const { ujianList, kelasList, loading, error, setError, reload } = useCbtOverview();
   const [busy, setBusy] = useState(false);
@@ -552,6 +560,14 @@ export function CbtJadwalView() {
         eyebrow="Ujian Online (CBT) · Paket Reguler+"
         title="Jadwal Sesi Ujian & Token Akses"
         description="Atur kelas target, rentang tanggal dan jam pelaksanaan sesi CBT, publikasi ujian, serta generate Token Ujian 6 karakter otomatis untuk peserta."
+        action={
+          onOpenSettings ? (
+            <button type="button" onClick={onOpenSettings} className="dashboard-hero-action dashboard-hero-secondary">
+              <SlidersHorizontal size={15} aria-hidden="true" />
+              Pengaturan Ujian
+            </button>
+          ) : undefined
+        }
       />
 
       {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}

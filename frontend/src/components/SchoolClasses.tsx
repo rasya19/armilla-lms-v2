@@ -2,17 +2,14 @@ import { useEffect, useState } from "react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { CardGridSkeleton, EmptyState, TableSkeleton } from "./DashboardUI";
-import { ClassPromotion } from "./ClassPromotion";
-import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
-import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
-import { Eye, GraduationCap, Lock, Pencil, Search, Trash2, UserMinus, Users } from "lucide-react";
+import type { PlanSlug } from "./subscriptionPlans";
+import { GraduationCap, Pencil, Search, Trash2, UserMinus, Users } from "lucide-react";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
 
-type StudentPreview = { id: string; nama: string; nisn: string };
-type ClassItem = { id: string; nama: string; waliGuruId: string | null; jumlahSiswa: number; siswaPreview?: StudentPreview[] };
+type ClassItem = { id: string; nama: string; waliGuruId: string | null; jumlahSiswa: number };
 type Teacher = { id: string; nama: string };
 type ClassData = { kelas: ClassItem[]; guru: Teacher[] };
 type ClassRosterStudent = {
@@ -44,15 +41,119 @@ async function request(url: string, method = "GET", body?: object, signal?: Abor
 const field = "mt-2 w-full rounded-xl border border-slate-300 bg-white p-3";
 const action = "mt-3 rounded-xl bg-[#0c192d] px-4 py-2 text-sm font-bold text-white disabled:opacity-50";
 
-export function SchoolClasses({
-  plan = "basic",
-  onRequireUpgrade,
-}: {
+type ClassPalette = {
+  label: string;
+  bar: string;
+  cardBorder: string;
+  headerBg: string;
+  iconBg: string;
+  tag: string;
+  statButton: string;
+  statIcon: string;
+  siswaButton: string;
+};
+
+function getClassCardPalette(className: string, isDark: boolean): ClassPalette {
+  const lower = className.toLowerCase();
+  const gradeMatch = lower.match(/\bkelas\s*(\d{1,2})\b/);
+  const grade = gradeMatch ? Number(gradeMatch[1]) : null;
+
+  const isPaketA = /\bpaket\s*a\b/.test(lower) || (grade !== null && grade >= 1 && grade <= 6);
+  const isPaketB = /\bpaket\s*b\b/.test(lower) || (grade !== null && grade >= 7 && grade <= 9);
+  const isPaketC = /\bpaket\s*c\b/.test(lower) || (grade !== null && grade >= 10 && grade <= 12);
+
+  if (isPaketA) {
+    return {
+      label: "Paket A",
+      bar: "bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500",
+      cardBorder: isDark
+        ? "border-emerald-500/25 hover:border-emerald-400/55 hover:shadow-lg hover:shadow-emerald-950/50"
+        : "border-emerald-200/80 hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-500/10",
+      headerBg: isDark
+        ? "bg-gradient-to-br from-emerald-950/55 via-teal-950/30 to-transparent"
+        : "bg-gradient-to-br from-emerald-50/90 via-teal-50/45 to-white/60",
+      iconBg: "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-600/25",
+      tag: isDark ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100/90 text-emerald-800",
+      statButton: isDark
+        ? "text-emerald-200 hover:bg-emerald-500/15 hover:text-emerald-100"
+        : "text-emerald-900 hover:bg-emerald-50 hover:text-emerald-700",
+      statIcon: isDark ? "text-emerald-300" : "text-emerald-600",
+      siswaButton: isDark
+        ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+        : "border-emerald-200 bg-emerald-50/90 text-emerald-800 hover:bg-emerald-100",
+    };
+  }
+
+  if (isPaketB) {
+    return {
+      label: "Paket B",
+      bar: "bg-gradient-to-r from-sky-400 via-blue-500 to-cyan-500",
+      cardBorder: isDark
+        ? "border-sky-500/25 hover:border-sky-400/55 hover:shadow-lg hover:shadow-sky-950/50"
+        : "border-sky-200/80 hover:border-sky-300 hover:shadow-lg hover:shadow-sky-500/10",
+      headerBg: isDark
+        ? "bg-gradient-to-br from-sky-950/55 via-blue-950/30 to-transparent"
+        : "bg-gradient-to-br from-sky-50/90 via-blue-50/45 to-white/60",
+      iconBg: "bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm shadow-blue-600/25",
+      tag: isDark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100/90 text-sky-800",
+      statButton: isDark
+        ? "text-sky-200 hover:bg-sky-500/15 hover:text-sky-100"
+        : "text-sky-900 hover:bg-sky-50 hover:text-sky-700",
+      statIcon: isDark ? "text-sky-300" : "text-sky-600",
+      siswaButton: isDark
+        ? "border-sky-400/35 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+        : "border-sky-200 bg-sky-50/90 text-sky-800 hover:bg-sky-100",
+    };
+  }
+
+  if (isPaketC) {
+    return {
+      label: "Paket C",
+      bar: "bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500",
+      cardBorder: isDark
+        ? "border-indigo-500/25 hover:border-violet-400/55 hover:shadow-lg hover:shadow-indigo-950/50"
+        : "border-indigo-200/80 hover:border-violet-300 hover:shadow-lg hover:shadow-indigo-500/10",
+      headerBg: isDark
+        ? "bg-gradient-to-br from-indigo-950/55 via-violet-950/30 to-transparent"
+        : "bg-gradient-to-br from-indigo-50/90 via-violet-50/45 to-white/60",
+      iconBg: "bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm shadow-indigo-600/25",
+      tag: isDark ? "bg-violet-500/20 text-violet-200" : "bg-violet-100/90 text-violet-800",
+      statButton: isDark
+        ? "text-indigo-200 hover:bg-indigo-500/15 hover:text-indigo-100"
+        : "text-indigo-900 hover:bg-indigo-50 hover:text-indigo-700",
+      statIcon: isDark ? "text-violet-300" : "text-indigo-600",
+      siswaButton: isDark
+        ? "border-violet-400/35 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25"
+        : "border-violet-200 bg-violet-50/90 text-violet-800 hover:bg-violet-100",
+    };
+  }
+
+  return {
+    label: "Rombel",
+    bar: "bg-gradient-to-r from-amber-400 via-orange-500 to-rose-400",
+    cardBorder: isDark
+      ? "border-amber-500/25 hover:border-amber-400/55 hover:shadow-lg hover:shadow-amber-950/40"
+      : "border-amber-200/80 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-500/10",
+    headerBg: isDark
+      ? "bg-gradient-to-br from-amber-950/45 via-orange-950/25 to-transparent"
+      : "bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-white/60",
+    iconBg: "bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-sm shadow-amber-600/25",
+    tag: isDark ? "bg-amber-500/20 text-amber-200" : "bg-amber-100/90 text-amber-900",
+    statButton: isDark
+      ? "text-amber-200 hover:bg-amber-500/15 hover:text-amber-100"
+      : "text-amber-950 hover:bg-amber-50 hover:text-amber-800",
+    statIcon: isDark ? "text-amber-300" : "text-amber-600",
+    siswaButton: isDark
+      ? "border-amber-400/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+      : "border-amber-200 bg-amber-50/90 text-amber-900 hover:bg-amber-100",
+  };
+}
+
+export function SchoolClasses(_props: {
   plan?: PlanSlug;
   onRequireUpgrade?: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
 }) {
   const isDark = useTenantTheme() === "dark";
-  const canUseReguler = hasPlanAccess(plan, "reguler");
   const confirm = useGlassConfirm();
   const [data, setData] = useState<ClassData | null>(() => getCached<ClassData>("/api/sekolah/kelas"));
   const [version, setVersion] = useState(0);
@@ -61,7 +162,6 @@ export function SchoolClasses({
   const [editing, setEditing] = useState<string | null>(null);
   const [classOpen, setClassOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"list" | "promotion">("list");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -114,11 +214,6 @@ export function SchoolClasses({
     } finally { setBusy(false); }
   }
 
-  function handleMoved() {
-    invalidateCache(["/api/sekolah/kelas", "/api/sekolah/siswa"]);
-    setVersion((value) => value + 1);
-  }
-
   useEffect(() => {
     if (!rosterClass) return;
     const controller = new AbortController();
@@ -169,8 +264,6 @@ export function SchoolClasses({
     {error && !classOpen && <p role="alert" className="text-sm text-rose-700">{error}</p>}
     {message && <p role="status" className="text-sm text-green-700">{message}</p>}
     {!data ? (error ? <button type="button" onClick={() => { setError(""); setVersion((value) => value + 1); }} className="text-sm font-bold underline">Muat ulang kelas</button> : <CardGridSkeleton count={4} columns={2} />) : <>
-      <div className="flex flex-wrap gap-2"><button type="button" aria-pressed={tab === "list"} onClick={() => setTab("list")} className={`rounded-full px-4 py-2 text-sm font-bold transition ${tab === "list" ? (isDark ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]" : "bg-indigo-600 text-white") : (isDark ? "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:bg-slate-700/80 hover:text-white" : "bg-indigo-50 text-indigo-700")}`}>Daftar Kelas</button><button type="button" aria-pressed={tab === "promotion"} onClick={() => { if (!canUseReguler) { onRequireUpgrade?.("Kenaikan Kelas Massal", "reguler"); return; } setError(""); setMessage(""); setTab("promotion"); }} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition ${tab === "promotion" ? (isDark ? "bg-gradient-to-r from-amber-400 to-amber-500 font-extrabold text-slate-950 shadow-[0_0_18px_rgba(245,158,11,0.35)]" : "bg-indigo-600 text-white") : (isDark ? "border border-slate-700/70 bg-slate-800/70 text-slate-300 hover:bg-slate-700/80 hover:text-white" : "bg-indigo-50 text-indigo-700")}`}>{!canUseReguler && <Lock size={14} aria-hidden="true" />}Kenaikan Kelas Massal{!canUseReguler && <span className={`rounded px-1.5 py-0.5 text-[10px] font-extrabold uppercase ${isDark ? "bg-amber-400/20 text-amber-300" : "bg-indigo-200/80 text-indigo-950"}`}>Reguler</span>}</button></div>
-      {tab === "promotion" && canUseReguler ? <ClassPromotion classes={data.kelas} onMoved={handleMoved} /> : <>
       <div className="flex flex-wrap items-center justify-between gap-3"><label className="text-sm"><span className="sr-only">Cari kelas</span><input type="search" className={field} placeholder="Cari nama kelas" value={search} onChange={(event) => setSearch(event.target.value)} /></label><button type="button" className="master-primary" onClick={() => { setError(""); setEditing(null); setNama(""); setWali(""); setClassOpen(true); }}>+ Tambah Kelas</button></div>
       {classOpen && <SchoolModal title={editing ? "Ubah kelas" : "Tambah kelas"} busy={busy} onClose={() => { setClassOpen(false); setError(""); }}>
       <form onSubmit={saveClass}>
@@ -199,100 +292,64 @@ export function SchoolClasses({
                 const waliName = item.waliGuruId
                   ? data.guru.find((teacher) => teacher.id === item.waliGuruId)?.nama ?? "Guru tidak aktif"
                   : "Belum ditentukan";
-                const visiblePreview = (item.siswaPreview ?? []).slice(0, 3);
-                const remainingCount = Math.max(0, item.jumlahSiswa - visiblePreview.length);
+                const palette = getClassCardPalette(item.nama, isDark);
+                const openRoster = () => {
+                  setRosterSearch("");
+                  setRosterStudents([]);
+                  setRosterClass({ id: item.id, nama: item.nama, wali: waliName });
+                };
                 return (
                   <article
                     key={item.id}
-                    className={`dashboard-glass flex flex-col justify-between gap-4 rounded-2xl p-5 transition ${
-                      isDark ? "hover:border-amber-400/35 hover:bg-slate-800/60" : "hover:bg-white/95 hover:shadow-md"
-                    }`}
+                    className={`dashboard-glass flex flex-col justify-between overflow-hidden rounded-2xl border transition-all duration-200 hover:-translate-y-0.5 ${palette.cardBorder}`}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-3">
-                        <span
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                            isDark ? "border border-amber-400/25 bg-amber-500/15 text-amber-300" : "bg-indigo-100 text-indigo-700"
-                          }`}
-                        >
-                          <GraduationCap size={21} aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <h4 className={`truncate text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{item.nama}</h4>
-                          <p className={`mt-0.5 truncate text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-                            Wali Kelas: <span className={`font-semibold ${isDark ? "text-slate-100" : "text-slate-800"}`}>{waliName}</span>
-                          </p>
+                    <div>
+                      <div className={`h-1.5 w-full ${palette.bar}`} aria-hidden="true" />
+                      <div className={`px-5 pb-4 pt-4 ${palette.headerBg}`}>
+                        <div className="flex items-start gap-3.5">
+                          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${palette.iconBg}`}>
+                            <GraduationCap size={21} aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className={`truncate text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                                {item.nama}
+                              </h4>
+                              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-extrabold tracking-wide ${palette.tag}`}>
+                                {palette.label}
+                              </span>
+                            </div>
+                            <p className={`mt-1 truncate text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                              Wali Kelas:{" "}
+                              <span className={`font-semibold ${isDark ? "text-slate-100" : "text-slate-800"}`}>
+                                {waliName}
+                              </span>
+                            </p>
+                          </div>
                         </div>
                       </div>
 
-                      <div className={`flex items-center justify-between gap-2 text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-                        <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums">
-                          <Users size={14} aria-hidden="true" className={isDark ? "text-cyan-300" : "text-indigo-600"} />
-                          {item.jumlahSiswa} siswa aktif
-                        </span>
+                      <div className="flex items-center justify-between gap-2 px-5 py-3 text-xs">
+                        <button
+                          type="button"
+                          onClick={openRoster}
+                          title={`Lihat daftar siswa di ${item.nama}`}
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -ml-2 font-bold tabular-nums transition ${palette.statButton}`}
+                        >
+                          <Users size={15} aria-hidden="true" className={palette.statIcon} />
+                          <span>{item.jumlahSiswa} siswa aktif</span>
+                        </button>
                         <span className={`font-mono text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
                           #{item.id.slice(0, 8)}
                         </span>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRosterSearch("");
-                          setRosterStudents([]);
-                          setRosterClass({ id: item.id, nama: item.nama, wali: waliName });
-                        }}
-                        className={`w-full rounded-xl border p-3 text-left text-xs transition ${
-                          isDark
-                            ? "border-slate-700/70 bg-slate-900/60 hover:border-cyan-400/40"
-                            : "border-slate-200/80 bg-slate-50/80 hover:border-indigo-300 hover:bg-indigo-50/60"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`text-[11px] font-bold ${isDark ? "text-cyan-300" : "text-indigo-700"}`}>
-                            Daftar Siswa
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${isDark ? "text-slate-300" : "text-slate-500"}`}>
-                            <Eye size={12} aria-hidden="true" />
-                            Lihat semua
-                          </span>
-                        </div>
-                        {visiblePreview.length > 0 ? (
-                          <ul className={`mt-2 space-y-1 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
-                            {visiblePreview.map((student) => (
-                              <li key={student.id} className="flex items-center justify-between gap-2">
-                                <span className="truncate font-medium">{student.nama}</span>
-                                <span className={`shrink-0 font-mono text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                                  {student.nisn}
-                                </span>
-                              </li>
-                            ))}
-                            {remainingCount > 0 && (
-                              <li className={`pt-0.5 text-[11px] font-bold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
-                                +{remainingCount} siswa lainnya...
-                              </li>
-                            )}
-                          </ul>
-                        ) : (
-                          <p className={`mt-1.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                            {item.jumlahSiswa > 0 ? "Klik untuk melihat daftar siswa di kelas ini." : "Belum ada siswa di kelas ini."}
-                          </p>
-                        )}
-                      </button>
                     </div>
-                    <div className={`flex items-center gap-2 border-t pt-3 ${isDark ? "border-slate-700/60" : "border-slate-200/80"}`}>
+
+                    <div className={`flex items-center gap-2 border-t px-5 pb-4 pt-3 ${isDark ? "border-slate-700/60" : "border-slate-200/80"}`}>
                       <button
                         type="button"
-                        onClick={() => {
-                          setRosterSearch("");
-                          setRosterStudents([]);
-                          setRosterClass({ id: item.id, nama: item.nama, wali: waliName });
-                        }}
-                        className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition ${
-                          isDark
-                            ? "border-cyan-400/35 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25"
-                            : "border-sky-200 bg-sky-50/90 text-sky-800 hover:bg-sky-100"
-                        }`}
+                        onClick={openRoster}
+                        className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition ${palette.siswaButton}`}
                       >
                         <Users size={13} aria-hidden="true" />
                         Siswa
@@ -390,7 +447,7 @@ export function SchoolClasses({
                     description={
                       q
                         ? "Coba kata kunci nama atau NISN yang berbeda."
-                        : "Tempatkan siswa ke kelas ini melalui Penempatan Siswa Massal di bawah atau menu Data Siswa."
+                        : "Tempatkan siswa ke kelas ini melalui menu Data Siswa (Warga Belajar)."
                     }
                   />
                 );
@@ -454,21 +511,6 @@ export function SchoolClasses({
           </div>
         </SchoolModal>
       )}
-      {canUseReguler ? <BulkClassPlacement classes={data.kelas} onMoved={handleMoved} /> : (
-        <section className="dashboard-glass flex flex-wrap items-center justify-between gap-4 p-5">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-slate-900">Penempatan Siswa Massal</h3>
-              <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-2 py-0.5 text-[10px] font-extrabold uppercase text-indigo-900"><Lock size={11} aria-hidden="true" />Reguler</span>
-            </div>
-            <p className="mt-1 text-sm text-slate-600">Tempatkan hingga 50 siswa ke kelas tujuan sekaligus. Tersedia pada Paket Reguler dan Paket Pro.</p>
-          </div>
-          <button type="button" onClick={() => onRequireUpgrade?.("Penempatan Siswa Massal", "reguler")} className="master-primary shrink-0">
-            Lihat Info Upgrade
-          </button>
-        </section>
-      )}
-      </>}
     </>}
   </div>;
 }

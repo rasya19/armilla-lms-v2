@@ -1,9 +1,9 @@
 import express from "express";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 import { loginPool, pool, prisma } from "./db.js";
 import { DEFAULT_ACCOUNT_PASSWORD, DEFAULT_STUDENT_PASSWORD, hashPassword, isValidPasswordLength, verifyPassword } from "./password.js";
 import { extractPaketFromNote, registrationRateLimit, registrationRoutes, saveRegistrationRecord } from "./registration-routes.js";
-import { parseStudentImport } from "./student-import.js";
+import { formatPasswordFromBirthDate, normalizeClassKey, parseDapodikStudentImport, slugifyShortName } from "./student-import.js";
 import { parseApplicant, parseTeacher } from "./school-input.js";
 import { parseClass, parsePlacement } from "./class-input.js";
 import { academicRoutes } from "./academic-routes.js";
@@ -53,7 +53,7 @@ const production = process.env.NODE_ENV === "production";
 app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/verval", express.json({ limit: "4mb" }));
-app.use("/api/sekolah/siswa/import", express.json({ limit: "256kb" }));
+app.use("/api/sekolah/siswa/import", express.json({ limit: "2mb" }));
 app.use("/api/school", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));
 app.use("/api/sekolah/diskusi", express.json({ limit: "256kb" }));
@@ -1548,44 +1548,438 @@ app.use("/api/verval", vervalRoutes(async (req) => {
 }));
 app.use("/api/dinas", dinasRoutes(getDinasSession));
 
+async function mapInBatches<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  for (let start = 0; start < items.length; start += batchSize) {
+    const slice = items.slice(start, start + batchSize);
+    const chunk = await Promise.all(slice.map(fn));
+    for (let offset = 0; offset < chunk.length; offset++) {
+      results[start + offset] = chunk[offset];
+    }
+  }
+  return results;
+}
+
 app.post("/api/sekolah/siswa/import", async (req, res) => {
   try {
     const session = await getSession(req, "ADMIN");
     const sekolahId = session?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
-    const parsed = parseStudentImport(req.body?.rows);
+
+    const parsed = parseDapodikStudentImport(req.body?.rows);
     if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+    const autoCreateClasses = req.body?.autoCreateClasses !== false;
+
+    // Pre-hash initial passwords outside the DB transaction so large imports stay fast
+    const rowPasswordHashes = await mapInBatches(parsed.rows, 16, (row) =>
+      hashPassword(formatPasswordFromBirthDate(row.tanggalLahir)),
+    );
+
+    const schoolPrefix = sekolahId.slice(0, 6).toLowerCase();
+
     const result = await prisma.$transaction(async (tx) => {
-      const existing = await tx.siswa.findMany({ where: { nisn: { in: parsed.rows.map((row) => row.nisn) } }, select: { nisn: true, sekolahId: true } });
-      if (existing.some((student) => student.sekolahId !== sekolahId)) throw new Error("NISN_CONFLICT");
-      const found = new Set(existing.map((student) => student.nisn));
-      const newRows = parsed.rows.filter((row) => !found.has(row.nisn));
-      const existingRows = parsed.rows.filter((row) => found.has(row.nisn));
-      if (existingRows.length) {
-        const values = Prisma.join(existingRows.map((row) => Prisma.sql`(${row.nisn}, ${row.nama}, ${row.email ?? null}, ${row.telepon ?? null}, ${row.nik ?? null}, ${row.tempatLahir ?? null}, ${row.tanggalLahir ?? null}::date, ${row.jenisKelamin ?? null}, ${row.jenjang ?? null}, ${row.tanggalMasuk ?? null}::date, ${row.jalurPendaftaran ?? null}, ${row.namaAyah ?? null}, ${row.namaIbu ?? null}, ${row.alamatLengkap ?? null}, ${row.teleponAyah ?? null}, ${row.pekerjaanAyah ?? null}, ${row.teleponIbu ?? null}, ${row.pekerjaanIbu ?? null}, ${row.namaWali ?? null}, ${row.teleponWali ?? null}, ${row.pekerjaanWali ?? null})`));
-        const updated = await tx.$executeRaw`
-          UPDATE "Siswa" AS siswa SET "nama" = data.nama, "email" = COALESCE(data.email, siswa."email"),
-            "telepon" = COALESCE(data.telepon, siswa."telepon"), "nik" = COALESCE(data.nik, siswa."nik"),
-            "tempatLahir" = COALESCE(data.tempat_lahir, siswa."tempatLahir"), "tanggalLahir" = COALESCE(data.tanggal_lahir, siswa."tanggalLahir"),
-            "jenisKelamin" = COALESCE(data.jenis_kelamin, siswa."jenisKelamin"), "jenjang" = COALESCE(data.jenjang, siswa."jenjang"),
-            "tanggalMasuk" = COALESCE(data.tanggal_masuk, siswa."tanggalMasuk"), "jalurPendaftaran" = COALESCE(data.jalur_pendaftaran, siswa."jalurPendaftaran"),
-            "namaAyah" = COALESCE(data.nama_ayah, siswa."namaAyah"), "namaIbu" = COALESCE(data.nama_ibu, siswa."namaIbu"),
-            "alamatLengkap" = COALESCE(data.alamat, siswa."alamatLengkap"),
-            "teleponAyah" = COALESCE(data.telepon_ayah, siswa."teleponAyah"), "pekerjaanAyah" = COALESCE(data.pekerjaan_ayah, siswa."pekerjaanAyah"),
-            "teleponIbu" = COALESCE(data.telepon_ibu, siswa."teleponIbu"), "pekerjaanIbu" = COALESCE(data.pekerjaan_ibu, siswa."pekerjaanIbu"),
-            "namaWali" = COALESCE(data.nama_wali, siswa."namaWali"), "teleponWali" = COALESCE(data.telepon_wali, siswa."teleponWali"), "pekerjaanWali" = COALESCE(data.pekerjaan_wali, siswa."pekerjaanWali")
-          FROM (VALUES ${values}) AS data(nisn, nama, email, telepon, nik, tempat_lahir, tanggal_lahir, jenis_kelamin, jenjang, tanggal_masuk, jalur_pendaftaran, nama_ayah, nama_ibu, alamat, telepon_ayah, pekerjaan_ayah, telepon_ibu, pekerjaan_ibu, nama_wali, telepon_wali, pekerjaan_wali)
-          WHERE siswa."nisn" = data.nisn AND siswa."sekolahId" = ${sekolahId}
-        `;
-        if (updated !== existingRows.length) throw new Error("IMPORT_CONFLICT");
+      // 1. Flexible case-insensitive rombel matching (and optional auto-creation)
+      const existingClasses = await tx.kelas.findMany({
+        where: { sekolahId },
+        select: { id: true, nama: true },
+      });
+      const classMap = new Map<string, string>();
+      for (const cls of existingClasses) {
+        const key = normalizeClassKey(cls.nama);
+        if (key && !classMap.has(key)) classMap.set(key, cls.id);
       }
-      if (newRows.length) await tx.siswa.createMany({ data: newRows.map((row) => ({ ...row, sekolahId, status: "Aktif" })) });
-      return { created: newRows.length, updated: existingRows.length };
+
+      const createdClasses: string[] = [];
+      const unmatchedClassesSet = new Set<string>();
+
+      if (autoCreateClasses) {
+        const missingByKey = new Map<string, string>();
+        for (const row of parsed.rows) {
+          if (!row.rombel) continue;
+          const key = normalizeClassKey(row.rombel);
+          if (key && !classMap.has(key) && !missingByKey.has(key)) {
+            missingByKey.set(key, row.rombel.slice(0, 100));
+          }
+        }
+        const remainingCapacity = Math.max(0, 500 - existingClasses.length);
+        const toCreate = Array.from(missingByKey.entries()).slice(0, remainingCapacity);
+        if (toCreate.length > 0) {
+          const newClassRows = toCreate.map(([, nama]) => ({
+            id: randomUUID(),
+            nama,
+            kode: randomBytes(16).toString("hex"),
+            sekolahId,
+            waliGuruId: null,
+          }));
+          await tx.kelas.createMany({ data: newClassRows });
+          for (const cls of newClassRows) {
+            classMap.set(normalizeClassKey(cls.nama), cls.id);
+            createdClasses.push(cls.nama);
+          }
+        }
+      }
+
+      let matchedClasses = 0;
+      let withoutClassCount = 0;
+      const resolvedClassIds: (string | null)[] = parsed.rows.map((row) => {
+        if (!row.rombel) {
+          withoutClassCount++;
+          return null;
+        }
+        const foundId = classMap.get(normalizeClassKey(row.rombel)) ?? null;
+        if (foundId) {
+          matchedClasses++;
+          return foundId;
+        }
+        unmatchedClassesSet.add(row.rombel);
+        withoutClassCount++;
+        return null;
+      });
+
+      // 2. Look up existing students by NISN or NIPD (including school-scoped NIPD fallback)
+      const lookupKeysSet = new Set<string>();
+      for (const row of parsed.rows) {
+        if (row.nisn) lookupKeysSet.add(row.nisn);
+        if (row.nipd) {
+          lookupKeysSet.add(row.nipd);
+          lookupKeysSet.add(`nipd-${schoolPrefix}-${row.nipd.toLowerCase()}`);
+        }
+        if (row.username) lookupKeysSet.add(row.username);
+      }
+      const lookupKeys = Array.from(lookupKeysSet);
+      const existingStudents = lookupKeys.length > 0
+        ? await tx.siswa.findMany({
+            where: { nisn: { in: lookupKeys } },
+            select: {
+              id: true,
+              nisn: true,
+              sekolahId: true,
+              email: true,
+              akun: { select: { id: true, email: true } },
+            },
+          })
+        : [];
+
+      const ownByKey = new Map<string, (typeof existingStudents)[number]>();
+      const otherSchoolKeys = new Set<string>();
+      for (const student of existingStudents) {
+        if (student.sekolahId === sekolahId) {
+          ownByKey.set(student.nisn, student);
+        } else {
+          otherSchoolKeys.add(student.nisn);
+        }
+      }
+
+      type UpdateEntry = {
+        id: string;
+        existingNisn: string;
+        existingEmail: string | null;
+        hasAccount: boolean;
+        row: (typeof parsed.rows)[number];
+        kelasId: string | null;
+        passwordHash: string;
+      };
+      type CreateEntry = {
+        id: string;
+        resolvedNisn: string;
+        generatedNisn: boolean;
+        row: (typeof parsed.rows)[number];
+        kelasId: string | null;
+        passwordHash: string;
+      };
+
+      const updateTargets: UpdateEntry[] = [];
+      const createTargets: CreateEntry[] = [];
+      const updatedIds = new Set<string>();
+      const claimedNisns = new Set<string>(existingStudents.map((s) => s.nisn));
+
+      const makeAutoIdentifier = (nama: string, preferredUsername?: string): string => {
+        if (preferredUsername && !claimedNisns.has(preferredUsername) && !otherSchoolKeys.has(preferredUsername)) {
+          claimedNisns.add(preferredUsername);
+          return preferredUsername;
+        }
+        const base = slugifyShortName(nama);
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const candidate = `${base}${randomInt(1000, 9999)}`;
+          if (!claimedNisns.has(candidate) && !otherSchoolKeys.has(candidate)) {
+            claimedNisns.add(candidate);
+            return candidate;
+          }
+        }
+        const fallback = `${base}${randomBytes(3).toString("hex")}`;
+        claimedNisns.add(fallback);
+        return fallback;
+      };
+
+      for (let i = 0; i < parsed.rows.length; i++) {
+        const row = parsed.rows[i];
+        const kelasId = resolvedClassIds[i];
+        const passwordHash = rowPasswordHashes[i];
+        const scopedNipd = row.nipd ? `nipd-${schoolPrefix}-${row.nipd.toLowerCase()}` : undefined;
+
+        const matched =
+          (row.nisn ? ownByKey.get(row.nisn) : undefined) ??
+          (row.nipd ? ownByKey.get(row.nipd) : undefined) ??
+          (scopedNipd ? ownByKey.get(scopedNipd) : undefined);
+
+        if (matched && !updatedIds.has(matched.id)) {
+          updatedIds.add(matched.id);
+          updateTargets.push({
+            id: matched.id,
+            existingNisn: matched.nisn,
+            existingEmail: matched.email,
+            hasAccount: Boolean(matched.akun),
+            row,
+            kelasId,
+            passwordHash,
+          });
+          continue;
+        }
+
+        // Strict tenant isolation: if an explicit 10-digit NISN already belongs to another school, abort with 409
+        if (row.nisn && /^\d{10}$/.test(row.nisn) && otherSchoolKeys.has(row.nisn)) {
+          throw new Error("NISN_CONFLICT");
+        }
+
+        let resolvedNisn: string;
+        let generatedNisn = false;
+        if (row.nisn && !claimedNisns.has(row.nisn) && !otherSchoolKeys.has(row.nisn)) {
+          resolvedNisn = row.nisn;
+          claimedNisns.add(resolvedNisn);
+        } else if (row.nipd && !claimedNisns.has(row.nipd) && !otherSchoolKeys.has(row.nipd)) {
+          resolvedNisn = row.nipd;
+          claimedNisns.add(resolvedNisn);
+        } else if (scopedNipd && !claimedNisns.has(scopedNipd) && !otherSchoolKeys.has(scopedNipd)) {
+          resolvedNisn = scopedNipd;
+          claimedNisns.add(resolvedNisn);
+        } else {
+          resolvedNisn = makeAutoIdentifier(row.nama, row.username);
+          generatedNisn = true;
+        }
+
+        createTargets.push({
+          id: randomUUID(),
+          resolvedNisn,
+          generatedNisn,
+          row,
+          kelasId,
+          passwordHash,
+        });
+      }
+
+      // Verify generated identifiers don't collide with any existing Siswa.nisn globally
+      const generatedCandidates = createTargets.filter((item) => item.generatedNisn).map((item) => item.resolvedNisn);
+      if (generatedCandidates.length > 0) {
+        const collisions = await tx.siswa.findMany({
+          where: { nisn: { in: generatedCandidates } },
+          select: { nisn: true },
+        });
+        if (collisions.length > 0) {
+          const collidedSet = new Set(collisions.map((c) => c.nisn));
+          for (const item of createTargets) {
+            if (item.generatedNisn && collidedSet.has(item.resolvedNisn)) {
+              const replacement = `${slugifyShortName(item.row.nama)}${randomBytes(4).toString("hex")}`;
+              item.resolvedNisn = replacement;
+              claimedNisns.add(replacement);
+            }
+          }
+        }
+      }
+
+      // 3. Auto-generate unique login emails for new accounts (new students + existing students without Akun)
+      const emailDomain = "siswa.armilla.local";
+      const candidateEmails = new Set<string>();
+      for (const item of createTargets) {
+        if (item.row.email) candidateEmails.add(item.row.email);
+        const loginBase = (item.row.username || item.resolvedNisn).toLowerCase().replace(/[^a-z0-9._-]/g, "");
+        if (loginBase) candidateEmails.add(`${loginBase}@${emailDomain}`);
+      }
+      for (const item of updateTargets) {
+        if (!item.hasAccount) {
+          if (item.row.email) candidateEmails.add(item.row.email);
+          if (item.existingEmail) candidateEmails.add(item.existingEmail.toLowerCase());
+          const loginBase = (item.row.username || item.existingNisn).toLowerCase().replace(/[^a-z0-9._-]/g, "");
+          if (loginBase) candidateEmails.add(`${loginBase}@${emailDomain}`);
+        }
+      }
+
+      const takenEmails = new Set<string>();
+      if (candidateEmails.size > 0) {
+        const existingAccounts = await tx.akun.findMany({
+          where: { email: { in: Array.from(candidateEmails) } },
+          select: { email: true },
+        });
+        for (const acc of existingAccounts) {
+          if (acc.email) takenEmails.add(acc.email.toLowerCase());
+        }
+      }
+
+      const allocateAccountEmail = (preferredEmail: string | null | undefined, loginId: string, nama: string): string => {
+        if (preferredEmail) {
+          const clean = preferredEmail.trim().toLowerCase();
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) && !takenEmails.has(clean)) {
+            takenEmails.add(clean);
+            return clean;
+          }
+        }
+        const safeBase = loginId.toLowerCase().replace(/[^a-z0-9._-]/g, "") || slugifyShortName(nama);
+        const primary = `${safeBase}@${emailDomain}`;
+        if (!takenEmails.has(primary)) {
+          takenEmails.add(primary);
+          return primary;
+        }
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const candidate = `${slugifyShortName(nama)}.${randomInt(1000, 9999)}@${emailDomain}`;
+          if (!takenEmails.has(candidate)) {
+            takenEmails.add(candidate);
+            return candidate;
+          }
+        }
+        const fallback = `${slugifyShortName(nama)}.${randomBytes(4).toString("hex")}@${emailDomain}`;
+        takenEmails.add(fallback);
+        return fallback;
+      };
+
+      const accountsToCreate: Array<{
+        nama: string;
+        email: string;
+        sekolahId: string;
+        siswaId: string;
+        peran: "SISWA";
+        passwordHash: string;
+        aktif: boolean;
+        wajibGantiPassword: boolean;
+      }> = [];
+
+      // 4. Bulk update existing students (safe COALESCE preserves non-blank existing values)
+      if (updateTargets.length > 0) {
+        const values = Prisma.join(
+          updateTargets.map(({ id, row, kelasId }) =>
+            Prisma.sql`(${id}, ${row.nama}, ${row.email ?? null}, ${row.telepon ?? null}, ${row.nik ?? null}, ${row.tempatLahir ?? null}, ${row.tanggalLahir ?? null}::date, ${row.jenisKelamin ?? null}, ${row.jenjang ?? null}, ${row.tanggalMasuk ?? null}::date, ${row.jalurPendaftaran ?? null}, ${row.namaAyah ?? null}, ${row.namaIbu ?? null}, ${row.alamatLengkap ?? null}, ${row.teleponAyah ?? null}, ${row.pekerjaanAyah ?? null}, ${row.teleponIbu ?? null}, ${row.pekerjaanIbu ?? null}, ${row.namaWali ?? null}, ${row.teleponWali ?? null}, ${row.pekerjaanWali ?? null}, ${kelasId})`,
+          ),
+        );
+        const updatedCount = await tx.$executeRaw`
+          UPDATE "Siswa" AS siswa SET
+            "nama" = data.nama,
+            "email" = COALESCE(data.email, siswa."email"),
+            "telepon" = COALESCE(data.telepon, siswa."telepon"),
+            "nik" = COALESCE(data.nik, siswa."nik"),
+            "tempatLahir" = COALESCE(data.tempat_lahir, siswa."tempatLahir"),
+            "tanggalLahir" = COALESCE(data.tanggal_lahir, siswa."tanggalLahir"),
+            "jenisKelamin" = COALESCE(data.jenis_kelamin, siswa."jenisKelamin"),
+            "jenjang" = COALESCE(data.jenjang, siswa."jenjang"),
+            "tanggalMasuk" = COALESCE(data.tanggal_masuk, siswa."tanggalMasuk"),
+            "jalurPendaftaran" = COALESCE(data.jalur_pendaftaran, siswa."jalurPendaftaran"),
+            "namaAyah" = COALESCE(data.nama_ayah, siswa."namaAyah"),
+            "namaIbu" = COALESCE(data.nama_ibu, siswa."namaIbu"),
+            "namaIbuKandung" = COALESCE(data.nama_ibu, siswa."namaIbuKandung"),
+            "alamatLengkap" = COALESCE(data.alamat, siswa."alamatLengkap"),
+            "teleponAyah" = COALESCE(data.telepon_ayah, siswa."teleponAyah"),
+            "pekerjaanAyah" = COALESCE(data.pekerjaan_ayah, siswa."pekerjaanAyah"),
+            "teleponIbu" = COALESCE(data.telepon_ibu, siswa."teleponIbu"),
+            "pekerjaanIbu" = COALESCE(data.pekerjaan_ibu, siswa."pekerjaanIbu"),
+            "namaWali" = COALESCE(data.nama_wali, siswa."namaWali"),
+            "teleponWali" = COALESCE(data.telepon_wali, siswa."teleponWali"),
+            "pekerjaanWali" = COALESCE(data.pekerjaan_wali, siswa."pekerjaanWali"),
+            "kelasId" = COALESCE(data.kelas_id, siswa."kelasId"),
+            "sumberDapodik" = true
+          FROM (VALUES ${values}) AS data(id, nama, email, telepon, nik, tempat_lahir, tanggal_lahir, jenis_kelamin, jenjang, tanggal_masuk, jalur_pendaftaran, nama_ayah, nama_ibu, alamat, telepon_ayah, pekerjaan_ayah, telepon_ibu, pekerjaan_ibu, nama_wali, telepon_wali, pekerjaan_wali, kelas_id)
+          WHERE siswa."id" = data.id AND siswa."sekolahId" = ${sekolahId}
+        `;
+        if (updatedCount !== updateTargets.length) throw new Error("IMPORT_CONFLICT");
+
+        for (const entry of updateTargets) {
+          if (!entry.hasAccount) {
+            const accountEmail = allocateAccountEmail(
+              entry.row.email ?? entry.existingEmail,
+              entry.row.username || entry.existingNisn,
+              entry.row.nama,
+            );
+            accountsToCreate.push({
+              nama: entry.row.nama,
+              email: accountEmail,
+              sekolahId,
+              siswaId: entry.id,
+              peran: "SISWA",
+              passwordHash: entry.passwordHash,
+              aktif: true,
+              wajibGantiPassword: true,
+            });
+          }
+        }
+      }
+
+      // 5. Bulk create new students and auto-generated LMS accounts
+      if (createTargets.length > 0) {
+        const siswaToCreate = createTargets.map((entry) => {
+          const accountEmail = allocateAccountEmail(
+            entry.row.email,
+            entry.row.username || entry.resolvedNisn,
+            entry.row.nama,
+          );
+          accountsToCreate.push({
+            nama: entry.row.nama,
+            email: accountEmail,
+            sekolahId,
+            siswaId: entry.id,
+            peran: "SISWA",
+            passwordHash: entry.passwordHash,
+            aktif: true,
+            wajibGantiPassword: true,
+          });
+          return {
+            id: entry.id,
+            nisn: entry.resolvedNisn,
+            nama: entry.row.nama,
+            kelasId: entry.kelasId,
+            email: entry.row.email ?? accountEmail,
+            telepon: entry.row.telepon ?? null,
+            nik: entry.row.nik ?? null,
+            tempatLahir: entry.row.tempatLahir ?? null,
+            tanggalLahir: entry.row.tanggalLahir ?? null,
+            jenisKelamin: entry.row.jenisKelamin ?? null,
+            jenjang: entry.row.jenjang ?? null,
+            tanggalMasuk: entry.row.tanggalMasuk ?? null,
+            jalurPendaftaran: entry.row.jalurPendaftaran ?? null,
+            namaAyah: entry.row.namaAyah ?? null,
+            teleponAyah: entry.row.teleponAyah ?? null,
+            pekerjaanAyah: entry.row.pekerjaanAyah ?? null,
+            namaIbu: entry.row.namaIbu ?? null,
+            namaIbuKandung: entry.row.namaIbu ?? null,
+            teleponIbu: entry.row.teleponIbu ?? null,
+            pekerjaanIbu: entry.row.pekerjaanIbu ?? null,
+            namaWali: entry.row.namaWali ?? null,
+            teleponWali: entry.row.teleponWali ?? null,
+            pekerjaanWali: entry.row.pekerjaanWali ?? null,
+            alamatLengkap: entry.row.alamatLengkap ?? null,
+            sumberDapodik: true,
+            sekolahId,
+            status: "Aktif",
+          };
+        });
+        await tx.siswa.createMany({ data: siswaToCreate });
+      }
+
+      if (accountsToCreate.length > 0) {
+        await tx.akun.createMany({ data: accountsToCreate, skipDuplicates: true });
+      }
+
+      return {
+        created: createTargets.length,
+        updated: updateTargets.length,
+        skippedEmpty: parsed.skippedEmpty,
+        accountsCreated: accountsToCreate.length,
+        matchedClasses,
+        createdClasses,
+        unmatchedClasses: Array.from(unmatchedClassesSet),
+        withoutClassCount,
+      };
     }, { timeout: 30000 });
+
     return res.json(result);
   } catch (error) {
     if (error instanceof Error && (error.message === "NISN_CONFLICT" || error.message === "IMPORT_CONFLICT" || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"))) {
-      return res.status(409).json({ error: "Impor dibatalkan karena ada konflik NISN. Periksa file atau hubungi master admin." });
+      return res.status(409).json({ error: "Impor dibatalkan karena ada konflik NISN dengan sekolah lain. Periksa file atau hubungi master admin." });
     }
     console.error("Gagal mengimpor siswa:", error);
     return res.status(503).json({ error: "Impor belum dapat disimpan. Tidak ada perubahan data." });

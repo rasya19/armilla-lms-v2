@@ -7,7 +7,7 @@ import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
-import { Lock } from "lucide-react";
+import { GraduationCap, Lock, Pencil, Trash2, Users } from "lucide-react";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
 
@@ -117,7 +117,99 @@ export function SchoolClasses({
         {error && <p role="alert" className="mt-2 text-sm text-rose-500">{error}</p>}
         <button disabled={busy} className={action}>{editing ? "Simpan perubahan kelas" : "Tambah kelas"}</button>
       </form></SchoolModal>}
-      <section><h3 className="font-bold">Daftar kelas <span className="text-sm font-normal text-slate-600">({data.kelas.length})</span></h3>{!data.kelas.filter((item) => item.nama.toLowerCase().includes(search.trim().toLowerCase())).length ? <EmptyState title={search ? "Kelas tidak ditemukan" : "Belum ada kelas"} description={search ? "Coba nama kelas lain." : "Tambahkan kelas dan pilih wali kelas untuk memulai."} action={!search && <button type="button" className="master-primary" onClick={() => { setEditing(null); setNama(""); setWali(""); setClassOpen(true); }}>Tambah Kelas</button>} /> : <ul className="mt-2 space-y-2">{data.kelas.filter((item) => item.nama.toLowerCase().includes(search.trim().toLowerCase())).map((item) => <li key={item.id} className={`dashboard-glass p-4 text-sm transition ${isDark ? "hover:border-amber-400/35 hover:bg-slate-800/60" : "hover:bg-indigo-50/60"}`}><strong>{item.nama}</strong> ({item.id.slice(0, 8)}) · {item.jumlahSiswa} siswa aktif · Wali: {item.waliGuruId ? data.guru.find((teacher) => teacher.id === item.waliGuruId)?.nama ?? "Guru tidak aktif atau tidak ditemukan" : "Belum ditentukan"} <button type="button" disabled={busy} onClick={() => { setError(""); setEditing(item.id); setNama(item.nama); setWali(item.waliGuruId ?? ""); setClassOpen(true); }} className={`ml-2 font-bold underline disabled:opacity-50 ${isDark ? "text-amber-300" : "text-indigo-700"}`}>Ubah</button><button type="button" disabled={busy} onClick={() => deleteClass(item)} className={`ml-3 font-bold underline disabled:opacity-50 ${isDark ? "text-rose-400" : "text-rose-700"}`}>Hapus</button></li>)}</ul>}</section>
+      <section>
+        <h3 className="font-bold">Daftar kelas <span className="text-sm font-normal text-slate-600 tabular-nums">({data.kelas.length})</span></h3>
+        {(() => {
+          const filteredClasses = data.kelas.filter((item) => item.nama.toLowerCase().includes(search.trim().toLowerCase()));
+          if (!filteredClasses.length) {
+            return (
+              <EmptyState
+                title={search ? "Kelas tidak ditemukan" : "Belum ada kelas"}
+                description={search ? "Coba nama kelas lain." : "Tambahkan kelas dan pilih wali kelas untuk memulai."}
+                action={!search && <button type="button" className="master-primary" onClick={() => { setEditing(null); setNama(""); setWali(""); setClassOpen(true); }}>Tambah Kelas</button>}
+              />
+            );
+          }
+          return (
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filteredClasses.map((item) => {
+                const waliName = item.waliGuruId
+                  ? data.guru.find((teacher) => teacher.id === item.waliGuruId)?.nama ?? "Guru tidak aktif"
+                  : "Belum ditentukan";
+                return (
+                  <article
+                    key={item.id}
+                    className={`dashboard-glass flex flex-col justify-between gap-4 rounded-2xl p-5 transition ${
+                      isDark ? "hover:border-amber-400/35 hover:bg-slate-800/60" : "hover:bg-white/95 hover:shadow-md"
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                            isDark ? "border border-amber-400/25 bg-amber-500/15 text-amber-300" : "bg-indigo-100 text-indigo-700"
+                          }`}
+                        >
+                          <GraduationCap size={21} aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h4 className={`truncate text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{item.nama}</h4>
+                          <p className={`mt-0.5 truncate text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                            Wali Kelas: <span className={`font-semibold ${isDark ? "text-slate-100" : "text-slate-800"}`}>{waliName}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className={`flex items-center justify-between gap-2 text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                        <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums">
+                          <Users size={14} aria-hidden="true" className={isDark ? "text-cyan-300" : "text-indigo-600"} />
+                          {item.jumlahSiswa} siswa aktif
+                        </span>
+                        <span className={`font-mono text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          #{item.id.slice(0, 8)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className={`flex items-center gap-2 border-t pt-3 ${isDark ? "border-slate-700/60" : "border-slate-200/80"}`}>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setError("");
+                          setEditing(item.id);
+                          setNama(item.nama);
+                          setWali(item.waliGuruId ?? "");
+                          setClassOpen(true);
+                        }}
+                        className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${
+                          isDark
+                            ? "border-amber-400/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                            : "border-indigo-200 bg-indigo-50/90 text-indigo-800 hover:bg-indigo-100"
+                        }`}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                        Ubah
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => deleteClass(item)}
+                        className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${
+                          isDark
+                            ? "border-rose-500/30 bg-rose-950/35 text-rose-300 hover:bg-rose-950/60"
+                            : "border-rose-200 bg-rose-50/90 text-rose-700 hover:bg-rose-100"
+                        }`}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                        Hapus
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </section>
       {canUseReguler ? <BulkClassPlacement classes={data.kelas} onMoved={handleMoved} /> : (
         <section className="dashboard-glass flex flex-wrap items-center justify-between gap-4 p-5">
           <div>

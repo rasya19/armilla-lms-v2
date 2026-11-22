@@ -7,10 +7,10 @@ test("school module routes enforce exact BASIC, REGULER, and PRO plan access mat
   process.env.DATABASE_URL = "postgresql://test:test@127.0.0.1:5432/test";
   const { prisma } = await import("./db.js");
   const { schoolTierRoutes } = await import("./school-tier-routes.js");
-  const { tahap2AcademicRoutes } = await import("./tahap2-academic-routes.js");
-  const { tahap2CbtRoutes } = await import("./tahap2-cbt-routes.js");
-  const { tahap2ProRoutes } = await import("./tahap2-pro-routes.js");
-  const { tahap2CollabRoutes } = await import("./tahap2-collab-routes.js");
+  const { tahap2AcademicRoutes } = await import("./academic-raport-routes.js");
+  const { tahap2CbtRoutes } = await import("./cbt-routes.js");
+  const { tahap2ProRoutes } = await import("./pro-admin-routes.js");
+  const { tahap2CollabRoutes } = await import("./collab-asset-routes.js");
 
   let activePlan = "Basic";
 

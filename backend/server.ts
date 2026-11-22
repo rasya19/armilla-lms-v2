@@ -32,11 +32,11 @@ import {
 } from "./sandbox-seed.js";
 import { vervalRoutes } from "./verval-routes.js";
 import { dinasRoutes, type DinasContext } from "./dinas-routes.js";
-import { tahap2AcademicRoutes } from "./tahap2-academic-routes.js";
-import { tahap2CbtRoutes } from "./tahap2-cbt-routes.js";
-import { tahap2ProRoutes } from "./tahap2-pro-routes.js";
-import { tahap2CollabRoutes } from "./tahap2-collab-routes.js";
-import type { SchoolSessionInfo } from "./tahap2-shared.js";
+import { tahap2AcademicRoutes } from "./academic-raport-routes.js";
+import { tahap2CbtRoutes } from "./cbt-routes.js";
+import { tahap2ProRoutes } from "./pro-admin-routes.js";
+import { tahap2CollabRoutes } from "./collab-asset-routes.js";
+import { resolveTeacherScope, type SchoolSessionInfo } from "./school-modules-shared.js";
 
 const app = express();
 export default app;
@@ -797,7 +797,30 @@ app.get("/api/auth/lms/session", async (req, res) => {
   try {
     const session = await getLmsSession(req);
     if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
-    return res.json({ nama: session.akun.nama, peran: session.akun.peran, wajibGantiPassword: session.akun.wajibGantiPassword });
+    const [school, guru] = await Promise.all([
+      session.akun.sekolahId
+        ? prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true, plan: true } })
+        : null,
+      session.akun.peran === "GURU" && session.akun.guruId && session.akun.sekolahId
+        ? prisma.guru.findFirst({
+            where: { id: session.akun.guruId, sekolahId: session.akun.sekolahId },
+            select: { id: true, nama: true, email: true, nuptk: true, telepon: true, mapelUtama: true },
+          })
+        : null,
+    ]);
+    return res.json({
+      nama: guru?.nama ?? session.akun.nama,
+      peran: session.akun.peran,
+      wajibGantiPassword: session.akun.wajibGantiPassword,
+      sekolah: school?.nama ?? "",
+      slug: school?.slug ?? "",
+      plan: normalizeTenantPlan(school?.plan),
+      guruId: session.akun.guruId ?? null,
+      email: guru?.email ?? session.akun.email,
+      nuptk: guru?.nuptk ?? null,
+      telepon: guru?.telepon ?? null,
+      mapelUtama: guru?.mapelUtama ?? null,
+    });
   } catch (error) {
     console.error("Gagal memeriksa sesi LMS:", error);
     return res.status(503).json({ error: "Sesi LMS tidak tersedia." });
@@ -906,11 +929,11 @@ app.use("/api/lms/ruang-kbm", classroomRoutes(async (req) => {
   const session = await getLmsSession(req);
   const account = session?.akun;
   if (account?.sekolahId && !account.wajibGantiPassword && (account.peran === "SISWA" || account.peran === "GURU")) {
-    return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null };
+    return { sekolahId: account.sekolahId, peran: account.peran, siswaId: account.siswaId, kelasId: account.siswa?.kelasId ?? null, guruId: account.guruId ?? null };
   }
   const sandbox = await getDevSandboxLmsContext(req);
   if (!sandbox) return null;
-  return { sekolahId: sandbox.sekolahId, peran: sandbox.peran, siswaId: sandbox.siswaId, kelasId: sandbox.kelasId };
+  return { sekolahId: sandbox.sekolahId, peran: sandbox.peran, siswaId: sandbox.siswaId, kelasId: sandbox.kelasId, guruId: sandbox.guruId };
 }, jakartaDate));
 app.use("/api/sekolah/ruang-kbm", classroomRoutes(async (req) => {
   const session = await getSession(req, "ADMIN");
@@ -1026,29 +1049,485 @@ app.post("/api/lms/guru/siswa/:id/reset-password", async (req, res) => {
   }
 });
 
+async function resolveTeacherPortalContext(req: express.Request): Promise<{
+  sekolahId: string;
+  guruId: string;
+  akunId: string | null;
+  nama: string;
+  isSandbox: boolean;
+} | null> {
+  const session = await getLmsSession(req);
+  const account = session?.akun;
+  if (account?.sekolahId && account.peran === "GURU" && !account.wajibGantiPassword && account.guruId) {
+    return { sekolahId: account.sekolahId, guruId: account.guruId, akunId: account.id, nama: account.nama, isSandbox: false };
+  }
+  const sandbox = await getDevSandboxLmsContext(req);
+  if (sandbox && sandbox.peran === "GURU" && sandbox.guruId) {
+    return { sekolahId: sandbox.sekolahId, guruId: sandbox.guruId, akunId: null, nama: sandbox.nama, isSandbox: true };
+  }
+  return null;
+}
+
+app.get("/api/lms/guru/beranda", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId } = ctx;
+
+    const [school, guru, scope] = await Promise.all([
+      prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { nama: true, slug: true, plan: true } }),
+      prisma.guru.findFirst({
+        where: { id: guruId, sekolahId },
+        select: { id: true, nama: true, email: true, nuptk: true, telepon: true, mapelUtama: true, status: true },
+      }),
+      resolveTeacherScope(sekolahId, guruId),
+    ]);
+    if (!guru) return res.status(404).json({ error: "Data guru tidak ditemukan." });
+
+    const restrictToAssigned = !scope.isWaliKelas;
+    const accessibleKelasIds = restrictToAssigned ? scope.assignedKelasIds : undefined;
+
+    const [kelasList, studentCounts, mapelList, jadwalRows, materiCount, tugasList, ujianCount, pengumumanRaw] = await Promise.all([
+      prisma.kelas.findMany({
+        where: {
+          sekolahId,
+          ...(accessibleKelasIds ? { id: { in: accessibleKelasIds } } : {}),
+        },
+        select: {
+          id: true,
+          nama: true,
+          waliGuruId: true,
+        },
+        orderBy: { nama: "asc" },
+        take: 200,
+      }),
+      prisma.siswa.groupBy({
+        by: ["kelasId"],
+        where: {
+          sekolahId,
+          status: "Aktif",
+          kelasId: accessibleKelasIds ? { in: accessibleKelasIds } : { not: null },
+        },
+        _count: { _all: true },
+      }),
+      prisma.mapel.findMany({
+        where: {
+          sekolahId,
+          ...(restrictToAssigned ? { id: { in: scope.assignedMapelIds } } : {}),
+        },
+        select: { id: true, nama: true },
+        orderBy: { nama: "asc" },
+        take: 200,
+      }),
+      prisma.jadwalPelajaran.findMany({
+        where: { sekolahId, guruId },
+        select: { kelasId: true, mapel: { select: { id: true, nama: true } } },
+        take: 500,
+      }),
+      prisma.materiAjar.count({
+        where: {
+          sekolahId,
+          ...(restrictToAssigned ? { kelasId: { in: scope.assignedKelasIds } } : {}),
+        },
+      }),
+      prisma.tugas.findMany({
+        where: {
+          sekolahId,
+          ...(restrictToAssigned ? { kelasId: { in: scope.assignedKelasIds } } : {}),
+        },
+        select: { id: true, judul: true, kelasId: true, kelas: { select: { nama: true } }, mapel: { select: { nama: true } }, batasWaktu: true },
+        orderBy: [{ createdAt: "desc" }],
+        take: 200,
+      }),
+      prisma.ujian.count({
+        where: {
+          sekolahId,
+          ...(restrictToAssigned
+            ? {
+                OR: [
+                  { guruId },
+                  ...(scope.assignedKelasIds.length && scope.assignedMapelIds.length
+                    ? [{ kelasId: { in: scope.assignedKelasIds }, mapelId: { in: scope.assignedMapelIds } }]
+                    : []),
+                ],
+              }
+            : {}),
+        },
+      }),
+      prisma.topikDiskusi
+        .findMany({
+          where: {
+            sekolahId,
+            ...(restrictToAssigned
+              ? { OR: [{ kelasId: null }, { kelasId: { in: scope.assignedKelasIds } }] }
+              : {}),
+          },
+          select: {
+            id: true,
+            judul: true,
+            kategori: true,
+            kelasId: true,
+            penulisNama: true,
+            penulisPeran: true,
+            disematkan: true,
+            createdAt: true,
+            _count: { select: { balasan: true } },
+          },
+          orderBy: [{ disematkan: "desc" }, { createdAt: "desc" }],
+          take: 5,
+        })
+        .catch(() => []),
+    ]);
+
+    const tugasIds = tugasList.map((t) => t.id);
+    const [ungradedCount, ungradedSubmissions] = tugasIds.length
+      ? await Promise.all([
+          prisma.pengumpulanTugas.count({ where: { tugasId: { in: tugasIds }, nilai: null } }),
+          prisma.pengumpulanTugas.findMany({
+            where: { tugasId: { in: tugasIds }, nilai: null },
+            select: {
+              id: true,
+              dikumpulkanPada: true,
+              siswa: { select: { id: true, nama: true, nisn: true } },
+              tugas: { select: { id: true, judul: true, kelasId: true, kelas: { select: { nama: true } }, mapel: { select: { nama: true } } } },
+            },
+            orderBy: { dikumpulkanPada: "desc" },
+            take: 8,
+          }),
+        ])
+      : [0, []];
+
+    const mapelByKelas = new Map<string, string[]>();
+    for (const row of jadwalRows) {
+      const existing = mapelByKelas.get(row.kelasId) ?? [];
+      if (!existing.includes(row.mapel.nama)) existing.push(row.mapel.nama);
+      mapelByKelas.set(row.kelasId, existing);
+    }
+
+    const siswaCountByKelas = new Map<string, number>();
+    for (const row of studentCounts) {
+      if (row.kelasId) siswaCountByKelas.set(row.kelasId, row._count._all);
+    }
+
+    const kelasNameById = new Map(kelasList.map((k) => [k.id, k.nama]));
+    const pengumumanTerbaru = pengumumanRaw.map((topic) => ({
+      id: topic.id,
+      judul: topic.judul,
+      kategori: topic.kategori,
+      penulisNama: topic.penulisNama,
+      penulisPeran: topic.penulisPeran,
+      disematkan: topic.disematkan,
+      createdAt: topic.createdAt,
+      kelas: topic.kelasId && kelasNameById.has(topic.kelasId) ? { id: topic.kelasId, nama: kelasNameById.get(topic.kelasId)! } : null,
+      _count: topic._count,
+    }));
+
+    const kelasDiampu = kelasList.map((k) => ({
+      id: k.id,
+      nama: k.nama,
+      isWali: k.waliGuruId === guruId,
+      jumlahSiswa: siswaCountByKelas.get(k.id) ?? 0,
+      mapel: mapelByKelas.get(k.id) ?? [],
+    }));
+    const totalSiswa = kelasDiampu.reduce((acc, k) => acc + k.jumlahSiswa, 0);
+
+    return res.json({
+      profil: guru,
+      sekolah: school?.nama ?? "",
+      slug: school?.slug ?? "",
+      plan: normalizeTenantPlan(school?.plan),
+      isWaliKelas: scope.isWaliKelas,
+      waliKelasList: kelasDiampu.filter((k) => k.isWali).map((k) => ({ id: k.id, nama: k.nama })),
+      kelasDiampu,
+      mapelDiampu: mapelList,
+      stats: {
+        totalKelas: kelasDiampu.length,
+        totalMapel: mapelList.length,
+        totalSiswa,
+        totalMateri: materiCount,
+        totalTugas: tugasList.length,
+        tugasPerluDikoreksi: ungradedCount,
+        totalUjianCbt: ujianCount,
+      },
+      pengumumanTerbaru,
+      tugasMenungguKoreksi: ungradedSubmissions,
+    });
+  } catch (error) {
+    console.error("Gagal memuat beranda guru:", error);
+    return res.status(503).json({ error: "Data beranda guru belum dapat dimuat." });
+  }
+});
+
+app.get("/api/lms/guru/presensi", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId } = ctx;
+    const scope = await resolveTeacherScope(sekolahId, guruId);
+    const restrictToAssigned = !scope.isWaliKelas;
+
+    const kelasList = await prisma.kelas.findMany({
+      where: {
+        sekolahId,
+        ...(restrictToAssigned ? { id: { in: scope.assignedKelasIds } } : {}),
+      },
+      select: { id: true, nama: true, waliGuruId: true },
+      orderBy: { nama: "asc" },
+      take: 200,
+    });
+
+    const todayDate = jakartaDate();
+    const todayIso = todayDate.toISOString().slice(0, 10);
+    const tanggalParam = typeof req.query.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.tanggal)
+      ? req.query.tanggal
+      : todayIso;
+    const bulanParam = typeof req.query.bulan === "string" && /^\d{4}-\d{2}$/.test(req.query.bulan)
+      ? req.query.bulan
+      : tanggalParam.slice(0, 7);
+
+    const requestedKelasId = typeof req.query.kelasId === "string" ? req.query.kelasId : "";
+    const selectedKelas = kelasList.find((k) => k.id === requestedKelasId) ?? kelasList[0] ?? null;
+
+    if (!selectedKelas) {
+      return res.json({
+        kelas: [],
+        selectedKelasId: null,
+        tanggal: tanggalParam,
+        bulan: bulanParam,
+        siswa: [],
+      });
+    }
+
+    const targetDate = new Date(`${tanggalParam}T00:00:00.000Z`);
+    const [yearNum, monthNum] = bulanParam.split("-").map(Number);
+    const monthStart = new Date(Date.UTC(yearNum, monthNum - 1, 1));
+    const monthEnd = new Date(Date.UTC(yearNum, monthNum, 0));
+
+    const [students, dailyRecords, monthlyRecords] = await Promise.all([
+      prisma.siswa.findMany({
+        where: { sekolahId, kelasId: selectedKelas.id, status: "Aktif" },
+        select: { id: true, nama: true, nisn: true },
+        orderBy: { nama: "asc" },
+      }),
+      prisma.presensi.findMany({
+        where: { sekolahId, kelasId: selectedKelas.id, tanggal: targetDate },
+        select: { siswaId: true, status: true, keterangan: true, waktuHadir: true },
+      }),
+      prisma.presensi.findMany({
+        where: { sekolahId, kelasId: selectedKelas.id, tanggal: { gte: monthStart, lte: monthEnd } },
+        select: { siswaId: true, status: true },
+      }),
+    ]);
+
+    const dailyMap = new Map(dailyRecords.map((r) => [r.siswaId, r]));
+    const monthlyMap = new Map<string, { HADIR: number; IZIN: number; SAKIT: number; ALPA: number }>();
+    for (const r of monthlyRecords) {
+      const entry = monthlyMap.get(r.siswaId) ?? { HADIR: 0, IZIN: 0, SAKIT: 0, ALPA: 0 };
+      if (r.status in entry) entry[r.status as keyof typeof entry] += 1;
+      monthlyMap.set(r.siswaId, entry);
+    }
+
+    return res.json({
+      kelas: kelasList.map((k) => ({ id: k.id, nama: k.nama, isWali: k.waliGuruId === guruId })),
+      selectedKelasId: selectedKelas.id,
+      tanggal: tanggalParam,
+      bulan: bulanParam,
+      siswa: students.map((s) => {
+        const daily = dailyMap.get(s.id);
+        const rekap = monthlyMap.get(s.id) ?? { HADIR: 0, IZIN: 0, SAKIT: 0, ALPA: 0 };
+        return {
+          id: s.id,
+          nama: s.nama,
+          nisn: s.nisn,
+          status: daily?.status ?? null,
+          keterangan: daily?.keterangan ?? "",
+          waktuHadir: daily?.waktuHadir ?? null,
+          rekapBulanan: rekap,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Gagal memuat presensi guru:", error);
+    return res.status(503).json({ error: "Data presensi siswa belum dapat dimuat." });
+  }
+});
+
+app.patch("/api/lms/guru/presensi", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId } = ctx;
+
+    const kelasId = typeof req.body?.kelasId === "string" ? req.body.kelasId.trim() : "";
+    const siswaId = typeof req.body?.siswaId === "string" ? req.body.siswaId.trim() : "";
+    const tanggalStr = typeof req.body?.tanggal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.tanggal)
+      ? req.body.tanggal
+      : jakartaDate().toISOString().slice(0, 10);
+    const status = req.body?.status;
+    const keterangan = typeof req.body?.keterangan === "string" ? req.body.keterangan.trim().slice(0, 160) : null;
+
+    if (!kelasId || !siswaId || !["HADIR", "SAKIT", "IZIN", "ALPA"].includes(status)) {
+      return res.status(400).json({ error: "Data presensi tidak lengkap atau status tidak valid." });
+    }
+
+    const scope = await resolveTeacherScope(sekolahId, guruId);
+    if (!scope.isWaliKelas && !scope.assignedKelasIds.includes(kelasId)) {
+      return res.status(403).json({ error: "Anda tidak memiliki akses presensi untuk kelas ini." });
+    }
+
+    const student = await prisma.siswa.findFirst({
+      where: { id: siswaId, sekolahId, kelasId, status: "Aktif" },
+      select: { id: true },
+    });
+    if (!student) return res.status(404).json({ error: "Siswa aktif pada kelas tersebut tidak ditemukan." });
+
+    const targetDate = new Date(`${tanggalStr}T00:00:00.000Z`);
+    let year = await prisma.tahunAjaran.findFirst({
+      where: { sekolahId, mulai: { lte: targetDate }, selesai: { gte: targetDate } },
+      select: { id: true },
+    }) ?? await prisma.tahunAjaran.findFirst({
+      where: { sekolahId },
+      orderBy: { mulai: "desc" },
+      select: { id: true },
+    });
+
+    if (!year) {
+      const y = new Date().getUTCFullYear();
+      year = await prisma.tahunAjaran.create({
+        data: {
+          sekolahId,
+          nama: `${y}/${y + 1}`,
+          semester: "Ganjil",
+          mulai: new Date(`${y}-07-01T00:00:00.000Z`),
+          selesai: new Date(`${y + 1}-06-30T00:00:00.000Z`),
+        },
+        select: { id: true },
+      });
+    }
+
+    const saved = await prisma.presensi.upsert({
+      where: { sekolahId_siswaId_tanggal: { sekolahId, siswaId, tanggal: targetDate } },
+      create: {
+        sekolahId,
+        tahunAjaranId: year.id,
+        kelasId,
+        siswaId,
+        tanggal: targetDate,
+        status,
+        keterangan: keterangan || null,
+        waktuHadir: status === "HADIR" ? new Date() : null,
+      },
+      update: {
+        kelasId,
+        tahunAjaranId: year.id,
+        status,
+        keterangan: keterangan || null,
+        waktuHadir: status === "HADIR" ? new Date() : null,
+      },
+      select: { siswaId: true, status: true, keterangan: true, waktuHadir: true },
+    });
+
+    return res.json({ presensi: saved, message: "Presensi siswa disimpan." });
+  } catch (error) {
+    console.error("Gagal menyimpan presensi guru:", error);
+    return res.status(503).json({ error: "Presensi siswa belum dapat disimpan." });
+  }
+});
+
+app.patch("/api/lms/guru/profil", async (req, res) => {
+  try {
+    const ctx = await resolveTeacherPortalContext(req);
+    if (!ctx) return res.status(401).json({ error: "Sesi guru tidak valid." });
+    const { sekolahId, guruId, akunId } = ctx;
+
+    const nama = typeof req.body?.nama === "string" ? req.body.nama.trim().slice(0, 120) : "";
+    const telepon = typeof req.body?.telepon === "string" ? req.body.telepon.trim().slice(0, 32) : "";
+    const mapelUtama = typeof req.body?.mapelUtama === "string" ? req.body.mapelUtama.trim().slice(0, 120) : "";
+
+    if (!nama || nama.length < 2) {
+      return res.status(400).json({ error: "Nama lengkap guru minimal 2 karakter." });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const guru = await tx.guru.update({
+        where: { id: guruId },
+        data: {
+          nama,
+          telepon: telepon || "",
+          ...(mapelUtama ? { mapelUtama } : {}),
+        },
+        select: { id: true, nama: true, email: true, nuptk: true, telepon: true, mapelUtama: true },
+      });
+      if (akunId) {
+        await tx.akun.updateMany({ where: { id: akunId, sekolahId }, data: { nama } });
+      }
+      return guru;
+    });
+
+    return res.json({ profil: updated, message: "Profil guru berhasil diperbarui." });
+  } catch (error) {
+    console.error("Gagal memperbarui profil guru:", error);
+    return res.status(503).json({ error: "Profil guru belum dapat disimpan." });
+  }
+});
+
 const resolveAdminSchoolSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
   const session = await getSession(req, "ADMIN");
   if (!session?.akun.sekolahId) return null;
   return { sekolahId: session.akun.sekolahId, nama: session.akun.nama, peran: "ADMIN" };
 };
-const resolveCollabSchoolSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
+const resolveAdminOrTeacherSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
+  const sandbox = await getDevSandboxLmsContext(req);
+  if (sandbox && sandbox.peran === "GURU" && sandbox.guruId) {
+    return { sekolahId: sandbox.sekolahId, nama: sandbox.nama, peran: "GURU", guruId: sandbox.guruId };
+  }
   const admin = await resolveAdminSchoolSession(req);
   if (admin) return admin;
-  if (req.path.startsWith("/diskusi") || req.path.startsWith("/ai-assistant")) {
+  const teacher = await resolveTeacherPortalContext(req);
+  if (teacher) {
+    return { sekolahId: teacher.sekolahId, nama: teacher.nama, peran: "GURU", guruId: teacher.guruId };
+  }
+  return null;
+};
+const resolveAcademicSchoolSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
+  const teacherAllowedPath = req.path.startsWith("/raport") || req.path.startsWith("/modul-kesetaraan") || req.path.startsWith("/agenda-mengajar");
+  if (teacherAllowedPath) {
+    const sandbox = await getDevSandboxLmsContext(req);
+    if (sandbox && sandbox.peran === "GURU" && sandbox.guruId) {
+      return { sekolahId: sandbox.sekolahId, nama: sandbox.nama, peran: "GURU", guruId: sandbox.guruId };
+    }
+  }
+  const admin = await resolveAdminSchoolSession(req);
+  if (admin) return admin;
+  if (teacherAllowedPath) {
+    const teacher = await resolveTeacherPortalContext(req);
+    if (teacher) {
+      return { sekolahId: teacher.sekolahId, nama: teacher.nama, peran: "GURU", guruId: teacher.guruId };
+    }
+  }
+  return null;
+};
+const resolveCollabSchoolSession = async (req: express.Request): Promise<SchoolSessionInfo | null> => {
+  const collabPath = req.path.startsWith("/diskusi") || req.path.startsWith("/ai-assistant");
+  if (collabPath) {
+    const sandbox = await getDevSandboxLmsContext(req);
+    if (sandbox) return { sekolahId: sandbox.sekolahId, nama: sandbox.nama, peran: sandbox.peran, guruId: sandbox.guruId };
+  }
+  const admin = await resolveAdminSchoolSession(req);
+  if (admin) return admin;
+  if (collabPath) {
     const lmsSession = await getLmsSession(req);
     if (lmsSession?.akun.sekolahId && !lmsSession.akun.wajibGantiPassword && (lmsSession.akun.peran === "GURU" || lmsSession.akun.peran === "SISWA")) {
-      return { sekolahId: lmsSession.akun.sekolahId, nama: lmsSession.akun.nama, peran: lmsSession.akun.peran };
+      return { sekolahId: lmsSession.akun.sekolahId, nama: lmsSession.akun.nama, peran: lmsSession.akun.peran, guruId: lmsSession.akun.guruId ?? null };
     }
-    const sandbox = await getDevSandboxLmsContext(req);
-    if (sandbox) return { sekolahId: sandbox.sekolahId, nama: sandbox.nama, peran: sandbox.peran };
   }
   return null;
 };
 
 app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
-app.use("/api/sekolah", tahap2AcademicRoutes(resolveAdminSchoolSession));
-app.use("/api/sekolah", tahap2CbtRoutes(resolveAdminSchoolSession));
+app.use("/api/sekolah", tahap2AcademicRoutes(resolveAcademicSchoolSession));
+app.use("/api/sekolah", tahap2CbtRoutes(resolveAdminOrTeacherSession));
 app.use("/api/sekolah", tahap2ProRoutes(resolveAdminSchoolSession));
 app.use("/api/sekolah", tahap2CollabRoutes(resolveCollabSchoolSession));
 app.use("/api/school", tahap2CollabRoutes(resolveCollabSchoolSession));

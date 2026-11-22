@@ -7,8 +7,9 @@ import {
   cleanText,
   isPrismaMissingSchema,
   resolveAuthorizedSchool,
+  resolveTeacherScope,
   type SchoolContextResolver,
-} from "./tahap2-shared.js";
+} from "./school-modules-shared.js";
 
 const VALID_KONDISI_ASET = new Set(["BAIK", "RUSAK_RINGAN", "RUSAK_BERAT"]);
 const VALID_SUMBER_ASET = new Set(["BOSP", "Mandiri", "Hibah", "Lainnya"]);
@@ -316,11 +317,23 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+      const teacherScope = peran === "GURU" && sessionGuruId ? await resolveTeacherScope(sekolahId, sessionGuruId) : null;
+      const restrictToAssigned = Boolean(teacherScope && !teacherScope.isWaliKelas);
 
       const [topics, kelas] = await Promise.all([
         prisma.topikDiskusi.findMany({
-          where: { sekolahId },
+          where: {
+            sekolahId,
+            ...(restrictToAssigned
+              ? {
+                  OR: [
+                    { kelasId: null },
+                    ...(teacherScope!.assignedKelasIds.length ? [{ kelasId: { in: teacherScope!.assignedKelasIds } }] : []),
+                  ],
+                }
+              : {}),
+          },
           include: {
             balasan: {
               orderBy: { createdAt: "asc" },
@@ -329,7 +342,15 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
           orderBy: [{ disematkan: "desc" }, { updatedAt: "desc" }],
           take: 200,
         }),
-        prisma.kelas.findMany({ where: { sekolahId }, select: { id: true, nama: true }, orderBy: { nama: "asc" }, take: 500 }),
+        prisma.kelas.findMany({
+          where: {
+            sekolahId,
+            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedKelasIds } } : {}),
+          },
+          select: { id: true, nama: true },
+          orderBy: { nama: "asc" },
+          take: 500,
+        }),
       ]);
 
       return res.json({ topics, kelas });

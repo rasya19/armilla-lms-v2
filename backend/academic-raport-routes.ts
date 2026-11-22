@@ -6,8 +6,9 @@ import {
   cleanText,
   isPrismaMissingSchema,
   resolveAuthorizedSchool,
+  resolveTeacherScope,
   type SchoolContextResolver,
-} from "./tahap2-shared.js";
+} from "./school-modules-shared.js";
 
 const VALID_JENJANG = new Set(["PAKET_A", "PAKET_B", "PAKET_C"]);
 const VALID_KELOMPOK = new Set(["UMUM", "PEMBERDAYAAN", "KETERAMPILAN"]);
@@ -372,7 +373,9 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+      const teacherScope = peran === "GURU" && sessionGuruId ? await resolveTeacherScope(sekolahId, sessionGuruId) : null;
+      const restrictToAssigned = Boolean(teacherScope && !teacherScope.isWaliKelas);
 
       const requestedKelasId = typeof req.query.kelasId === "string" ? req.query.kelasId.trim() : "";
       const requestedTahunId = typeof req.query.tahunAjaranId === "string" ? req.query.tahunAjaranId.trim() : "";
@@ -387,7 +390,10 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           select: { logo_url: true },
         }).catch(() => null),
         prisma.kelas.findMany({
-          where: { sekolahId },
+          where: {
+            sekolahId,
+            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedKelasIds } } : {}),
+          },
           select: { id: true, nama: true, waliGuruId: true },
           orderBy: { nama: "asc" },
           take: 500,
@@ -399,7 +405,10 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           take: 100,
         }),
         prisma.mapel.findMany({
-          where: { sekolahId },
+          where: {
+            sekolahId,
+            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedMapelIds } } : {}),
+          },
           select: { id: true, nama: true, kkm: true },
           orderBy: { nama: "asc" },
           take: 500,
@@ -505,11 +514,17 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       }
 
       const [siswa, mapel] = await Promise.all([
-        prisma.siswa.findFirst({ where: { id: siswaId, sekolahId }, select: { id: true } }),
+        prisma.siswa.findFirst({ where: { id: siswaId, sekolahId }, select: { id: true, kelasId: true } }),
         prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true } }),
       ]);
       if (!siswa || !mapel) {
         return res.status(404).json({ error: "Siswa atau mata pelajaran tidak ditemukan." });
+      }
+      if (auth.session.peran === "GURU" && auth.session.guruId) {
+        const scope = await resolveTeacherScope(sekolahId, auth.session.guruId);
+        if (!scope.isWaliKelas && (!scope.assignedMapelIds.includes(mapelId) || !siswa.kelasId || !scope.assignedKelasIds.includes(siswa.kelasId))) {
+          return res.status(403).json({ error: "Anda hanya dapat menginput nilai untuk kelas dan mapel yang Anda ampu." });
+        }
       }
 
       const existing = await prisma.nilai.findFirst({
@@ -566,11 +581,17 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
       const [year, kelas, siswa] = await Promise.all([
         prisma.tahunAjaran.findFirst({ where: { id: tahunAjaranId, sekolahId }, select: { id: true } }),
-        prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true } }),
+        prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true, waliGuruId: true } }),
         prisma.siswa.findFirst({ where: { id: siswaId, sekolahId }, select: { id: true } }),
       ]);
       if (!year || !kelas || !siswa) {
         return res.status(404).json({ error: "Tahun ajaran, kelas, atau siswa tidak ditemukan." });
+      }
+      if (auth.session.peran === "GURU" && auth.session.guruId) {
+        const scope = await resolveTeacherScope(sekolahId, auth.session.guruId);
+        if (!scope.isWaliKelas && kelas.waliGuruId !== auth.session.guruId && !scope.assignedKelasIds.includes(kelas.id)) {
+          return res.status(403).json({ error: "Anda tidak memiliki akses catatan wali kelas untuk rombel ini." });
+        }
       }
 
       const existing = await prisma.catatanRaport.findUnique({

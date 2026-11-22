@@ -8,7 +8,7 @@ import {
   isSafeHttpUrl,
   resolveAuthorizedSchool,
   type SchoolContextResolver,
-} from "./tahap2-shared.js";
+} from "./school-modules-shared.js";
 
 const DEFAULT_SNP_ITEMS: ReadonlyArray<{ standarKode: string; standarNama: string; indikator: string; urutan: number }> = [
   { standarKode: "SNP-1", standarNama: "Standar Kompetensi Lulusan (SKL)", indikator: "Dokumen SKL & Pemetaan Capaian Kompetensi Paket A, B, dan C", urutan: 1 },

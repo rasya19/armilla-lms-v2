@@ -21,8 +21,21 @@ import {
   type LmsAuthCache,
 } from "./authSessionCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
+import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
+import { TeacherPortal } from "./TeacherPortal";
 
-type Session = { nama: string; peran: "SISWA" | "GURU"; wajibGantiPassword: boolean };
+type Session = {
+  nama: string;
+  peran: "SISWA" | "GURU";
+  wajibGantiPassword: boolean;
+  sekolah?: string;
+  slug?: string;
+  plan?: PlanSlug;
+  email?: string | null;
+  nuptk?: string | null;
+  telepon?: string | null;
+  mapelUtama?: string | null;
+};
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
 const button = "master-primary w-full py-3 disabled:opacity-50";
 const hashNav: Record<string, string> = { "#beranda-lms": "beranda", "#jadwal-lms": "jadwal", "#pembelajaran-lms": "materi", "#biodata-dapodik": "biodata", "#profil-lms": "profil", "#akses-lms": "profil" };
@@ -200,11 +213,25 @@ export function LmsHome() {
         ) {
           throw new Error("Respons sesi tidak valid.");
         }
-        const nextSession: Session = { nama: data.nama, peran: data.peran, wajibGantiPassword: data.wajibGantiPassword };
+        const raw = data as Record<string, unknown>;
+        const nextSession: Session = {
+          nama: data.nama,
+          peran: data.peran,
+          wajibGantiPassword: data.wajibGantiPassword,
+          sekolah: typeof raw.sekolah === "string" ? raw.sekolah : undefined,
+          slug: typeof raw.slug === "string" ? raw.slug : undefined,
+          plan: resolvePlanSlug(typeof raw.plan === "string" ? raw.plan : undefined),
+          email: typeof raw.email === "string" ? raw.email : null,
+          nuptk: typeof raw.nuptk === "string" ? raw.nuptk : null,
+          telepon: typeof raw.telepon === "string" ? raw.telepon : null,
+          mapelUtama: typeof raw.mapelUtama === "string" ? raw.mapelUtama : null,
+        };
         setSession(nextSession);
         saveAuthCache<LmsAuthCache>("lms", {
           token: initialCache?.token,
-          ...nextSession,
+          nama: nextSession.nama,
+          peran: nextSession.peran,
+          wajibGantiPassword: nextSession.wajibGantiPassword,
           updatedAt: Date.now(),
         });
         setStatus("ready");
@@ -240,19 +267,41 @@ export function LmsHome() {
   if (status === "loading") return <PortalSpinner label="Memuat portal LMS" />;
   if (status !== "ready" || !session) return <main className="min-h-screen bg-slate-950 p-8 text-white">{error || "Layanan sesi tidak tersedia. Muat ulang halaman."}</main>;
   return (
-    <TenantThemeProvider scope="lms">
-      <LmsPortalShell
-        session={session}
-        activeNav={activeNav}
-        setActiveNav={setActiveNav}
-        busy={busy}
-        error={error}
-        onLogout={logout}
-        onPasswordChanged={() => {
-          clearAuthCache("lms");
-          navigate("/lms/login", { state: { changed: true }, replace: true });
-        }}
-      />
+    <TenantThemeProvider scope="lms" plan={session.plan}>
+      {session.peran === "GURU" && !session.wajibGantiPassword ? (
+        <TeacherPortal
+          nama={session.nama}
+          school={session.sekolah}
+          plan={session.plan ?? "basic"}
+          email={session.email}
+          nuptk={session.nuptk}
+          telepon={session.telepon}
+          mapelUtama={session.mapelUtama}
+          busy={busy}
+          error={error}
+          onLogout={logout}
+          onPasswordChanged={() => {
+            clearAuthCache("lms");
+            navigate("/lms/login", { state: { changed: true }, replace: true });
+          }}
+          onProfileUpdated={(nextNama) => {
+            setSession((prev) => (prev ? { ...prev, nama: nextNama } : prev));
+          }}
+        />
+      ) : (
+        <LmsPortalShell
+          session={session}
+          activeNav={activeNav}
+          setActiveNav={setActiveNav}
+          busy={busy}
+          error={error}
+          onLogout={logout}
+          onPasswordChanged={() => {
+            clearAuthCache("lms");
+            navigate("/lms/login", { state: { changed: true }, replace: true });
+          }}
+        />
+      )}
     </TenantThemeProvider>
   );
 }

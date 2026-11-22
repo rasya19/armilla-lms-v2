@@ -78,7 +78,15 @@ function fieldCls(isDark: boolean) {
     : "glass-input mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm text-slate-900";
 }
 
-function useCbtOverview() {
+function sandboxHeaders(sandboxRole?: "GURU" | "SISWA", extra?: Record<string, string>): Record<string, string> | undefined {
+  if (!sandboxRole && !extra) return undefined;
+  return {
+    ...(extra ?? {}),
+    ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+  };
+}
+
+function useCbtOverview(sandboxRole?: "GURU" | "SISWA") {
   const [ujianList, setUjianList] = useState<UjianItem[]>([]);
   const [kelasList, setKelasList] = useState<Array<{ id: string; nama: string }>>([]);
   const [mapelList, setMapelList] = useState<Array<{ id: string; nama: string; kkm: number }>>([]);
@@ -90,7 +98,8 @@ function useCbtOverview() {
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await fetchWithTimeout("/api/sekolah/cbt/ujian", { signal });
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout("/api/sekolah/cbt/ujian", { signal, ...(headers ? { headers } : {}) });
       const body = (await res.json()) as {
         ujian?: UjianItem[];
         kelas?: Array<{ id: string; nama: string }>;
@@ -113,7 +122,7 @@ function useCbtOverview() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [sandboxRole]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -127,9 +136,9 @@ function useCbtOverview() {
 // ==========================================
 // 1. KELOLA BANK SOAL & UJIAN
 // ==========================================
-export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => void } = {}) {
+export function CbtBankSoalView({ onOpenSettings, sandboxRole }: { onOpenSettings?: () => void; sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
-  const { ujianList, kelasList, mapelList, guruList, loading, error, setError, reload } = useCbtOverview();
+  const { ujianList, kelasList, mapelList, guruList, loading, error, setError, reload } = useCbtOverview(sandboxRole);
   const [selectedUjianId, setSelectedUjianId] = useState("");
   const [soalList, setSoalList] = useState<SoalItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -174,13 +183,14 @@ export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => voi
       return;
     }
     try {
-      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${ujianId}/soal`);
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${ujianId}/soal`, headers ? { headers } : undefined);
       const body = (await res.json()) as { soal?: SoalItem[] };
       if (res.ok) setSoalList(body.soal ?? []);
     } catch {
       // Ignore transient error
     }
-  }, []);
+  }, [sandboxRole]);
 
   useEffect(() => {
     if (selectedUjianId) void loadQuestions(selectedUjianId);
@@ -194,7 +204,7 @@ export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => voi
     try {
       const res = await fetchWithTimeout("/api/sekolah/cbt/ujian", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
         body: JSON.stringify({ judul, kelasId, mapelId, guruId, durasiMenit, kkm }),
       });
       const body = (await res.json()) as { ujian?: UjianItem; message?: string; error?: string };
@@ -213,7 +223,8 @@ export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => voi
   async function handleDeleteUjian(id: string) {
     setBusy(true);
     try {
-      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${id}`, { method: "DELETE" });
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${id}`, { method: "DELETE", ...(headers ? { headers } : {}) });
       if (!res.ok) throw new Error("Gagal menghapus paket ujian.");
       setNotice("Paket ujian dihapus.");
       if (selectedUjianId === id) setSelectedUjianId("");
@@ -242,7 +253,7 @@ export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => voi
 
       const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${selectedUjianId}/soal`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
         body: JSON.stringify({ tipe, teks: teksSoal, bobot, opsi, kunciEsai, pembahasan }),
       });
       const body = (await res.json()) as { message?: string; error?: string };
@@ -268,7 +279,8 @@ export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => voi
     if (!selectedUjianId) return;
     setBusy(true);
     try {
-      await fetchWithTimeout(`/api/sekolah/cbt/ujian/${selectedUjianId}/soal/${soalId}`, { method: "DELETE" });
+      const headers = sandboxHeaders(sandboxRole);
+      await fetchWithTimeout(`/api/sekolah/cbt/ujian/${selectedUjianId}/soal/${soalId}`, { method: "DELETE", ...(headers ? { headers } : {}) });
       await Promise.all([loadQuestions(selectedUjianId), reload()]);
     } finally {
       setBusy(false);
@@ -485,9 +497,9 @@ export function CbtBankSoalView({ onOpenSettings }: { onOpenSettings?: () => voi
 // ==========================================
 // 2. JADWAL UJIAN CBT & TOKEN 6 KARAKTER
 // ==========================================
-export function CbtJadwalView({ onOpenSettings }: { onOpenSettings?: () => void } = {}) {
+export function CbtJadwalView({ onOpenSettings, sandboxRole }: { onOpenSettings?: () => void; sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
-  const { ujianList, kelasList, loading, error, setError, reload } = useCbtOverview();
+  const { ujianList, kelasList, loading, error, setError, reload } = useCbtOverview(sandboxRole);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -513,7 +525,7 @@ export function CbtJadwalView({ onOpenSettings }: { onOpenSettings?: () => void 
     try {
       const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${editingId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           kelasId,
           mulai: new Date(mulai).toISOString(),
@@ -537,7 +549,8 @@ export function CbtJadwalView({ onOpenSettings }: { onOpenSettings?: () => void 
     setBusy(true);
     setNotice("");
     try {
-      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${id}/token`, { method: "POST" });
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${id}/token`, { method: "POST", ...(headers ? { headers } : {}) });
       const body = (await res.json()) as { tokenKode?: string; message?: string; error?: string };
       if (!res.ok) throw new Error(body.error || "Gagal mengganti token.");
       setNotice(`Token baru aktif: ${body.tokenKode}`);
@@ -664,9 +677,9 @@ export function CbtJadwalView({ onOpenSettings }: { onOpenSettings?: () => void 
 // ==========================================
 // 3. MONITORING UJIAN LIVE
 // ==========================================
-export function CbtMonitoringView() {
+export function CbtMonitoringView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
-  const { ujianList, loading, error, setError } = useCbtOverview();
+  const { ujianList, loading, error, setError } = useCbtOverview(sandboxRole);
   const [selectedId, setSelectedId] = useState("");
   const [peserta, setPeserta] = useState<PesertaMonitoring[]>([]);
   const [busy, setBusy] = useState(false);
@@ -679,14 +692,15 @@ export function CbtMonitoringView() {
   const loadMonitoring = useCallback(async (ujianId: string) => {
     if (!ujianId) return;
     try {
-      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${ujianId}/monitoring`);
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${ujianId}/monitoring`, headers ? { headers } : undefined);
       const body = (await res.json()) as { peserta?: PesertaMonitoring[]; error?: string };
       if (!res.ok) throw new Error(body.error || "Gagal memuat monitoring.");
       setPeserta(body.peserta ?? []);
     } catch (failure) {
       setError(describeFetchError(failure, "Data monitoring belum dapat dimuat."));
     }
-  }, [setError]);
+  }, [setError, sandboxRole]);
 
   useEffect(() => {
     if (selectedId) void loadMonitoring(selectedId);
@@ -699,7 +713,7 @@ export function CbtMonitoringView() {
     try {
       const res = await fetchWithTimeout(`/api/sekolah/cbt/ujian/${selectedId}/reset-peserta`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
         body: JSON.stringify({ siswaId }),
       });
       const body = (await res.json()) as { message?: string; error?: string };

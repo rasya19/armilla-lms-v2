@@ -122,6 +122,7 @@ type SchoolView =
   | SchoolModuleId
   | "dashboard"
   | "password"
+  | "materi-tugas"
   | "ruang-kbm"
   | "materi-ajar"
   | "tugas-penilaian"
@@ -182,8 +183,7 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
     label: "Ruang Belajar (KBM)",
     icon: BookOpen,
     items: [
-      { label: "Materi Ajar (Modul)", icon: BookOpen, target: "materi-ajar" },
-      { label: "Tugas & Penilaian", icon: ClipboardList, target: "tugas-penilaian" },
+      { label: "Materi & Tugas Kelas", icon: BookOpen, target: "materi-tugas" },
       { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi" },
       { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
     ],
@@ -222,7 +222,7 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
   },
 ];
 
-const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string; headerClass: string }> = {
+export const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string; headerClass: string }> = {
   basic: {
     label: "PAKET BASIC",
     sidebarClass: "border-white/30 bg-white/15 text-white",
@@ -240,7 +240,7 @@ const PLAN_BADGE_STYLES: Record<PlanSlug, { label: string; sidebarClass: string;
   },
 };
 
-type SidebarThemePalette = {
+export type SidebarThemePalette = {
   aside: string;
   headerDivider: string;
   identityCard: string;
@@ -279,7 +279,7 @@ type SidebarThemePalette = {
   mobileFab: string;
 };
 
-const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
+export const SIDEBAR_THEMES: Record<ThemeKey, SidebarThemePalette> = {
   ocean: {
     aside:
       "border-sky-300/30 bg-[linear-gradient(180deg,#0c4a6e_0%,#0369a1_50%,#0284c7_100%)] text-white shadow-[4px_0_28px_rgba(7,89,133,0.28)]",
@@ -937,9 +937,9 @@ export function SchoolHome() {
               />
             </section>
           )}
-          {view === "ruang-kbm" && <Classroom key="kbm" role="ADMIN" />}
-          {view === "materi-ajar" && <Classroom key="materi" role="ADMIN" initialTab="materi" />}
-          {view === "tugas-penilaian" && <Classroom key="tugas" role="ADMIN" initialTab="tugas" />}
+          {(view === "materi-tugas" || view === "ruang-kbm" || view === "materi-ajar" || view === "tugas-penilaian") && (
+            <Classroom key="materi-tugas" role="ADMIN" initialTab={view === "tugas-penilaian" ? "tugas" : undefined} />
+          )}
           {view === "verval-dapodik" && <VervalDapodikView />}
           {view === "impor-dapodik" && hasPlanAccess(plan, "reguler") && (
             <SchoolImportPanel onGoToStudents={() => selectView("siswa")} />
@@ -948,10 +948,10 @@ export function SchoolHome() {
             <SchoolBulkPlacementView />
           )}
           {view === "presensi" && (
-            <SchoolAcademicRecap mode="presensi" onOpenClassroom={() => selectView("materi-ajar")} />
+            <SchoolAcademicRecap mode="presensi" onOpenClassroom={() => selectView("materi-tugas")} />
           )}
           {view === "rekap-akademik" && hasPlanAccess(plan, "reguler") && (
-            <SchoolAcademicRecap mode="rekap" onOpenClassroom={() => selectView("materi-ajar")} />
+            <SchoolAcademicRecap mode="rekap" onOpenClassroom={() => selectView("materi-tugas")} />
           )}
           {view === "tema-identitas" && (
             <SchoolThemeIdentityView
@@ -1095,7 +1095,7 @@ function SchoolSidebar({
     const active =
       view === item.target ||
       (item.target === "mapel" && view === "modul-kesetaraan") ||
-      (item.target === "materi-ajar" && view === "ruang-kbm") ||
+      (item.target === "materi-tugas" && (view === "ruang-kbm" || view === "materi-ajar" || view === "tugas-penilaian")) ||
       (item.target === "cbt-bank-soal" && view === "cbt-pengaturan");
     const locked = item.requiredPlan ? !hasPlanAccess(plan, item.requiredPlan) : false;
     return (
@@ -1333,9 +1333,9 @@ function SchoolMobileNav({
       {([
         { label: "Beranda", icon: Home, active: !menuOpen && view === "dashboard", click: () => onSelectView("dashboard") },
         { label: "Siswa", icon: Users, active: !menuOpen && view === "siswa", click: () => onSelectView("siswa") },
-        { label: "Materi", icon: BookOpen, active: !menuOpen && (view === "materi-ajar" || view === "ruang-kbm"), click: () => onSelectView("materi-ajar") },
+        { label: "Materi", icon: BookOpen, active: !menuOpen && (view === "materi-tugas" || view === "materi-ajar" || view === "tugas-penilaian" || view === "ruang-kbm"), click: () => onSelectView("materi-tugas") },
         { label: "PPDB", icon: ClipboardList, active: !menuOpen && view === "ppdb", click: () => onSelectView("ppdb") },
-        { label: "Menu", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "materi-ajar" && view !== "ruang-kbm" && view !== "ppdb"), click: onOpenMenu },
+        { label: "Menu", icon: LayoutGrid, active: menuOpen || (view !== "dashboard" && view !== "siswa" && view !== "materi-tugas" && view !== "materi-ajar" && view !== "tugas-penilaian" && view !== "ruang-kbm" && view !== "ppdb"), click: onOpenMenu },
       ] as const).map(({ label, icon: Icon, active, click }) =>
         isDark ? (
           <button
@@ -1403,7 +1403,7 @@ function SchoolOverview({
   school: string;
   slug: string;
   plan: PlanSlug;
-  onSelect: (view: SchoolDataKind) => void;
+  onSelect: (view: ActiveDataKind) => void;
   onOpenView: (view: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
   onRequireUpgrade: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
 }) {
@@ -1636,10 +1636,10 @@ function SchoolOverview({
                     </p>
                     <button
                       type="button"
-                      onClick={() => onOpenView("ruang-kbm")}
+                      onClick={() => onOpenView("materi-tugas")}
                       className="master-primary mt-4 rounded-xl px-4 py-2"
                     >
-                      Buka Ruang KBM &amp; Materi
+                      Buka Materi &amp; Tugas Kelas
                     </button>
                   </div>
                 ) : (
@@ -1772,7 +1772,7 @@ function SchoolOverview({
                     onClick={() =>
                       canUseRecap
                         ? onOpenView("rekap-akademik", "reguler", "Analitik & Rekap Nilai")
-                        : onOpenView("ruang-kbm")
+                        : onOpenView("materi-tugas")
                     }
                     className={
                       isDark

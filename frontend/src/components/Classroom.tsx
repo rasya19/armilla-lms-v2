@@ -31,13 +31,16 @@ function failureMessage(failure: unknown) {
   return describeFetchError(failure, "Ruang kelas belum dapat dimuat.");
 }
 
-export function Classroom({ role, sandboxRole, initialTab }: { role: Role; sandboxRole?: "GURU" | "SISWA"; initialTab?: "materi" | "tugas" }) {
+export function Classroom({ role, sandboxRole, initialTab, initialKelasId }: { role: Role; sandboxRole?: "GURU" | "SISWA"; initialTab?: "materi" | "tugas"; initialKelasId?: string | null }) {
   const base = `/api/${role === "ADMIN" ? "sekolah" : "lms"}/ruang-kbm`;
   const cacheKey = `${base}::${sandboxRole ?? "real"}`;
   const [rooms, setRooms] = useState<Room[] | null>(() => getCached<Room[]>(cacheKey));
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialKelasId ?? null);
   const [version, setVersion] = useState(0);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (initialKelasId) setSelected(initialKelasId);
+  }, [initialKelasId]);
   useEffect(() => {
     const controller = new AbortController();
     const cached = getCached<Room[]>(cacheKey);
@@ -53,16 +56,18 @@ export function Classroom({ role, sandboxRole, initialTab }: { role: Role; sandb
     return () => controller.abort();
   }, [base, cacheKey, version, sandboxRole]);
   if (selected) return <ClassroomWorkspace key={`${selected}-${initialTab ?? "materi"}`} role={role} sandboxRole={sandboxRole} initialTab={initialTab} base={base} kelasId={selected} onExit={() => { setSelected(null); setVersion((value) => value + 1); }} />;
-  const lobbyTitle = initialTab === "tugas" ? "Tugas & Penilaian KBM" : initialTab === "materi" ? "Materi Ajar (Modul KBM)" : "Ruang KBM & Materi";
-  const lobbyDescription = initialTab === "tugas"
-    ? "Pilih kelas untuk membuat tugas, memantau pengumpulan, dan memberi nilai warga belajar."
-    : "Masuk ke kelas untuk mengelola modul bahan ajar, pengumuman, dan aktivitas belajar bersama.";
+  const lobbyTitle = "Materi & Tugas Kelas";
+  const lobbyDescription = role === "SISWA"
+    ? "Pilih ruang kelas Anda untuk membaca materi ajar, pengumuman, dan mengumpulkan tugas."
+    : "Pilih kelas untuk mengelola materi ajar (modul PDF, video, tautan), pengumuman, tugas kelas, penilaian, dan daftar warga kelas.";
   return <section className="dashboard-glass space-y-6 rounded-2xl p-6">
     <DashboardHero title={lobbyTitle} description={lobbyDescription} />
-    {error ? <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error} <button type="button" className="font-bold underline" onClick={() => setVersion((value) => value + 1)}>Coba lagi</button></p> : !rooms ? <CardGridSkeleton count={3} columns={3} /> : rooms.length === 0 ? <EmptyState title={role === "SISWA" ? "Belum tergabung di ruang kelas" : "Belum ada ruang kelas"} description={role === "SISWA" ? "Anda belum tergabung di ruang kelas. Hubungi operator sekolah untuk penempatan kelas." : "Tambahkan kelas di Manajemen Kelas terlebih dahulu."} /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{rooms.map((item) => <article key={item.id} className="dashboard-glass space-y-3 rounded-2xl p-5">
-      <div className="flex items-center gap-3"><span className="rounded-xl bg-indigo-100 p-3 text-indigo-700"><GraduationCap size={22} /></span><div><h2 className="font-bold text-slate-900">{role === "SISWA" ? `Selamat Datang di ${item.nama}` : item.nama}</h2><p className="text-sm text-slate-700">Wali Kelas: {item.wali ?? "Belum ditentukan"}</p></div></div>
-      <p className="text-sm text-slate-700">{item.jumlahSiswa} siswa · {item.jumlahMapel} mapel · {item.tugasAktif} tugas aktif</p>
-      <button type="button" className="master-primary" onClick={() => setSelected(item.id)}>{role === "SISWA" ? "Masuk ke Ruang Kelas →" : "Masuk Kelas"}</button>
+    {error ? <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">{error} <button type="button" className="font-bold underline" onClick={() => setVersion((value) => value + 1)}>Coba lagi</button></p> : !rooms ? <CardGridSkeleton count={3} columns={3} /> : rooms.length === 0 ? <EmptyState title={role === "SISWA" ? "Belum tergabung di ruang kelas" : "Belum ada ruang kelas"} description={role === "SISWA" ? "Anda belum tergabung di ruang kelas. Hubungi operator sekolah untuk penempatan kelas." : "Belum ada kelas yang ditugaskan. Tambahkan kelas atau jadwal mengajar pada panel admin."} /> : <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">{rooms.map((item) => <article key={item.id} className="dashboard-glass flex flex-col justify-between gap-4 rounded-2xl p-5">
+      <div className="space-y-3">
+        <div className="flex items-center gap-3"><span className="rounded-xl bg-indigo-100 p-3 text-indigo-700"><GraduationCap size={22} /></span><div className="min-w-0"><h2 className="truncate font-bold text-slate-900">{role === "SISWA" ? `Selamat Datang di ${item.nama}` : item.nama}</h2><p className="truncate text-sm text-slate-700">Wali Kelas: {item.wali ?? "Belum ditentukan"}</p></div></div>
+        <p className="text-sm text-slate-700 tabular-nums">{item.jumlahSiswa} siswa · {item.jumlahMapel} mapel · {item.tugasAktif} tugas aktif</p>
+      </div>
+      <button type="button" className="master-primary w-full" onClick={() => setSelected(item.id)}>{role === "SISWA" ? "Masuk ke Ruang Kelas →" : "Masuk Kelas"}</button>
     </article>)}</div>}
   </section>;
 }

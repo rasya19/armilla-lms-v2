@@ -7,9 +7,57 @@ export type SchoolSessionInfo = {
   sekolahId: string;
   nama: string;
   peran: "ADMIN" | "GURU" | "SISWA";
+  guruId?: string | null;
 };
 
 export type SchoolContextResolver = (req: Request) => Promise<SchoolSessionInfo | null>;
+
+export type TeacherScope = {
+  isWaliKelas: boolean;
+  waliKelasIds: string[];
+  assignedKelasIds: string[];
+  assignedMapelIds: string[];
+  kelasMapelMap: Map<string, Set<string>>;
+};
+
+export async function resolveTeacherScope(sekolahId: string, guruId: string): Promise<TeacherScope> {
+  const [waliClasses, schedules] = await Promise.all([
+    prisma.kelas.findMany({
+      where: { sekolahId, waliGuruId: guruId },
+      select: { id: true },
+      take: 200,
+    }),
+    prisma.jadwalPelajaran.findMany({
+      where: { sekolahId, guruId },
+      select: { kelasId: true, mapelId: true },
+      take: 2000,
+    }),
+  ]);
+
+  const waliKelasIds = waliClasses.map((k) => k.id);
+  const kelasSet = new Set<string>(waliKelasIds);
+  const mapelSet = new Set<string>();
+  const kelasMapelMap = new Map<string, Set<string>>();
+
+  for (const row of schedules) {
+    kelasSet.add(row.kelasId);
+    mapelSet.add(row.mapelId);
+    let mSet = kelasMapelMap.get(row.kelasId);
+    if (!mSet) {
+      mSet = new Set<string>();
+      kelasMapelMap.set(row.kelasId, mSet);
+    }
+    mSet.add(row.mapelId);
+  }
+
+  return {
+    isWaliKelas: waliKelasIds.length > 0,
+    waliKelasIds,
+    assignedKelasIds: [...kelasSet],
+    assignedMapelIds: [...mapelSet],
+    kelasMapelMap,
+  };
+}
 
 export async function resolveAuthorizedSchool(
   req: Request,

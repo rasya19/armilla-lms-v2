@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import { prisma } from "./db.js";
 
-export type ClassroomSession = { sekolahId: string; peran: "ADMIN" | "GURU" | "SISWA"; siswaId: string | null; kelasId: string | null };
+export type ClassroomSession = { sekolahId: string; peran: "ADMIN" | "GURU" | "SISWA"; siswaId: string | null; kelasId: string | null; guruId?: string | null };
 type GetSession = (req: Request) => Promise<ClassroomSession | null>;
 
 export function classroomRoutes(getSession: GetSession, today: () => Date) {
@@ -24,8 +24,20 @@ export function classroomRoutes(getSession: GetSession, today: () => Date) {
     if (s.peran === "SISWA" && !s.kelasId) return res.json({ rows: [] });
     try {
       const activeYear = { sekolahId: s.sekolahId, mulai: { lte: today() }, selesai: { gte: today() } };
-      const classes = await prisma.kelas.findMany({ where: { sekolahId: s.sekolahId, ...(s.peran === "SISWA" ? { id: s.kelasId ?? "" } : {}) }, select: { id: true, nama: true, waliGuruId: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 });
+      let classes = await prisma.kelas.findMany({ where: { sekolahId: s.sekolahId, ...(s.peran === "SISWA" ? { id: s.kelasId ?? "" } : {}) }, select: { id: true, nama: true, waliGuruId: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 });
       if (classes.length > 500) return res.status(409).json({ error: "Terlalu banyak kelas untuk ditampilkan." });
+      if (s.peran === "GURU" && s.guruId) {
+        const isWali = classes.some((item) => item.waliGuruId === s.guruId);
+        if (!isWali) {
+          const teacherSchedules = await prisma.jadwalPelajaran.findMany({
+            where: { sekolahId: s.sekolahId, guruId: s.guruId },
+            select: { kelasId: true },
+            take: 2000,
+          });
+          const assignedIds = new Set(teacherSchedules.map((item) => item.kelasId));
+          classes = classes.filter((item) => assignedIds.has(item.id));
+        }
+      }
       const ids = classes.map((item) => item.id);
       if (!ids.length) return res.json({ rows: [] });
       const [teachers, counts, schedules, tasks] = await Promise.all([

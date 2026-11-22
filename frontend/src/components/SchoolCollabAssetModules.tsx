@@ -48,7 +48,7 @@ type AiChatMessage = {
   source?: string;
 };
 
-export function AsistenAiView() {
+export function AsistenAiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
   const [mode, setMode] = useState<"modul" | "soal" | "chat">("modul");
   const [jenjang, setJenjang] = useState("Paket C (Setara SMA)");
@@ -74,7 +74,10 @@ export function AsistenAiView() {
     try {
       const res = await fetchWithTimeout("/api/school/ai-assistant", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({
           mode,
           jenjang,
@@ -108,7 +111,10 @@ export function AsistenAiView() {
     try {
       const res = await fetchWithTimeout("/api/school/ai-assistant", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({
           mode: "chat",
           jenjang,
@@ -800,7 +806,7 @@ type TopikRow = {
   balasan: BalasanRow[];
 };
 
-export function RuangDiskusiView() {
+export function RuangDiskusiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
   const [topics, setTopics] = useState<TopikRow[]>([]);
   const [kelasList, setKelasList] = useState<Array<{ id: string; nama: string }>>([]);
@@ -823,7 +829,10 @@ export function RuangDiskusiView() {
   const loadData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await fetchWithTimeout("/api/sekolah/diskusi", { signal });
+      const res = await fetchWithTimeout("/api/sekolah/diskusi", {
+        signal,
+        ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
+      });
       const body = (await res.json()) as { topics?: TopikRow[]; kelas?: Array<{ id: string; nama: string }>; error?: string };
       if (!res.ok) throw new Error(body.error || "Forum diskusi belum dapat dimuat.");
       const list = body.topics ?? [];
@@ -838,7 +847,7 @@ export function RuangDiskusiView() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [sandboxRole]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -869,7 +878,10 @@ export function RuangDiskusiView() {
     try {
       const res = await fetchWithTimeout("/api/sekolah/diskusi", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({
           judul,
           kategori,
@@ -902,7 +914,10 @@ export function RuangDiskusiView() {
     try {
       const res = await fetchWithTimeout(`/api/sekolah/diskusi/${activeTopic.id}/balasan`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({ isi: replyText }),
       });
       const body = (await res.json()) as { error?: string };
@@ -922,7 +937,10 @@ export function RuangDiskusiView() {
     try {
       const res = await fetchWithTimeout(`/api/sekolah/diskusi/${topic.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({ [field]: !topic[field] }),
       });
       const body = (await res.json()) as { topic?: TopikRow; error?: string };
@@ -941,7 +959,10 @@ export function RuangDiskusiView() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetchWithTimeout(`/api/sekolah/diskusi/${id}`, { method: "DELETE" });
+      const res = await fetchWithTimeout(`/api/sekolah/diskusi/${id}`, {
+        method: "DELETE",
+        ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
+      });
       const body = (await res.json()) as { error?: string; message?: string };
       if (!res.ok) throw new Error(body.error || "Gagal menghapus utas.");
       setNotice(body.message || "Topik dihapus.");

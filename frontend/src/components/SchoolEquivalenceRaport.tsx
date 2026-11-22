@@ -779,7 +779,7 @@ function predikatNilai(skor: number): string {
   return "D (Perlu Bimbingan)";
 }
 
-export function CekRaportView() {
+export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<RaportPayload | null>(null);
   const [kelasId, setKelasId] = useState("");
@@ -806,7 +806,10 @@ export function CekRaportView() {
       const params = new URLSearchParams();
       if (kId) params.set("kelasId", kId);
       if (tId) params.set("tahunAjaranId", tId);
-      const res = await fetchWithTimeout(`/api/sekolah/raport?${params.toString()}`, { signal });
+      const res = await fetchWithTimeout(`/api/sekolah/raport?${params.toString()}`, {
+        signal,
+        ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
+      });
       const body = (await res.json()) as RaportPayload & { error?: string };
       if (!res.ok) throw new Error(body.error || "Gagal memuat data E-Raport.");
       setData(body);
@@ -828,7 +831,7 @@ export function CekRaportView() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [selectedSiswaId, editMapelId]);
+  }, [selectedSiswaId, editMapelId, sandboxRole]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -871,7 +874,10 @@ export function CekRaportView() {
     try {
       const res = await fetchWithTimeout("/api/sekolah/raport/nilai", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({
           siswaId: activeSiswa.id,
           mapelId: editMapelId,
@@ -901,7 +907,10 @@ export function CekRaportView() {
     try {
       const res = await fetchWithTimeout("/api/sekolah/raport/catatan", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
         body: JSON.stringify({
           tahunAjaranId: tahunId,
           kelasId,

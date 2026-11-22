@@ -4,6 +4,8 @@ import { Classroom } from "./Classroom";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { LmsSchedule } from "./LmsSchedule";
 import { StudentVervalForm } from "./StudentVervalForm";
+import { TeacherPortal } from "./TeacherPortal";
+import { useTenantPlan } from "./TenantThemeProvider";
 import type { PlanSlug } from "./subscriptionPlans";
 
 export type SandboxMode = "client" | "dev";
@@ -179,6 +181,20 @@ export function DevSandboxLmsPreview({
   onBackToAdmin: () => void;
 }) {
   const sampleUser = role === "GURU" ? samples?.guru : samples?.siswa;
+  const { plan } = useTenantPlan();
+
+  if (role === "GURU" && !loading && samples?.guru) {
+    return (
+      <TeacherPortal
+        nama={samples.guru.nama}
+        email={samples.guru.email}
+        school={school}
+        plan={plan}
+        sandboxRole="GURU"
+        onBackToAdmin={onBackToAdmin}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -232,7 +248,7 @@ export function DevSandboxLmsPreview({
                 Jadwal
               </a>
               <a href="#sandbox-ruang-kbm" className="rounded-full bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-800">
-                Ruang KBM
+                Materi &amp; Tugas Kelas
               </a>
               {role === "SISWA" && (
                 <a href="#sandbox-verval-dapodik" className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-800">

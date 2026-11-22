@@ -198,6 +198,7 @@ export function prefetchForView(view: string): void {
     case "ppdb":
       void prefetchEndpoint("/api/sekolah/ppdb?page=1&limit=10");
       break;
+    case "materi-tugas":
     case "ruang-kbm":
     case "materi-ajar":
     case "tugas-penilaian":

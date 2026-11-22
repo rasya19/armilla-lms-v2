@@ -6,8 +6,9 @@ import {
   cleanText,
   isPrismaMissingSchema,
   resolveAuthorizedSchool,
+  resolveTeacherScope,
   type SchoolContextResolver,
-} from "./tahap2-shared.js";
+} from "./school-modules-shared.js";
 
 function generateExamToken(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -22,6 +23,17 @@ function generateExamToken(): string {
 export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
   const router = Router();
 
+  async function canTeacherAccessExam(
+    session: { sekolahId: string; peran: "ADMIN" | "GURU" | "SISWA"; guruId?: string | null },
+    ujian: { guruId: string; kelasId: string; mapelId: string },
+  ): Promise<boolean> {
+    if (session.peran !== "GURU" || !session.guruId) return true;
+    if (ujian.guruId === session.guruId) return true;
+    const scope = await resolveTeacherScope(session.sekolahId, session.guruId);
+    if (scope.isWaliKelas) return true;
+    return scope.assignedKelasIds.includes(ujian.kelasId) && scope.assignedMapelIds.includes(ujian.mapelId);
+  }
+
   // ==========================================
   // 1. PAKET UJIAN & JADWAL CBT (REGULER+)
   // ==========================================
@@ -29,11 +41,25 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+      const teacherScope = peran === "GURU" && sessionGuruId ? await resolveTeacherScope(sekolahId, sessionGuruId) : null;
+      const restrictToAssigned = Boolean(teacherScope && !teacherScope.isWaliKelas);
 
       const [ujian, kelas, mapel, guru, tahunAjaran, settings] = await Promise.all([
         prisma.ujian.findMany({
-          where: { sekolahId },
+          where: {
+            sekolahId,
+            ...(restrictToAssigned && sessionGuruId
+              ? {
+                  OR: [
+                    { guruId: sessionGuruId },
+                    ...(teacherScope!.assignedKelasIds.length && teacherScope!.assignedMapelIds.length
+                      ? [{ kelasId: { in: teacherScope!.assignedKelasIds }, mapelId: { in: teacherScope!.assignedMapelIds } }]
+                      : []),
+                  ],
+                }
+              : {}),
+          },
           include: {
             kelas: { select: { id: true, nama: true } },
             mapel: { select: { id: true, nama: true } },
@@ -43,9 +69,34 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
           orderBy: [{ mulai: "desc" }, { id: "desc" }],
           take: 200,
         }),
-        prisma.kelas.findMany({ where: { sekolahId }, select: { id: true, nama: true }, orderBy: { nama: "asc" }, take: 500 }),
-        prisma.mapel.findMany({ where: { sekolahId }, select: { id: true, nama: true, kkm: true }, orderBy: { nama: "asc" }, take: 500 }),
-        prisma.guru.findMany({ where: { sekolahId, status: "Aktif" }, select: { id: true, nama: true }, orderBy: { nama: "asc" }, take: 500 }),
+        prisma.kelas.findMany({
+          where: {
+            sekolahId,
+            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedKelasIds } } : {}),
+          },
+          select: { id: true, nama: true },
+          orderBy: { nama: "asc" },
+          take: 500,
+        }),
+        prisma.mapel.findMany({
+          where: {
+            sekolahId,
+            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedMapelIds } } : {}),
+          },
+          select: { id: true, nama: true, kkm: true },
+          orderBy: { nama: "asc" },
+          take: 500,
+        }),
+        prisma.guru.findMany({
+          where: {
+            sekolahId,
+            status: "Aktif",
+            ...(peran === "GURU" && sessionGuruId ? { id: sessionGuruId } : {}),
+          },
+          select: { id: true, nama: true },
+          orderBy: { nama: "asc" },
+          take: 500,
+        }),
         prisma.tahunAjaran.findMany({ where: { sekolahId }, select: { id: true, nama: true, semester: true }, orderBy: { mulai: "desc" }, take: 100 }),
         prisma.cbtPengaturan.findUnique({ where: { sekolahId } }).catch(() => null),
       ]);
@@ -79,12 +130,12 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
 
       const judul = cleanText(req.body?.judul, 180);
       const kelasId = cleanText(req.body?.kelasId, 100);
       const mapelId = cleanText(req.body?.mapelId, 100);
-      let guruId = cleanText(req.body?.guruId, 100);
+      let guruId = peran === "GURU" && sessionGuruId ? sessionGuruId : cleanText(req.body?.guruId, 100);
       let tahunAjaranId = cleanText(req.body?.tahunAjaranId, 100);
       const durasiMenit = cleanInt(req.body?.durasiMenit, 5, 360, 60);
       const kkm = Math.max(0, Math.min(100, Number(req.body?.kkm ?? 75)));
@@ -94,6 +145,13 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
 
       if (!judul || !kelasId || !mapelId) {
         return res.status(400).json({ error: "Judul ujian, kelas target, dan mata pelajaran wajib diisi." });
+      }
+
+      if (peran === "GURU" && sessionGuruId) {
+        const scope = await resolveTeacherScope(sekolahId, sessionGuruId);
+        if (!scope.isWaliKelas && (!scope.assignedKelasIds.includes(kelasId) || !scope.assignedMapelIds.includes(mapelId))) {
+          return res.status(403).json({ error: "Anda hanya dapat membuat ujian untuk kelas dan mata pelajaran yang Anda ampu." });
+        }
       }
 
       if (!guruId) {
@@ -183,10 +241,14 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
 
       const existing = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId } });
       if (!existing) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (peran === "GURU" && sessionGuruId && existing.guruId !== sessionGuruId) {
+        const scope = await resolveTeacherScope(sekolahId, sessionGuruId);
+        if (!scope.isWaliKelas) return res.status(403).json({ error: "Anda tidak memiliki akses untuk mengubah ujian ini." });
+      }
 
       const data: Record<string, unknown> = {};
       if (typeof req.body?.judul === "string" && req.body.judul.trim()) data.judul = req.body.judul.trim().slice(0, 180);
@@ -228,7 +290,14 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
-      const { sekolahId } = auth.session;
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const target = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true, guruId: true } });
+      if (!target) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (peran === "GURU" && sessionGuruId && target.guruId !== sessionGuruId) {
+        const scope = await resolveTeacherScope(sekolahId, sessionGuruId);
+        if (!scope.isWaliKelas) return res.status(403).json({ error: "Anda tidak memiliki akses untuk mengganti token ujian ini." });
+      }
 
       const tokenKode = generateExamToken();
       const tokenHash = createHash("sha256").update(tokenKode).digest("hex");
@@ -248,6 +317,14 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      if (auth.session.peran === "GURU" && auth.session.guruId) {
+        const target = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId: auth.session.sekolahId }, select: { guruId: true } });
+        if (!target) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+        if (target.guruId !== auth.session.guruId) {
+          const scope = await resolveTeacherScope(auth.session.sekolahId, auth.session.guruId);
+          if (!scope.isWaliKelas) return res.status(403).json({ error: "Anda hanya dapat menghapus ujian yang Anda buat." });
+        }
+      }
       const deleted = await prisma.ujian.deleteMany({
         where: { id: req.params.id, sekolahId: auth.session.sekolahId },
       });
@@ -270,9 +347,12 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
 
       const ujian = await prisma.ujian.findFirst({
         where: { id: req.params.id, sekolahId },
-        select: { id: true, judul: true, kode: true },
+        select: { id: true, judul: true, kode: true, guruId: true, kelasId: true, mapelId: true },
       });
       if (!ujian) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (!await canTeacherAccessExam(auth.session, ujian)) {
+        return res.status(403).json({ error: "Anda tidak memiliki akses ke bank soal ujian ini." });
+      }
 
       const soal = await prisma.soalUjian.findMany({
         where: { ujianId: ujian.id },
@@ -292,8 +372,11 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
-      const ujian = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true } });
+      const ujian = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true, guruId: true, kelasId: true, mapelId: true } });
       if (!ujian) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (!await canTeacherAccessExam(auth.session, ujian)) {
+        return res.status(403).json({ error: "Anda tidak memiliki akses untuk menambah soal pada ujian ini." });
+      }
 
       const tipe = req.body?.tipe === "ESAI" ? "ESAI" : "PG";
       const teks = cleanText(req.body?.teks, 2000);
@@ -353,8 +436,11 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
 
-      const ujian = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true } });
+      const ujian = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true, guruId: true, kelasId: true, mapelId: true } });
       if (!ujian) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (!await canTeacherAccessExam(auth.session, ujian)) {
+        return res.status(403).json({ error: "Anda tidak memiliki akses untuk menghapus soal pada ujian ini." });
+      }
 
       const deleted = await prisma.soalUjian.deleteMany({
         where: { id: req.params.soalId, ujianId: ujian.id },
@@ -385,6 +471,9 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
         },
       });
       if (!ujian) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (!await canTeacherAccessExam(auth.session, ujian)) {
+        return res.status(403).json({ error: "Anda tidak memiliki akses untuk memantau ujian ini." });
+      }
 
       const [students, attempts] = await Promise.all([
         prisma.siswa.findMany({
@@ -437,8 +526,11 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       const siswaId = cleanText(req.body?.siswaId, 100);
       if (!siswaId) return res.status(400).json({ error: "ID peserta wajib diisi." });
 
-      const ujian = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true } });
+      const ujian = await prisma.ujian.findFirst({ where: { id: req.params.id, sekolahId }, select: { id: true, guruId: true, kelasId: true, mapelId: true } });
       if (!ujian) return res.status(404).json({ error: "Paket ujian tidak ditemukan." });
+      if (!await canTeacherAccessExam(auth.session, ujian)) {
+        return res.status(403).json({ error: "Anda tidak memiliki akses untuk mereset peserta pada ujian ini." });
+      }
 
       await prisma.percobaanUjian.deleteMany({
         where: { ujianId: ujian.id, siswaId },
@@ -478,6 +570,9 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     try {
       const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      if (auth.session.peran !== "ADMIN") {
+        return res.status(403).json({ error: "Pengaturan kebijakan CBT hanya dapat diubah oleh Admin Sekolah." });
+      }
       const { sekolahId } = auth.session;
 
       const payload = {

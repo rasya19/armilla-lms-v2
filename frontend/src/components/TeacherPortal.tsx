@@ -150,10 +150,6 @@ const TEACHER_NAV_SECTIONS: Array<{ title: string; items: TeacherMenuItem[] }> =
       { id: "asisten-ai", label: "Asisten Belajar AI", icon: Bot, requiredPlan: "pro" },
     ],
   },
-  {
-    title: "Akun",
-    items: [{ id: "profil", label: "Profil & Akun Guru", icon: UserRound }],
-  },
 ];
 
 const HASH_TO_TEACHER_VIEW: Record<string, TeacherView> = {
@@ -309,12 +305,12 @@ export function TeacherPortal({
           <div className={`flex items-center justify-between gap-2 border-b pb-3.5 ${palette.headerDivider}`}>
             <div className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl border p-2.5 ${palette.identityCard}`}>
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${palette.avatar}`}>
-                {initials}
+                {effectiveSchool.charAt(0).toUpperCase()}
               </span>
               <div className="min-w-0 flex-1">
-                <p className={`truncate text-xs font-extrabold ${palette.schoolName}`}>{effectiveName}</p>
+                <p className={`truncate text-xs font-extrabold ${palette.schoolName}`}>{effectiveSchool}</p>
                 <p className={`truncate text-[10px] font-semibold ${palette.roleText}`}>
-                  {beranda?.isWaliKelas ? "Mode Guru · Wali Kelas" : "Mode Guru"}
+                  {beranda?.isWaliKelas ? "Portal Guru · Wali Kelas" : "Portal Guru"}
                 </p>
               </div>
             </div>
@@ -397,7 +393,6 @@ export function TeacherPortal({
                   <RefreshCw size={13} className={berandaLoading ? "animate-spin" : ""} />
                 </button>
               </div>
-              <p className={`mt-1.5 truncate text-[11px] font-semibold ${palette.schoolName}`}>{effectiveSchool}</p>
             </div>
 
             {onBackToAdmin ? (
@@ -465,14 +460,34 @@ export function TeacherPortal({
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2.5">
-              <span className={`hidden max-w-[160px] truncate text-xs font-bold sm:block ${isDark ? "text-slate-200" : "text-slate-700"}`}>
-                {effectiveName}
-              </span>
+            <button
+              type="button"
+              onClick={() => selectView("profil")}
+              aria-current={view === "profil" ? "page" : undefined}
+              title="Buka Profil & Akun Guru"
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border py-1 pl-3 pr-1 text-left transition ${
+                view === "profil"
+                  ? isDark
+                    ? "border-amber-400/60 bg-amber-500/15 ring-2 ring-amber-400/30"
+                    : "border-indigo-300 bg-indigo-50/90 ring-2 ring-indigo-200"
+                  : isDark
+                    ? "border-slate-700/70 bg-slate-800/70 hover:border-amber-400/40"
+                    : "border-slate-200/80 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/50"
+              }`}
+            >
+              <div className="hidden min-w-0 text-right sm:block">
+                <p className={`max-w-[160px] truncate text-xs font-bold leading-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+                  {effectiveName}
+                </p>
+                <p className={`inline-flex items-center justify-end gap-1 text-[10px] font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
+                  <UserRound size={10} aria-hidden="true" />
+                  Profil Guru
+                </p>
+              </div>
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black text-white shadow-md ${palette.headerAvatar}`}>
                 {initials}
               </span>
-            </div>
+            </button>
           </header>
 
           {outerError && (

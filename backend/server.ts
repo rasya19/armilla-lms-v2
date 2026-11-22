@@ -1734,17 +1734,86 @@ app.get("/api/sekolah/kelas", async (req, res) => {
   try {
     const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
-    const [kelas, guru, counts] = await Promise.all([
+    const [kelas, guru, counts, activeStudents] = await Promise.all([
       prisma.kelas.findMany({ where: { sekolahId }, select: { id: true, nama: true, waliGuruId: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 }),
       prisma.guru.findMany({ where: { sekolahId, status: "Aktif" }, select: { id: true, nama: true }, orderBy: [{ nama: "asc" }, { id: "asc" }], take: 501 }),
       prisma.siswa.groupBy({ by: ["kelasId"], where: { sekolahId, status: "Aktif", kelasId: { not: null } }, _count: { _all: true } }),
+      prisma.siswa.findMany({
+        where: { sekolahId, status: "Aktif", kelasId: { not: null } },
+        select: { id: true, nama: true, nisn: true, kelasId: true },
+        orderBy: [{ nama: "asc" }, { id: "asc" }],
+        take: 2500,
+      }),
     ]);
     if (kelas.length > 500 || guru.length > 500) return res.status(409).json({ error: "Pengaturan kelas mendukung maksimal 500 kelas dan 500 guru aktif." });
     const jumlah = new Map(counts.map((item) => [item.kelasId, item._count._all]));
-    return res.json({ kelas: kelas.map((item) => ({ ...item, jumlahSiswa: jumlah.get(item.id) ?? 0 })), guru });
+    const previewMap = new Map<string, Array<{ id: string; nama: string; nisn: string }>>();
+    for (const student of activeStudents) {
+      if (!student.kelasId) continue;
+      const list = previewMap.get(student.kelasId) ?? [];
+      if (list.length < 4) {
+        list.push({ id: student.id, nama: student.nama, nisn: student.nisn });
+        previewMap.set(student.kelasId, list);
+      }
+    }
+    return res.json({
+      kelas: kelas.map((item) => ({
+        ...item,
+        jumlahSiswa: jumlah.get(item.id) ?? 0,
+        siswaPreview: previewMap.get(item.id) ?? [],
+      })),
+      guru,
+    });
   } catch (error) {
     console.error("Gagal memuat pengaturan kelas:", error);
     return res.status(503).json({ error: "Pengaturan kelas belum dapat dimuat." });
+  }
+});
+
+app.get("/api/sekolah/kelas/:id/siswa", async (req, res) => {
+  try {
+    const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
+    if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const kelas = await prisma.kelas.findFirst({
+      where: { id: req.params.id, sekolahId },
+      select: { id: true, nama: true, waliGuruId: true },
+    });
+    if (!kelas) return res.status(404).json({ error: "Kelas tidak ditemukan di sekolah ini." });
+    const [wali, siswa] = await Promise.all([
+      kelas.waliGuruId
+        ? prisma.guru.findFirst({ where: { id: kelas.waliGuruId, sekolahId }, select: { nama: true } })
+        : Promise.resolve(null),
+      prisma.siswa.findMany({
+        where: { sekolahId, kelasId: kelas.id, status: "Aktif" },
+        select: {
+          id: true,
+          nama: true,
+          nisn: true,
+          jenisKelamin: true,
+          telepon: true,
+          akun: { select: { aktif: true, peran: true, sekolahId: true, guruId: true } },
+        },
+        orderBy: [{ nama: "asc" }, { id: "asc" }],
+      }),
+    ]);
+    return res.json({
+      kelas: { id: kelas.id, nama: kelas.nama, wali: wali?.nama ?? null },
+      siswa: siswa.map((item) => ({
+        id: item.id,
+        nama: item.nama,
+        nisn: item.nisn,
+        jenisKelamin: item.jenisKelamin ?? null,
+        telepon: item.telepon ?? null,
+        statusAkun: !item.akun
+          ? "Belum ada akun"
+          : item.akun.aktif && item.akun.peran === "SISWA" && item.akun.sekolahId === sekolahId && !item.akun.guruId
+            ? "Akun aktif"
+            : "Akun tidak aktif",
+      })),
+    });
+  } catch (error) {
+    console.error("Gagal memuat daftar siswa kelas:", error);
+    return res.status(503).json({ error: "Daftar siswa kelas belum dapat dimuat." });
   }
 });
 

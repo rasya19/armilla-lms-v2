@@ -324,30 +324,68 @@ function LmsPortalShell({
   onPasswordChanged: () => void;
 }) {
   const isDark = useTenantTheme() === "dark";
+  const schoolDisplay = session.sekolah || "Lembaga PKBM";
+  const userInitials = session.nama
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || session.nama.charAt(0).toUpperCase();
   return (
     <main className="dashboard-canvas glass-area min-h-screen text-slate-800">
       <header id="profil-lms" className="dashboard-header sticky top-0 z-30 border-b px-5 py-3">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
           <span
-            className={`flex h-10 w-10 items-center justify-center rounded-xl font-black ${
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-black ${
               isDark
                 ? "bg-gradient-to-br from-emerald-500 via-lime-400 to-amber-400 text-slate-950 shadow-[0_0_16px_rgba(16,185,129,0.28)]"
-                : "rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-white"
+                : "bg-gradient-to-br from-sky-600 to-cyan-500 text-white shadow-sm"
             }`}
           >
-            {session.nama.charAt(0).toUpperCase()}
+            {schoolDisplay.charAt(0).toUpperCase()}
           </span>
           <div className="min-w-0 flex-1">
-            <h1 className={`truncate font-bold ${isDark ? "text-white" : ""}`}>{session.nama}</h1>
+            <h1 className={`truncate font-extrabold ${isDark ? "text-white" : "text-slate-900"}`}>{schoolDisplay}</h1>
             <p className={`text-xs font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
               {session.peran === "GURU" ? "Mode Guru" : "Mode Siswa"}
             </p>
           </div>
+          <a
+            href={session.peran === "SISWA" && !session.wajibGantiPassword ? "#biodata-dapodik" : "#profil-lms"}
+            onClick={() => setActiveNav(session.peran === "SISWA" ? "biodata" : "profil")}
+            title={session.peran === "SISWA" ? "Profil & Biodata Siswa" : "Profil Guru"}
+            className={`flex shrink-0 items-center gap-2.5 rounded-full border py-1 pl-3 pr-1 transition ${
+              isDark
+                ? "border-slate-700/80 bg-slate-800/80 hover:border-amber-400/50"
+                : "border-slate-200/90 bg-white/90 hover:border-indigo-200 hover:bg-indigo-50/50"
+            }`}
+          >
+            <div className="hidden min-w-0 text-right sm:block">
+              <p className={`max-w-[160px] truncate text-xs font-bold leading-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+                {session.nama}
+              </p>
+              <p className={`inline-flex items-center justify-end gap-1 text-[10px] font-semibold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
+                <UserRound size={10} aria-hidden="true" />
+                {session.peran === "GURU" ? "Profil Guru" : "Profil Siswa"}
+              </p>
+            </div>
+            <span
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black shadow-sm ${
+                isDark
+                  ? "bg-gradient-to-br from-amber-400 to-amber-500 text-slate-950"
+                  : "bg-gradient-to-br from-indigo-500 to-cyan-500 text-white"
+              }`}
+            >
+              {userInitials}
+            </span>
+          </a>
           <button
             disabled={busy}
             type="button"
             onClick={onLogout}
-            className={`rounded-full border px-4 py-2 text-xs font-bold transition disabled:opacity-50 sm:text-sm ${
+            className={`whitespace-nowrap rounded-full border px-4 py-2 text-xs font-bold transition disabled:opacity-50 sm:text-sm ${
               isDark
                 ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/50 hover:text-amber-300"
                 : "rounded-xl border-indigo-200 bg-white/90 text-indigo-700 backdrop-blur-md hover:bg-white"

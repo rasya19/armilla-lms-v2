@@ -200,21 +200,37 @@ export function DevSandboxLmsPreview({
     <div className="min-h-screen">
       <header className="dashboard-header sticky top-0 z-30 border-b px-5 py-3">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 font-bold text-white">
-            {(sampleUser?.nama ?? role).charAt(0).toUpperCase()}
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-cyan-500 font-black text-white shadow-sm">
+            {school.charAt(0).toUpperCase()}
           </span>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-bold text-slate-900">
-              {sampleUser ? sampleUser.nama : role === "GURU" ? "Pratinjau Portal Guru" : "Pratinjau Portal Siswa"}
-            </h1>
+            <h1 className="truncate font-extrabold text-slate-900">{school}</h1>
             <p className="text-xs font-semibold text-indigo-700">
-              {role === "GURU" ? "Guru" : "Siswa"} · {school} (Sandbox Preview)
+              {role === "GURU" ? "Mode Guru" : "Mode Siswa"} · Sandbox Preview
             </p>
           </div>
+          {sampleUser && (
+            <a
+              href={role === "SISWA" ? "#sandbox-verval-dapodik" : "#"}
+              className="flex shrink-0 items-center gap-2.5 rounded-full border border-slate-200/90 bg-white/90 py-1 pl-3 pr-1 transition hover:border-indigo-200 hover:bg-indigo-50/50"
+            >
+              <div className="hidden min-w-0 text-right sm:block">
+                <p className="max-w-[160px] truncate text-xs font-bold leading-tight text-slate-900">
+                  {sampleUser.nama}
+                </p>
+                <p className="text-[10px] font-semibold text-indigo-700">
+                  {role === "GURU" ? "Profil Guru" : "Profil Siswa"}
+                </p>
+              </div>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-black text-white shadow-sm">
+                {sampleUser.nama.charAt(0).toUpperCase()}
+              </span>
+            </a>
+          )}
           <button
             type="button"
             onClick={onBackToAdmin}
-            className="rounded-xl border border-indigo-200 bg-white/80 px-4 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
+            className="whitespace-nowrap rounded-xl border border-indigo-200 bg-white/80 px-4 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-50"
           >
             Kembali ke Admin
           </button>

@@ -1,19 +1,28 @@
 import { useEffect, useState } from "react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
-import { CardGridSkeleton, EmptyState } from "./DashboardUI";
+import { CardGridSkeleton, EmptyState, TableSkeleton } from "./DashboardUI";
 import { ClassPromotion } from "./ClassPromotion";
 import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
-import { GraduationCap, Lock, Pencil, Trash2, Users } from "lucide-react";
+import { Eye, GraduationCap, Lock, Pencil, Search, Trash2, UserMinus, Users } from "lucide-react";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
 
-type ClassItem = { id: string; nama: string; waliGuruId: string | null; jumlahSiswa: number };
+type StudentPreview = { id: string; nama: string; nisn: string };
+type ClassItem = { id: string; nama: string; waliGuruId: string | null; jumlahSiswa: number; siswaPreview?: StudentPreview[] };
 type Teacher = { id: string; nama: string };
 type ClassData = { kelas: ClassItem[]; guru: Teacher[] };
+type ClassRosterStudent = {
+  id: string;
+  nama: string;
+  nisn: string;
+  jenisKelamin: string | null;
+  telepon: string | null;
+  statusAkun: string;
+};
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,6 +65,15 @@ export function SchoolClasses({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  // Modal daftar siswa per kelas
+  const [rosterClass, setRosterClass] = useState<{ id: string; nama: string; wali: string } | null>(null);
+  const [rosterStudents, setRosterStudents] = useState<ClassRosterStudent[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState("");
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterBusyId, setRosterBusyId] = useState<string | null>(null);
+  const [rosterVersion, setRosterVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,6 +119,51 @@ export function SchoolClasses({
     setVersion((value) => value + 1);
   }
 
+  useEffect(() => {
+    if (!rosterClass) return;
+    const controller = new AbortController();
+    setRosterLoading(true);
+    setRosterError("");
+    request(`/api/sekolah/kelas/${encodeURIComponent(rosterClass.id)}/siswa`, "GET", undefined, controller.signal)
+      .then((value) => {
+        if (!isObject(value) || !Array.isArray(value.siswa)) {
+          throw new Error("Respons daftar siswa kelas tidak valid.");
+        }
+        if (!controller.signal.aborted) {
+          setRosterStudents(value.siswa as ClassRosterStudent[]);
+        }
+      })
+      .catch((failure: unknown) => {
+        if (!isCallerAborted(failure, controller.signal)) {
+          setRosterError(describeFetchError(failure, "Daftar siswa kelas belum dapat dimuat."));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRosterLoading(false);
+      });
+    return () => controller.abort();
+  }, [rosterClass, rosterVersion]);
+
+  async function removeStudentFromClass(student: ClassRosterStudent) {
+    if (!rosterClass) return;
+    if (!await confirm(`Keluarkan ${student.nama} (${student.nisn}) dari kelas ${rosterClass.nama}? Siswa tetap aktif tanpa kelas.`)) return;
+    setRosterBusyId(student.id);
+    setRosterError("");
+    try {
+      await request(`/api/sekolah/siswa/${encodeURIComponent(student.id)}/kelas`, "PATCH", {
+        kelasId: null,
+        expectedKelasId: rosterClass.id,
+      });
+      invalidateCache(["/api/sekolah/kelas", "/api/sekolah/siswa", "/api/sekolah/kenaikan-kelas"]);
+      setRosterVersion((v) => v + 1);
+      setVersion((v) => v + 1);
+    } catch (failure) {
+      setRosterError(describeFetchError(failure, "Siswa belum dapat dikeluarkan dari kelas."));
+    } finally {
+      setRosterBusyId(null);
+    }
+  }
+
   return <div className="mt-4 space-y-6">
     <p className="text-sm text-slate-600">Setiap siswa hanya memiliki satu kelas saat ini. Perpindahan mengganti kelas sebelumnya tanpa menyimpan riwayat. Wali kelas tidak otomatis mendapat hak reset; hak tersebut memerlukan jadwal mengajar.</p>
     {error && !classOpen && <p role="alert" className="text-sm text-rose-700">{error}</p>}
@@ -136,6 +199,8 @@ export function SchoolClasses({
                 const waliName = item.waliGuruId
                   ? data.guru.find((teacher) => teacher.id === item.waliGuruId)?.nama ?? "Guru tidak aktif"
                   : "Belum ditentukan";
+                const visiblePreview = (item.siswaPreview ?? []).slice(0, 3);
+                const remainingCount = Math.max(0, item.jumlahSiswa - visiblePreview.length);
                 return (
                   <article
                     key={item.id}
@@ -159,6 +224,7 @@ export function SchoolClasses({
                           </p>
                         </div>
                       </div>
+
                       <div className={`flex items-center justify-between gap-2 text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
                         <span className="inline-flex items-center gap-1.5 font-semibold tabular-nums">
                           <Users size={14} aria-hidden="true" className={isDark ? "text-cyan-300" : "text-indigo-600"} />
@@ -168,8 +234,69 @@ export function SchoolClasses({
                           #{item.id.slice(0, 8)}
                         </span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRosterSearch("");
+                          setRosterStudents([]);
+                          setRosterClass({ id: item.id, nama: item.nama, wali: waliName });
+                        }}
+                        className={`w-full rounded-xl border p-3 text-left text-xs transition ${
+                          isDark
+                            ? "border-slate-700/70 bg-slate-900/60 hover:border-cyan-400/40"
+                            : "border-slate-200/80 bg-slate-50/80 hover:border-indigo-300 hover:bg-indigo-50/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[11px] font-bold ${isDark ? "text-cyan-300" : "text-indigo-700"}`}>
+                            Daftar Siswa
+                          </span>
+                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${isDark ? "text-slate-300" : "text-slate-500"}`}>
+                            <Eye size={12} aria-hidden="true" />
+                            Lihat semua
+                          </span>
+                        </div>
+                        {visiblePreview.length > 0 ? (
+                          <ul className={`mt-2 space-y-1 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
+                            {visiblePreview.map((student) => (
+                              <li key={student.id} className="flex items-center justify-between gap-2">
+                                <span className="truncate font-medium">{student.nama}</span>
+                                <span className={`shrink-0 font-mono text-[10px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                                  {student.nisn}
+                                </span>
+                              </li>
+                            ))}
+                            {remainingCount > 0 && (
+                              <li className={`pt-0.5 text-[11px] font-bold ${isDark ? "text-amber-300" : "text-indigo-700"}`}>
+                                +{remainingCount} siswa lainnya...
+                              </li>
+                            )}
+                          </ul>
+                        ) : (
+                          <p className={`mt-1.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                            {item.jumlahSiswa > 0 ? "Klik untuk melihat daftar siswa di kelas ini." : "Belum ada siswa di kelas ini."}
+                          </p>
+                        )}
+                      </button>
                     </div>
                     <div className={`flex items-center gap-2 border-t pt-3 ${isDark ? "border-slate-700/60" : "border-slate-200/80"}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRosterSearch("");
+                          setRosterStudents([]);
+                          setRosterClass({ id: item.id, nama: item.nama, wali: waliName });
+                        }}
+                        className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                          isDark
+                            ? "border-cyan-400/35 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25"
+                            : "border-sky-200 bg-sky-50/90 text-sky-800 hover:bg-sky-100"
+                        }`}
+                      >
+                        <Users size={13} aria-hidden="true" />
+                        Siswa
+                      </button>
                       <button
                         type="button"
                         disabled={busy}
@@ -210,6 +337,123 @@ export function SchoolClasses({
           );
         })()}
       </section>
+      {rosterClass && (
+        <SchoolModal
+          title={`Siswa di ${rosterClass.nama}`}
+          titleIcon={<Users size={20} className="text-indigo-600" aria-hidden="true" />}
+          wide
+          busy={Boolean(rosterBusyId)}
+          onClose={() => {
+            setRosterClass(null);
+            setRosterError("");
+          }}
+        >
+          <div className="space-y-4 overflow-y-auto px-5 pb-6 pt-3 sm:px-7">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className={`text-xs ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                Wali Kelas: <strong className={isDark ? "text-white" : "text-slate-900"}>{rosterClass.wali}</strong> ·{" "}
+                <strong className={`tabular-nums ${isDark ? "text-cyan-300" : "text-indigo-700"}`}>{rosterStudents.length} siswa aktif</strong>
+              </div>
+              <label className="relative block w-full sm:w-64">
+                <span className="sr-only">Cari siswa di kelas ini</span>
+                <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={rosterSearch}
+                  onChange={(e) => setRosterSearch(e.target.value)}
+                  placeholder="Cari nama atau NISN..."
+                  className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-900"
+                />
+              </label>
+            </div>
+
+            {rosterError && (
+              <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800">
+                {rosterError}{" "}
+                <button type="button" onClick={() => setRosterVersion((v) => v + 1)} className="font-bold underline">
+                  Muat ulang
+                </button>
+              </p>
+            )}
+
+            {rosterLoading ? (
+              <TableSkeleton rows={5} columns={4} />
+            ) : (() => {
+              const q = rosterSearch.trim().toLowerCase();
+              const filteredRoster = q
+                ? rosterStudents.filter((s) => s.nama.toLowerCase().includes(q) || s.nisn.toLowerCase().includes(q))
+                : rosterStudents;
+              if (!filteredRoster.length) {
+                return (
+                  <EmptyState
+                    title={q ? "Siswa tidak ditemukan" : `Belum ada siswa di ${rosterClass.nama}`}
+                    description={
+                      q
+                        ? "Coba kata kunci nama atau NISN yang berbeda."
+                        : "Tempatkan siswa ke kelas ini melalui Penempatan Siswa Massal di bawah atau menu Data Siswa."
+                    }
+                  />
+                );
+              }
+              return (
+                <div className={`overflow-x-auto rounded-2xl border ${isDark ? "border-slate-700/80 bg-slate-900/70" : "border-slate-200/90 bg-white"}`}>
+                  <table className="w-full min-w-[560px] text-left text-xs">
+                    <thead className={`border-b text-[11px] font-extrabold uppercase tracking-wider ${isDark ? "border-slate-700/80 bg-slate-800/80 text-slate-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                      <tr>
+                        <th className="w-10 px-3 py-2.5 text-center">No</th>
+                        <th className="px-3 py-2.5">Nama Siswa</th>
+                        <th className="px-3 py-2.5">NISN</th>
+                        <th className="px-3 py-2.5">L/P</th>
+                        <th className="px-3 py-2.5">Akun LMS</th>
+                        <th className="px-3 py-2.5 text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${isDark ? "divide-slate-800 text-slate-200" : "divide-slate-200/75 text-slate-800"}`}>
+                      {filteredRoster.map((student, idx) => (
+                        <tr key={student.id} className={isDark ? "hover:bg-slate-800/60" : "hover:bg-indigo-50/40"}>
+                          <td className={`px-3 py-2.5 text-center font-semibold tabular-nums ${isDark ? "text-slate-400" : "text-slate-500"}`}>{idx + 1}</td>
+                          <td className="px-3 py-2.5">
+                            <p className={`font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{student.nama}</p>
+                            {student.telepon && <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>{student.telepon}</p>}
+                          </td>
+                          <td className={`px-3 py-2.5 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{student.nisn}</td>
+                          <td className={`px-3 py-2.5 ${isDark ? "text-slate-300" : "text-slate-600"}`}>{student.jenisKelamin || "-"}</td>
+                          <td className="px-3 py-2.5">
+                            <span
+                              className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                                student.statusAkun === "Akun aktif"
+                                  ? (isDark ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-800")
+                                  : (isDark ? "bg-slate-700/70 text-slate-300" : "bg-slate-100 text-slate-600")
+                              }`}
+                            >
+                              {student.statusAkun}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button
+                              type="button"
+                              disabled={rosterBusyId === student.id}
+                              onClick={() => void removeStudentFromClass(student)}
+                              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-bold disabled:opacity-50 ${
+                                isDark
+                                  ? "border-rose-500/35 bg-rose-950/40 text-rose-300 hover:bg-rose-950/70"
+                                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                              }`}
+                            >
+                              <UserMinus size={12} aria-hidden="true" />
+                              Keluarkan
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        </SchoolModal>
+      )}
       {canUseReguler ? <BulkClassPlacement classes={data.kelas} onMoved={handleMoved} /> : (
         <section className="dashboard-glass flex flex-wrap items-center justify-between gap-4 p-5">
           <div>

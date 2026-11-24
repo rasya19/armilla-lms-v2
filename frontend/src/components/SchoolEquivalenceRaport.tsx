@@ -23,6 +23,13 @@ import { SchoolModal } from "./SchoolModal";
 import type { SchoolProfile } from "./schoolProfile";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
+import {
+  detectDefaultPaketCTrack,
+  detectKesetaraanProgram,
+  filterItemsByKesetaraanTrack,
+  savePaketCTrackPreference,
+  type PaketCTrack,
+} from "../utils/kesetaraanSubjects";
 
 // ==========================================
 // SHARED TYPES
@@ -817,16 +824,19 @@ function buildKurikulumMerdekaDescription(mapelNama: string, nilaiAkhir: number 
   if (nilaiAkhir === null) {
     return `Belum terdapat capaian nilai akhir pada mata pelajaran ${mapelNama} semester ini.`;
   }
-  if (nilaiAkhir >= 90) {
-    return `Menunjukkan penguasaan yang sangat baik dalam memahami dan menerapkan kompetensi esensial ${mapelNama}. Perlu pengayaan lanjutan pada penerapan kontekstual dan proyek mandiri.`;
+  if (nilaiAkhir >= 86) {
+    return `Menunjukkan penguasaan yang sangat baik dalam memahami dan menerapkan seluruh kompetensi esensial pada mata pelajaran ${mapelNama}. Perlu diberikan pengayaan untuk mengembangkan keterampilan berpikir tingkat lanjut secara mandiri.`;
   }
-  if (nilaiAkhir >= 80) {
-    return `Menunjukkan penguasaan yang baik dalam memahami materi inti ${mapelNama}. Perlu peningkatan konsistensi pada latihan analisis dan penyelesaian masalah mandiri.`;
+  if (nilaiAkhir >= 76) {
+    return `Menunjukkan penguasaan yang baik dalam memahami konsep dan penerapan materi ${mapelNama}. Perlu penguatan pada latihan analisis dan konsistensi penyelesaian tugas mandiri.`;
   }
   if (nilaiAkhir >= 70) {
-    return `Menunjukkan penguasaan yang cukup dalam memahami konsep dasar ${mapelNama}. Perlu bimbingan lebih lanjut dalam penerapan kompetensi secara mandiri dan tutorial.`;
+    return `Menunjukkan penguasaan yang cukup pada kompetensi dasar mata pelajaran ${mapelNama}. Perlu bimbingan lanjutan dalam memahami materi yang lebih kompleks serta peningkatan ketelitian dalam pembelajaran tutorial dan mandiri.`;
   }
-  return `Mulai memahami sebagian materi dasar ${mapelNama}. Perlu pendampingan intensif dari tutor dan pengulangan modul mandiri untuk mencapai kompetensi minimal.`;
+  if (nilaiAkhir >= 50) {
+    return `Mulai memahami sebagian konsep dasar ${mapelNama}. Perlu pendampingan tutor dan remedial pada bagian materi yang belum tuntas.`;
+  }
+  return `Belum mencapai ketuntasan pada kompetensi esensial ${mapelNama}. Perlu bimbingan intensif dan pengulangan modul mandiri secara menyeluruh.`;
 }
 
 export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
@@ -836,6 +846,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   const [kelasId, setKelasId] = useState("");
   const [tahunId, setTahunId] = useState("");
   const [selectedSiswaId, setSelectedSiswaId] = useState("");
+  const [paketCTrack, setPaketCTrack] = useState<PaketCTrack>(() => detectDefaultPaketCTrack(""));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1006,10 +1017,57 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     }
   }
 
+  const activeKelasName = data?.kelasList.find((k) => k.id === kelasId)?.nama ?? "-";
+  const activeTahunObj = data?.tahunList.find((t) => t.id === tahunId);
+  const activeProgram = detectKesetaraanProgram(activeKelasName, activeSiswa?.jenjang);
+
+  function handleSelectPaketCTrack(next: PaketCTrack) {
+    setPaketCTrack(next);
+    savePaketCTrackPreference(next);
+  }
+
+  async function seedStandardSubjects() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const jenjang = activeProgram === "UNKNOWN" ? "PAKET_C" : activeProgram;
+      const res = await fetchWithTimeout("/api/sekolah/raport/seed-mapel-kesetaraan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({ jenjang, jurusan: paketCTrack }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal memuat mapel standar.");
+      setNotice(body?.message || "Mapel standar berhasil dimuat.");
+      await loadRaport(kelasId, tahunId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Mapel standar belum dapat dimuat."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const filteredMapels = useMemo(
+    () =>
+      filterItemsByKesetaraanTrack(
+        data?.mapel ?? [],
+        (m) => m.nama,
+        activeKelasName,
+        paketCTrack,
+        activeSiswa?.jenjang,
+      ),
+    [data?.mapel, activeKelasName, paketCTrack, activeSiswa?.jenjang],
+  );
+
   const studentScores = useMemo(() => {
     if (!data || !activeSiswa) return [];
     const byMapel = new Map(data.nilai.filter((n) => n.siswaId === activeSiswa.id).map((n) => [n.mapelId, n]));
-    return data.mapel.map((m) => {
+    return filteredMapels.map((m) => {
       const row = byMapel.get(m.id);
       return {
         mapel: m,
@@ -1019,11 +1077,11 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         catatan: row?.catatanKompetensi ?? null,
       };
     });
-  }, [data, activeSiswa]);
+  }, [data, activeSiswa, filteredMapels]);
 
-  const activeKelasName = data?.kelasList.find((k) => k.id === kelasId)?.nama ?? "-";
-  const activeTahunObj = data?.tahunList.find((t) => t.id === tahunId);
   const phaseInfo = detectKurikulumMerdekaPhase(activeKelasName, activeSiswa?.jenjang);
+  const programDisplayLabel =
+    activeProgram === "PAKET_C" ? `${phaseInfo.program} · Jurusan ${paketCTrack}` : phaseInfo.program;
   const kelompokUmumScores = useMemo(
     () => studentScores.filter((row) => !isPemberdayaanKeterampilanMapel(row.mapel.nama)),
     [studentScores],
@@ -1096,27 +1154,69 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{notice}</p>}
 
         {raportSubTab !== "transkrip" && raportSubTab !== "leger-6sem" && (
-        <div className={`grid gap-4 rounded-2xl p-4 sm:grid-cols-3 ${panelClass(isDark)}`}>
-          <label className="block text-xs font-bold">
-            Tahun Ajaran &amp; Semester
-            <select value={tahunId} onChange={(e) => setTahunId(e.target.value)} className={inputClass(isDark)}>
-              {data?.tahunList.map((t) => <option key={t.id} value={t.id}>{t.nama} — {t.semester}</option>)}
-            </select>
-          </label>
-          <label className="block text-xs font-bold">
-            Kelas / Rombel
-            <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={inputClass(isDark)}>
-              {data?.kelasList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
-            </select>
-          </label>
-          {raportSubTab === "raport" && (
-          <label className="block text-xs font-bold">
-            Pilih Warga Belajar
-            <select value={activeSiswa?.id ?? ""} onChange={(e) => setSelectedSiswaId(e.target.value)} className={inputClass(isDark)}>
-              {data?.siswa.map((s) => <option key={s.id} value={s.id}>{s.nama} ({s.nisn})</option>)}
-            </select>
-          </label>
-          )}
+        <div className={`space-y-3 rounded-2xl p-4 ${panelClass(isDark)}`}>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <label className="block text-xs font-bold">
+              Tahun Ajaran &amp; Semester
+              <select value={tahunId} onChange={(e) => setTahunId(e.target.value)} className={inputClass(isDark)}>
+                {data?.tahunList.map((t) => <option key={t.id} value={t.id}>{t.nama} — {t.semester}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-bold">
+              Kelas / Rombel
+              <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={inputClass(isDark)}>
+                {data?.kelasList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
+              </select>
+            </label>
+            {raportSubTab === "raport" && (
+            <label className="block text-xs font-bold">
+              Pilih Warga Belajar
+              <select value={activeSiswa?.id ?? ""} onChange={(e) => setSelectedSiswaId(e.target.value)} className={inputClass(isDark)}>
+                {data?.siswa.map((s) => <option key={s.id} value={s.id}>{s.nama} ({s.nisn})</option>)}
+              </select>
+            </label>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/60 pt-3 text-xs">
+            {activeProgram === "PAKET_C" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold">Jurusan Paket C (Filter Mapel):</span>
+                {(["IPA", "IPS"] as const).map((tr) => (
+                  <button
+                    key={tr}
+                    type="button"
+                    aria-pressed={paketCTrack === tr}
+                    onClick={() => handleSelectPaketCTrack(tr)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+                      paketCTrack === tr
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : isDark
+                          ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Paket C — {tr}
+                  </button>
+                ))}
+                <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                  {paketCTrack === "IPA" ? "(Mapel IPS disembunyikan)" : "(Mapel IPA disembunyikan)"}
+                </span>
+              </div>
+            ) : (
+              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
+                Filter mapel otomatis menyesuaikan program <strong>{phaseInfo.program}</strong>.
+              </span>
+            )}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void seedStandardSubjects()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+            >
+              <Sparkles size={13} />
+              Muat Mapel Standar {activeProgram === "PAKET_C" ? `Paket C ${paketCTrack}` : activeProgram === "PAKET_B" ? "Paket B" : activeProgram === "PAKET_A" ? "Paket A" : "Kesetaraan"}
+            </button>
+          </div>
         </div>
         )}
 
@@ -1134,7 +1234,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               <label className="block text-xs font-bold">
                 Mata Pelajaran
                 <select value={editMapelId} onChange={(e) => setEditMapelId(e.target.value)} className={inputClass(isDark)}>
-                  {data?.mapel.map((m) => <option key={m.id} value={m.id}>{m.nama} (KKM {m.kkm})</option>)}
+                  {filteredMapels.map((m) => <option key={m.id} value={m.id}>{m.nama} (KKM {m.kkm})</option>)}
                 </select>
               </label>
               <div className="grid grid-cols-2 gap-3">
@@ -1191,10 +1291,10 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           data={{
             sekolah: data.sekolah,
             kopSurat: data.kopSurat,
-            kelasName: activeKelasName,
+            kelasName: activeProgram === "PAKET_C" ? `${activeKelasName} (${paketCTrack})` : activeKelasName,
             tahunLabel: activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "-",
             waliKelasNama: data.waliKelasNama,
-            mapel: data.mapel,
+            mapel: filteredMapels,
             siswa: data.siswa,
             nilai: data.nilai,
           }}
@@ -1205,12 +1305,19 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         <RaportSixSemesterLegerPanel
           initialKelasId={kelasId}
           sandboxRole={sandboxRole}
+          paketCTrack={paketCTrack}
+          onChangePaketCTrack={handleSelectPaketCTrack}
           onOpenTranscript={() => setRaportSubTab("transkrip")}
         />
       )}
 
       {raportSubTab === "transkrip" && (
-        <RaportTranscriptPanel initialKelasId={kelasId} sandboxRole={sandboxRole} />
+        <RaportTranscriptPanel
+          initialKelasId={kelasId}
+          sandboxRole={sandboxRole}
+          paketCTrack={paketCTrack}
+          onChangePaketCTrack={handleSelectPaketCTrack}
+        />
       )}
 
       {raportSubTab === "raport" && activeSiswa && data && (
@@ -1223,7 +1330,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               Laporan Hasil Belajar (Rapor) Pendidikan Kesetaraan
             </h3>
             <p className="text-xs font-semibold text-slate-700">
-              Kurikulum Merdeka · {phaseInfo.program} · Tahun Pelajaran {activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "2026/2027"}
+              Kurikulum Merdeka · {programDisplayLabel} · Tahun Pelajaran {activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "2026/2027"}
             </p>
           </div>
 

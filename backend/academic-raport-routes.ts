@@ -2,6 +2,8 @@ import { Router } from "express";
 import { randomBytes } from "crypto";
 import { prisma } from "./db.js";
 import { readSchoolKopSurat } from "./kop-surat-helper.js";
+
+const TRANSFER_LEGER_MARKER = "__LEGER_PINDAHAN__";
 import {
   computeTranscriptScore,
   isUpkExam,
@@ -757,12 +759,15 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const finalClassFallback = kelasList.find((k) => /\b(kelas\s*)?(6|9|12|vi|ix|xii)\b/i.test(k.nama));
       const activeKelas = kelasList.find((k) => k.id === requestedKelasId) ?? finalClassFallback ?? kelasList[0] ?? null;
 
-      // Keep up to 6 latest semesters in chronological order (Semester 1..6)
-      const sixSemesters = tahunList.slice(-6).map((t, idx) => ({
-        id: t.id,
-        label: `Sem ${idx + 1}`,
-        nama: `${t.nama} (${t.semester})`,
-      }));
+      // Keep 6 chronological semesters (Semester 1..6), auto-seeding missing slots so labels stay consistent
+      const sixSemesters =
+        tahunList.length >= 6
+          ? tahunList.slice(-6).map((t, idx) => ({
+              id: t.id,
+              label: `Sem ${idx + 1}`,
+              nama: `${t.nama} (${t.semester})`,
+            }))
+          : await ensureSixSemesters(sekolahId);
       const sixSemesterIds = new Set(sixSemesters.map((s) => s.id));
 
       const siswaList = activeKelas
@@ -815,7 +820,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
       // Index manual UPK overrides and semester raport values per (siswaId, mapelId)
       const manualUpkMap = new Map<string, number>();
-      const semesterScoreMap = new Map<string, Map<string, number>>();
+      const semesterScoreMap = new Map<string, Map<string, { nilai: number; source: "raport" | "pindahan" }>>();
       const unlinkedRaportMap = new Map<string, number[]>();
 
       for (const row of allNilai) {
@@ -831,7 +836,10 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
             semesterScoreMap.set(key, bySem);
           }
           if (!bySem.has(row.tahunAjaranId)) {
-            bySem.set(row.tahunAjaranId, row.nilaiAkhir);
+            bySem.set(row.tahunAjaranId, {
+              nilai: row.nilaiAkhir,
+              source: row.catatanKompetensi === TRANSFER_LEGER_MARKER ? "pindahan" : "raport",
+            });
           }
         } else {
           const list = unlinkedRaportMap.get(key) ?? [];
@@ -861,11 +869,16 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         const subjects = mapelPayload.map((m) => {
           const key = `${st.id}::${m.id}`;
           const bySem = semesterScoreMap.get(key);
-          const semesterBreakdown = sixSemesters.map((sem) => ({
-            tahunAjaranId: sem.id,
-            label: sem.label,
-            nilai: bySem?.get(sem.id) ?? null,
-          }));
+          const semesterBreakdown = sixSemesters.map((sem) => {
+            const entry = bySem?.get(sem.id);
+            return {
+              tahunAjaranId: sem.id,
+              label: sem.label,
+              tahunNama: sem.nama,
+              nilai: entry?.nilai ?? null,
+              source: entry ? entry.source : ("empty" as const),
+            };
+          });
 
           const semesterValues = semesterBreakdown
             .map((b) => b.nilai)
@@ -1037,6 +1050,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const { sekolahId, peran, guruId } = auth.session;
 
       const siswaId = cleanText(req.body?.siswaId, 100);
+      const allowOverwriteRaport = req.body?.allowOverwriteRaport === true;
       const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : [];
       if (!siswaId || rawEntries.length === 0) {
         return res.status(400).json({ error: "Pilih warga belajar dan isi minimal satu mata pelajaran." });
@@ -1089,10 +1103,15 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
               tahunAjaranId,
               NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
             },
-            select: { id: true },
+            select: { id: true, catatanKompetensi: true, nilaiAkhir: true },
           });
 
           if (existing) {
+            const isRaportRecord = existing.catatanKompetensi !== TRANSFER_LEGER_MARKER;
+            if (isRaportRecord && !allowOverwriteRaport) {
+              continue;
+            }
+            if (existing.nilaiAkhir === rounded) continue;
             await prisma.nilai.update({
               where: { id: existing.id },
               data: {
@@ -1113,7 +1132,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
                 nilaiMandiri: rounded,
                 nilaiSimulasi: rounded,
                 nilaiAkhir: rounded,
-                catatanKompetensi: null,
+                catatanKompetensi: TRANSFER_LEGER_MARKER,
               },
             });
           }
@@ -1167,6 +1186,123 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menyimpan leger raport semester 1-6:", error);
       return res.status(503).json({ error: "Leger raport semester 1–6 belum dapat disimpan." });
+    }
+  });
+
+  // POST /api/sekolah/raport/seed-mapel-kesetaraan — Muat daftar mapel resmi Paket A / B / C (IPA / IPS)
+  router.post("/raport/seed-mapel-kesetaraan", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const rawJenjang = cleanText(req.body?.jenjang, 20).toUpperCase();
+      const rawJurusan = cleanText(req.body?.jurusan, 10).toUpperCase();
+      const jenjang: "PAKET_A" | "PAKET_B" | "PAKET_C" =
+        rawJenjang === "PAKET_A" || rawJenjang === "PAKET_B" || rawJenjang === "PAKET_C" ? rawJenjang : "PAKET_C";
+      const jurusan: "IPA" | "IPS" = rawJurusan === "IPA" ? "IPA" : "IPS";
+
+      const catalog: Record<string, Array<{ kode: string; nama: string; kkm: number }>> = {
+        PAKET_A: [
+          { kode: "PA-PABP", nama: "Pendidikan Agama dan Budi Pekerti", kkm: 75 },
+          { kode: "PA-PPKN", nama: "Pendidikan Pancasila", kkm: 75 },
+          { kode: "PA-BIND", nama: "Bahasa Indonesia", kkm: 75 },
+          { kode: "PA-MTK", nama: "Matematika", kkm: 70 },
+          { kode: "PA-IPAS", nama: "Ilmu Pengetahuan Alam dan Sosial (IPAS)", kkm: 72 },
+          { kode: "PA-PJOK", nama: "Pendidikan Jasmani, Olahraga, dan Kesehatan (PJOK)", kkm: 75 },
+          { kode: "PA-SBD", nama: "Seni dan Budaya", kkm: 75 },
+          { kode: "PA-BING", nama: "Bahasa Inggris", kkm: 72 },
+          { kode: "PA-PMB", nama: "Pemberdayaan", kkm: 75 },
+          { kode: "PA-KTR", nama: "Keterampilan", kkm: 75 },
+        ],
+        PAKET_B: [
+          { kode: "PB-PABP", nama: "Pendidikan Agama dan Budi Pekerti", kkm: 75 },
+          { kode: "PB-PPKN", nama: "Pendidikan Pancasila", kkm: 75 },
+          { kode: "PB-BIND", nama: "Bahasa Indonesia", kkm: 75 },
+          { kode: "PB-MTK", nama: "Matematika", kkm: 72 },
+          { kode: "PB-IPA", nama: "Ilmu Pengetahuan Alam (IPA)", kkm: 72 },
+          { kode: "PB-IPS", nama: "Ilmu Pengetahuan Sosial (IPS)", kkm: 75 },
+          { kode: "PB-BING", nama: "Bahasa Inggris", kkm: 72 },
+          { kode: "PB-PJOK", nama: "Pendidikan Jasmani, Olahraga, dan Kesehatan (PJOK)", kkm: 75 },
+          { kode: "PB-INF", nama: "Informatika", kkm: 75 },
+          { kode: "PB-SBD", nama: "Seni dan Budaya", kkm: 75 },
+          { kode: "PB-PMB", nama: "Pemberdayaan", kkm: 75 },
+          { kode: "PB-KTR", nama: "Keterampilan", kkm: 75 },
+        ],
+        PAKET_C_IPA: [
+          { kode: "PC-PABP", nama: "Pendidikan Agama dan Budi Pekerti", kkm: 75 },
+          { kode: "PC-PPKN", nama: "Pendidikan Pancasila", kkm: 75 },
+          { kode: "PC-BIND", nama: "Bahasa Indonesia", kkm: 75 },
+          { kode: "PC-MTK", nama: "Matematika", kkm: 72 },
+          { kode: "PC-BING", nama: "Bahasa Inggris", kkm: 75 },
+          { kode: "PC-SEJ", nama: "Sejarah", kkm: 75 },
+          { kode: "PC-PJOK", nama: "Pendidikan Jasmani, Olahraga, dan Kesehatan (PJOK)", kkm: 75 },
+          { kode: "PC-SBD", nama: "Seni dan Budaya", kkm: 75 },
+          { kode: "PC-FIS", nama: "Fisika", kkm: 72 },
+          { kode: "PC-KIM", nama: "Kimia", kkm: 72 },
+          { kode: "PC-BIO", nama: "Biologi", kkm: 75 },
+          { kode: "PC-INF", nama: "Informatika", kkm: 75 },
+          { kode: "PC-PMB", nama: "Pemberdayaan", kkm: 75 },
+          { kode: "PC-KTR", nama: "Keterampilan", kkm: 75 },
+        ],
+        PAKET_C_IPS: [
+          { kode: "PC-PABP", nama: "Pendidikan Agama dan Budi Pekerti", kkm: 75 },
+          { kode: "PC-PPKN", nama: "Pendidikan Pancasila", kkm: 75 },
+          { kode: "PC-BIND", nama: "Bahasa Indonesia", kkm: 75 },
+          { kode: "PC-MTK", nama: "Matematika", kkm: 72 },
+          { kode: "PC-BING", nama: "Bahasa Inggris", kkm: 75 },
+          { kode: "PC-SEJ", nama: "Sejarah", kkm: 75 },
+          { kode: "PC-PJOK", nama: "Pendidikan Jasmani, Olahraga, dan Kesehatan (PJOK)", kkm: 75 },
+          { kode: "PC-SBD", nama: "Seni dan Budaya", kkm: 75 },
+          { kode: "PC-EKO", nama: "Ekonomi", kkm: 75 },
+          { kode: "PC-SOS", nama: "Sosiologi", kkm: 75 },
+          { kode: "PC-GEO", nama: "Geografi", kkm: 75 },
+          { kode: "PC-PMB", nama: "Pemberdayaan", kkm: 75 },
+          { kode: "PC-KTR", nama: "Keterampilan", kkm: 75 },
+        ],
+      };
+
+      const key = jenjang === "PAKET_C" ? `PAKET_C_${jurusan}` : jenjang;
+      const templates = catalog[key] ?? catalog.PAKET_C_IPS;
+
+      const existing = await prisma.mapel.findMany({
+        where: { sekolahId },
+        select: { nama: true, kode: true },
+      });
+      const existingNames = new Set(existing.map((m) => m.nama.trim().toLowerCase()));
+      const slugPrefix = sekolahId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 6).toUpperCase();
+
+      let createdCount = 0;
+      for (const item of templates) {
+        if (existingNames.has(item.nama.trim().toLowerCase())) continue;
+        const uniqueCode = `${item.kode}-${slugPrefix}`;
+        try {
+          await prisma.mapel.create({
+            data: {
+              sekolahId,
+              kode: uniqueCode,
+              nama: item.nama,
+              kkm: item.kkm,
+            },
+          });
+          existingNames.add(item.nama.trim().toLowerCase());
+          createdCount += 1;
+        } catch {
+          // skip duplicate code if already present
+        }
+      }
+
+      const label = jenjang === "PAKET_C" ? `Paket C (${jurusan})` : jenjang.replace("_", " ");
+      return res.json({
+        createdCount,
+        message:
+          createdCount > 0
+            ? `${createdCount} mata pelajaran standar ${label} berhasil ditambahkan.`
+            : `Seluruh mata pelajaran standar ${label} sudah tersedia di lembaga ini.`,
+      });
+    } catch (error) {
+      console.error("Gagal memuat mapel standar kesetaraan:", error);
+      return res.status(503).json({ error: "Daftar mapel standar belum dapat dimuat." });
     }
   });
 

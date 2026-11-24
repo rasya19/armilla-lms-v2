@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Award, CheckCircle2, Download, FileSpreadsheet, GraduationCap, Printer, Save } from "lucide-react";
+import { Award, CheckCircle2, Download, FileSpreadsheet, GraduationCap, Lock, Printer, Save, Unlock } from "lucide-react";
 import { buildSandboxHeaders } from "../utils/safeUrl";
 import { CardGridSkeleton, EmptyState } from "./DashboardUI";
 import { buildKopSuratProfile, KopSurat } from "./KopSurat";
@@ -7,6 +7,14 @@ import { QrCodeSvg } from "./QrCodeSvg";
 import type { SchoolProfile } from "./schoolProfile";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
+import {
+  detectDefaultPaketCTrack,
+  detectKesetaraanProgram,
+  filterItemsByKesetaraanTrack,
+  predikatFromScore,
+  savePaketCTrackPreference,
+  type PaketCTrack,
+} from "../utils/kesetaraanSubjects";
 
 export type LegerRaportData = {
   sekolah: { nama: string; npsn: string | null; alamat: string | null; kabupatenKota: string | null; kepalaSekolah: string | null; logoUrl: string | null };
@@ -175,7 +183,13 @@ type TranscriptSubject = {
   mapelNama: string;
   kkm: number;
   skk: number;
-  semesterBreakdown: Array<{ tahunAjaranId: string; label: string; nilai: number | null }>;
+  semesterBreakdown: Array<{
+    tahunAjaranId: string;
+    label: string;
+    tahunNama?: string;
+    nilai: number | null;
+    source?: "raport" | "pindahan" | "empty";
+  }>;
   upkSource: "manual" | "cbt" | "none";
   semesterCount: number;
   rataRaport: number | null;
@@ -213,18 +227,30 @@ type TranscriptPayload = {
 export function RaportSixSemesterLegerPanel({
   initialKelasId,
   sandboxRole,
+  paketCTrack: externalTrack,
+  onChangePaketCTrack,
   onOpenTranscript,
 }: {
   initialKelasId?: string;
   sandboxRole?: "GURU" | "SISWA";
+  paketCTrack?: PaketCTrack;
+  onChangePaketCTrack?: (next: PaketCTrack) => void;
   onOpenTranscript?: () => void;
 }) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<TranscriptPayload | null>(null);
   const [kelasId, setKelasId] = useState(initialKelasId ?? "");
   const [selectedSiswaId, setSelectedSiswaId] = useState("");
+  const [localTrack, setLocalTrack] = useState<PaketCTrack>(() => externalTrack ?? detectDefaultPaketCTrack(""));
+  const paketCTrack = externalTrack ?? localTrack;
+  const setTrack = (next: PaketCTrack) => {
+    setLocalTrack(next);
+    savePaketCTrackPreference(next);
+    onChangePaketCTrack?.(next);
+  };
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lockRaportCells, setLockRaportCells] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [grid, setGrid] = useState<
@@ -270,6 +296,20 @@ export function RaportSixSemesterLegerPanel({
   }, [kelasId, loadData]);
 
   const activeRow = data?.rows.find((r) => r.siswa.id === selectedSiswaId) ?? data?.rows[0] ?? null;
+  const activeProgram = detectKesetaraanProgram(data?.selectedKelasNama ?? "", activeRow?.siswa.jenjang);
+  const visibleSubjects = useMemo(
+    () =>
+      activeRow
+        ? filterItemsByKesetaraanTrack(
+            activeRow.subjects,
+            (s) => s.mapelNama,
+            data?.selectedKelasNama ?? "",
+            paketCTrack,
+            activeRow.siswa.jenjang,
+          )
+        : [],
+    [activeRow, data?.selectedKelasNama, paketCTrack],
+  );
 
   useEffect(() => {
     if (!activeRow) {
@@ -316,7 +356,7 @@ export function RaportSixSemesterLegerPanel({
     setError("");
     setNotice("");
     try {
-      const entries = activeRow.subjects.map((sub) => {
+      const entries = visibleSubjects.map((sub) => {
         const row = grid[sub.mapelId] ?? { sem1: "", sem2: "", sem3: "", sem4: "", sem5: "", sem6: "", nilaiUpk: "" };
         const toNum = (raw: string) => {
           const trimmed = raw.trim();
@@ -344,6 +384,7 @@ export function RaportSixSemesterLegerPanel({
         headers,
         body: JSON.stringify({
           siswaId: activeRow.siswa.id,
+          allowOverwriteRaport: !lockRaportCells,
           entries,
         }),
       });
@@ -415,6 +456,32 @@ export function RaportSixSemesterLegerPanel({
             </select>
           </label>
         </div>
+
+        {activeProgram === "PAKET_C" && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/60 pt-3 text-xs">
+            <span className="font-bold">Jurusan Paket C:</span>
+            {(["IPA", "IPS"] as const).map((tr) => (
+              <button
+                key={tr}
+                type="button"
+                aria-pressed={paketCTrack === tr}
+                onClick={() => setTrack(tr)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+                  paketCTrack === tr
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : isDark
+                      ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                Paket C — {tr}
+              </button>
+            ))}
+            <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+              {paketCTrack === "IPA" ? "(Mapel IPS disembunyikan)" : "(Mapel IPA disembunyikan)"}
+            </span>
+          </div>
+        )}
       </div>
 
       {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
@@ -433,14 +500,47 @@ export function RaportSixSemesterLegerPanel({
                 NISN: <span className="font-mono">{activeRow.siswa.nisn}</span> · {data?.selectedKelasNama}
               </p>
             </div>
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-emerald-500 disabled:opacity-50"
-            >
-              <Save size={14} />
-              {saving ? "Menyimpan..." : "Simpan Leger Semester 1–6"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setLockRaportCells((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                  lockRaportCells
+                    ? isDark
+                      ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
+                      : "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : isDark
+                      ? "border-amber-400/35 bg-amber-500/15 text-amber-200"
+                      : "border-amber-300 bg-amber-50 text-amber-900"
+                }`}
+              >
+                {lockRaportCells ? <Lock size={13} /> : <Unlock size={13} />}
+                {lockRaportCells ? "Nilai E-Raport Terkunci" : "Mode Edit Semua Nilai"}
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                <Save size={14} />
+                {saving ? "Menyimpan..." : "Simpan Leger Semester 1–6"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span className={isDark ? "text-slate-300" : "text-slate-600"}>Otomatis dari E-Raport (terkunci)</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+              <span className={isDark ? "text-slate-300" : "text-slate-600"}>Input Manual / WB Pindahan</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full border border-slate-400 bg-white" />
+              <span className={isDark ? "text-slate-300" : "text-slate-600"}>Kosong (siap diisi)</span>
+            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -449,18 +549,23 @@ export function RaportSixSemesterLegerPanel({
                 <tr className={isDark ? "border-b border-slate-700 text-slate-300" : "border-b border-slate-200 bg-slate-50 text-slate-700"}>
                   <th className="px-2.5 py-2 text-center">No</th>
                   <th className="px-2.5 py-2">Mata Pelajaran</th>
-                  <th className="px-1.5 py-2 text-center">Sem 1</th>
-                  <th className="px-1.5 py-2 text-center">Sem 2</th>
-                  <th className="px-1.5 py-2 text-center">Sem 3</th>
-                  <th className="px-1.5 py-2 text-center">Sem 4</th>
-                  <th className="px-1.5 py-2 text-center">Sem 5</th>
-                  <th className="px-1.5 py-2 text-center">Sem 6</th>
+                  {[0, 1, 2, 3, 4, 5].map((idxSem) => {
+                    const semInfo = data?.semesters[idxSem];
+                    return (
+                      <th key={idxSem} className="px-1.5 py-2 text-center">
+                        <div>Sem {idxSem + 1}</div>
+                        {semInfo?.nama && (
+                          <div className="text-[9px] font-medium text-slate-400">{semInfo.nama}</div>
+                        )}
+                      </th>
+                    );
+                  })}
                   <th className="px-1.5 py-2 text-center">Nilai UPK</th>
                   <th className="px-2.5 py-2 text-center">Nilai Akhir</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-200"}`}>
-                {activeRow.subjects.map((sub, idx) => {
+                {visibleSubjects.map((sub, idx) => {
                   const r = grid[sub.mapelId] ?? { sem1: "", sem2: "", sem3: "", sem4: "", sem5: "", sem6: "", nilaiUpk: "" };
                   const semVals = [r.sem1, r.sem2, r.sem3, r.sem4, r.sem5, r.sem6]
                     .map((v) => (v.trim() === "" ? null : Number(v)))
@@ -478,21 +583,44 @@ export function RaportSixSemesterLegerPanel({
                     <tr key={sub.mapelId}>
                       <td className="px-2.5 py-2 text-center tabular-nums">{idx + 1}</td>
                       <td className="px-2.5 py-2 font-semibold">{sub.mapelNama}</td>
-                      {(["sem1", "sem2", "sem3", "sem4", "sem5", "sem6", "nilaiUpk"] as const).map((field) => (
-                        <td key={field} className="px-1.5 py-1.5 text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="0.01"
-                            aria-label={`${sub.mapelNama} ${field}`}
-                            value={r[field]}
-                            onChange={(e) => updateCell(sub.mapelId, field, e.target.value)}
-                            placeholder="-"
-                            className={cellCls}
-                          />
-                        </td>
-                      ))}
+                      {(["sem1", "sem2", "sem3", "sem4", "sem5", "sem6", "nilaiUpk"] as const).map((field, fIdx) => {
+                        const semMeta = fIdx < 6 ? sub.semesterBreakdown[fIdx] : undefined;
+                        const isFromRaport = semMeta?.source === "raport";
+                        const isFromPindahan = semMeta?.source === "pindahan";
+                        const disabledCell = isFromRaport && lockRaportCells;
+                        const statusRing = isFromRaport
+                          ? isDark
+                            ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-200"
+                            : "border-emerald-400 bg-emerald-50/80 text-emerald-950"
+                          : isFromPindahan
+                            ? isDark
+                              ? "border-sky-500/50 bg-sky-950/40 text-sky-200"
+                              : "border-sky-400 bg-sky-50/80 text-sky-950"
+                            : "";
+                        return (
+                          <td key={field} className="px-1.5 py-1.5 text-center">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step="0.01"
+                              disabled={disabledCell}
+                              title={
+                                isFromRaport
+                                  ? "Otomatis dari E-Raport (klik 'Nilai E-Raport Terkunci' untuk membuka edit)"
+                                  : isFromPindahan
+                                    ? "Input manual / nilai bawaan WB pindahan"
+                                    : "Belum ada nilai — isi manual jika WB pindahan"
+                              }
+                              aria-label={`${sub.mapelNama} ${field}`}
+                              value={r[field]}
+                              onChange={(e) => updateCell(sub.mapelId, field, e.target.value)}
+                              placeholder="-"
+                              className={`${cellCls} ${statusRing} ${disabledCell ? "cursor-not-allowed opacity-85" : ""}`}
+                            />
+                          </td>
+                        );
+                      })}
                       <td className="px-2.5 py-2 text-center font-extrabold tabular-nums text-indigo-600">
                         {liveFinal !== null ? liveFinal : "-"}
                       </td>
@@ -522,14 +650,25 @@ export function RaportSixSemesterLegerPanel({
 export function RaportTranscriptPanel({
   initialKelasId,
   sandboxRole,
+  paketCTrack: externalTrack,
+  onChangePaketCTrack,
 }: {
   initialKelasId?: string;
   sandboxRole?: "GURU" | "SISWA";
+  paketCTrack?: PaketCTrack;
+  onChangePaketCTrack?: (next: PaketCTrack) => void;
 }) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<TranscriptPayload | null>(null);
   const [kelasId, setKelasId] = useState(initialKelasId ?? "");
   const [selectedSiswaId, setSelectedSiswaId] = useState("");
+  const [localTrack, setLocalTrack] = useState<PaketCTrack>(() => externalTrack ?? detectDefaultPaketCTrack(""));
+  const paketCTrack = externalTrack ?? localTrack;
+  const setTrack = (next: PaketCTrack) => {
+    setLocalTrack(next);
+    savePaketCTrackPreference(next);
+    onChangePaketCTrack?.(next);
+  };
   const [loading, setLoading] = useState(true);
   const [savingUpk, setSavingUpk] = useState(false);
   const [error, setError] = useState("");
@@ -572,7 +711,44 @@ export function RaportTranscriptPanel({
     return () => controller.abort();
   }, [kelasId, loadTranscript]);
 
-  const activeRow = data?.rows.find((r) => r.siswa.id === selectedSiswaId) ?? data?.rows[0] ?? null;
+  const rawActiveRow = data?.rows.find((r) => r.siswa.id === selectedSiswaId) ?? data?.rows[0] ?? null;
+  const transcriptProgram = detectKesetaraanProgram(data?.selectedKelasNama ?? "", rawActiveRow?.siswa.jenjang);
+  const visibleMapels = useMemo(
+    () =>
+      filterItemsByKesetaraanTrack(
+        data?.mapel ?? [],
+        (m) => m.nama,
+        data?.selectedKelasNama ?? "",
+        paketCTrack,
+        rawActiveRow?.siswa.jenjang,
+      ),
+    [data?.mapel, data?.selectedKelasNama, paketCTrack, rawActiveRow?.siswa.jenjang],
+  );
+  const filteredRows = useMemo(() => {
+    if (!data) return [];
+    return data.rows.map((r) => {
+      const subjects = filterItemsByKesetaraanTrack(
+        r.subjects,
+        (s) => s.mapelNama,
+        data.selectedKelasNama,
+        paketCTrack,
+        r.siswa.jenjang,
+      );
+      const vals = subjects.map((s) => s.nilaiTranskrip).filter((v): v is number => v !== null && Number.isFinite(v));
+      const avg = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+      return {
+        ...r,
+        subjects,
+        rataTranskrip: avg,
+        predikatKeseluruhan: predikatFromScore(avg),
+      };
+    });
+  }, [data, paketCTrack]);
+  const activeRow = filteredRows.find((r) => r.siswa.id === selectedSiswaId) ?? filteredRows[0] ?? null;
+  const programClassLabel =
+    transcriptProgram === "PAKET_C"
+      ? `${data?.selectedKelasNama ?? ""} (Jurusan ${paketCTrack})`
+      : (data?.selectedKelasNama ?? "");
 
   async function handleSaveUpk(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -612,7 +788,7 @@ export function RaportTranscriptPanel({
   async function handleExportTranscriptExcel() {
     if (!data) return;
     const XLSX = await import("xlsx");
-    const summaryRows = data.rows.map((r, idx) => ({
+    const summaryRows = filteredRows.map((r, idx) => ({
       No: idx + 1,
       NISN: r.siswa.nisn,
       "Nama Warga Belajar": r.siswa.nama,
@@ -693,14 +869,40 @@ export function RaportTranscriptPanel({
             <label className="block text-xs font-bold">
               Pilih Warga Belajar untuk Pratinjau Transkrip
               <select value={selectedSiswaId} onChange={(e) => setSelectedSiswaId(e.target.value)} className={fieldCls}>
-                {(data?.rows ?? []).map((r) => (
+                {filteredRows.map((r) => (
                   <option key={r.siswa.id} value={r.siswa.id}>
-                    {r.siswa.nama} ({r.siswa.nisn}) {r.rataTranskrip !== null ? `· Transkrip ${r.rataTranskrip}` : ""}
+                    {r.siswa.nama} ({r.siswa.nisn}) {r.rataTranskrip !== null ? `· Nilai Akhir ${r.rataTranskrip}` : ""}
                   </option>
                 ))}
               </select>
             </label>
           </div>
+
+          {transcriptProgram === "PAKET_C" && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/60 pt-3 text-xs">
+              <span className="font-bold">Jurusan Paket C (Transkrip):</span>
+              {(["IPA", "IPS"] as const).map((tr) => (
+                <button
+                  key={tr}
+                  type="button"
+                  aria-pressed={paketCTrack === tr}
+                  onClick={() => setTrack(tr)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+                    paketCTrack === tr
+                      ? "bg-indigo-600 text-white shadow-xs"
+                      : isDark
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  Paket C — {tr}
+                </button>
+              ))}
+              <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                {paketCTrack === "IPA" ? "(Mapel IPS disembunyikan)" : "(Mapel IPA disembunyikan)"}
+              </span>
+            </div>
+          )}
         </div>
 
         {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
@@ -712,7 +914,7 @@ export function RaportTranscriptPanel({
               <label className="block text-xs font-bold">
                 Input / Sesuaikan Nilai UPK Manual ({activeRow.siswa.nama})
                 <select value={upkMapelId} onChange={(e) => setUpkMapelId(e.target.value)} className={fieldCls}>
-                  {data.mapel.map((m) => (
+                  {visibleMapels.map((m) => (
                     <option key={m.id} value={m.id}>{m.nama}</option>
                   ))}
                 </select>
@@ -766,7 +968,7 @@ export function RaportTranscriptPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {data.rows.map((r, idx) => (
+                  {filteredRows.map((r, idx) => (
                     <tr
                       key={r.siswa.id}
                       onClick={() => setSelectedSiswaId(r.siswa.id)}
@@ -813,7 +1015,7 @@ export function RaportTranscriptPanel({
                   Transkrip Nilai Pendamping Ijazah
                 </h3>
                 <p className="text-xs font-semibold text-slate-700">
-                  Pendidikan Kesetaraan · {data.selectedKelasNama}
+                  Pendidikan Kesetaraan · {programClassLabel}
                 </p>
               </div>
 
@@ -828,7 +1030,7 @@ export function RaportTranscriptPanel({
                 </div>
                 <div className="flex gap-2">
                   <span className="w-36 shrink-0 text-slate-600">Program / Kelas Akhir</span>
-                  <strong className="text-slate-950">: {data.selectedKelasNama}</strong>
+                  <strong className="text-slate-950">: {programClassLabel}</strong>
                 </div>
                 <div className="flex gap-2">
                   <span className="w-36 shrink-0 text-slate-600">Rata-rata Nilai Akhir</span>

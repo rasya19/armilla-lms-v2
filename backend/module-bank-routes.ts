@@ -22,7 +22,61 @@ export type NationalModuleSeed = {
 
 export const NATIONAL_ORIGIN_NAME = "Katalog Nasional Kemendikdasmen";
 
-export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
+export function resolveEmodulSubjectUrl(paket: ModulePaket, subject: string): string {
+  const s = subject.trim().toLowerCase();
+  const base = "https://emodul.kemendikdasmen.go.id/";
+  const mapUrl = (paketParam: string, pelajaran?: string) =>
+    pelajaran
+      ? `${base}?filter=${encodeURIComponent(paketParam)}&pelajaran=${encodeURIComponent(pelajaran)}`
+      : `${base}?filter=${encodeURIComponent(paketParam.replace(/\s+/g, "-"))}`;
+
+  if (paket === "Paket A") {
+    if (s.includes("bahasa indonesia")) return mapUrl("Paket A", "Bahasa Indonesia");
+    if (s.includes("matematika")) return mapUrl("Paket A", "Matematika");
+    if (s.includes("pancasila") || s.includes("ppkn")) return mapUrl("Paket A", "PPKn");
+    if (s.includes("ipas") || s === "ipa") return mapUrl("Paket A", "IPA");
+    if (s === "ips") return mapUrl("Paket A", "IPS");
+    return mapUrl("Paket-A");
+  }
+
+  if (paket === "Paket B") {
+    if (s.includes("bahasa indonesia")) return mapUrl("Paket B", "Bahasa Indonesia");
+    if (s.includes("bahasa inggris")) return mapUrl("Paket B", "Bahasa Inggris");
+    if (s.includes("matematika")) return mapUrl("Paket B", "Matematika");
+    if (s.includes("pancasila") || s.includes("ppkn")) return mapUrl("Paket B", "PPKn");
+    if (s === "ipa" || s.includes("ilmu pengetahuan alam")) return mapUrl("Paket B", "IPA");
+    if (s === "ips" || s.includes("ilmu pengetahuan sosial")) return mapUrl("Paket B", "IPS");
+    if (s.includes("pjok") || s.includes("olahraga")) return mapUrl("Paket B", "Olahraga");
+    if (s.includes("seni")) return mapUrl("Paket B", "Seni");
+    if (s.includes("prakarya") || s.includes("keterampilan") || s.includes("pemberdayaan")) {
+      return mapUrl("Paket B", "Prakarya");
+    }
+    return mapUrl("Paket-B");
+  }
+
+  // Paket C
+  if (s.includes("bahasa indonesia")) return mapUrl("Paket C", "Bahasa Indonesia");
+  if (s.includes("bahasa inggris")) return mapUrl("Paket C", "Bahasa Inggris");
+  if (s.includes("matematika peminatan") || s.includes("matematika lanjut")) return mapUrl("Paket C", "Matematika Peminatan");
+  if (s.includes("matematika")) return mapUrl("Paket C", "Matematika");
+  if (s.includes("pancasila") || s.includes("ppkn")) return mapUrl("Paket C", "PPKn");
+  if (s.includes("sejarah peminatan")) return mapUrl("Paket C", "Sejarah Peminatan");
+  if (s.includes("sejarah")) return mapUrl("Paket C", "Sejarah");
+  if (s.includes("pjok") || s.includes("olahraga")) return mapUrl("Paket C", "Olahraga");
+  if (s.includes("seni")) return mapUrl("Paket C", "Seni");
+  if (s.includes("prakarya") || s.includes("keterampilan") || s.includes("pemberdayaan")) {
+    return mapUrl("Paket C", "Prakarya");
+  }
+  if (s.includes("fisika")) return mapUrl("Paket C", "Fisika");
+  if (s.includes("kimia")) return mapUrl("Paket C", "Kimia");
+  if (s.includes("biologi")) return mapUrl("Paket C", "Biologi");
+  if (s.includes("ekonomi")) return mapUrl("Paket C", "Ekonomi");
+  if (s.includes("geografi")) return mapUrl("Paket C", "Geografi");
+  if (s.includes("sosiologi")) return mapUrl("Paket C", "Sosiologi");
+  return mapUrl("Paket-C");
+}
+
+const RAW_NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
   // =========================================================================
   // PAKET A (SETARA SD · FASE C · KHUSUS KELAS 5 & 6 — 9 MAPEL × 2 KELAS = 18 MODUL)
   // =========================================================================
@@ -865,6 +919,11 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
   },
 ];
 
+export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = RAW_NATIONAL_MODULE_CATALOG.map((item) => ({
+  ...item,
+  fileUrl: resolveEmodulSubjectUrl(item.paket, item.subject),
+}));
+
 export function normalizeModulePaket(raw: unknown): ModulePaket | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim().toUpperCase().replace(/[_-]+/g, " ");
@@ -1234,20 +1293,6 @@ export function moduleBankRoutes(getSchoolSession: SchoolContextResolver) {
   // POST /api/module-bank/seed-national
   router.post("/seed-national", async (_req, res) => {
     try {
-      // Migrate any legacy dead emodul.kemdikbud.go.id URLs to the active Kemendikdasmen portal
-      await prisma.learningModuleBank
-        .updateMany({
-          where: {
-            schoolId: null,
-            originSchoolName: NATIONAL_ORIGIN_NAME,
-            fileUrl: { contains: "emodul.kemdikbud.go.id" },
-          },
-          data: {
-            fileUrl: "https://emodul.kemendikdasmen.go.id/",
-          },
-        })
-        .catch(() => null);
-
       // Remove legacy Paket A Kelas 1-4 entries from national catalog (keep Paket A Kls 5-6, Paket B, and Paket C)
       await prisma.learningModuleBank
         .deleteMany({
@@ -1265,9 +1310,26 @@ export function moduleBankRoutes(getSchoolSession: SchoolContextResolver) {
           schoolId: null,
           originSchoolName: NATIONAL_ORIGIN_NAME,
         },
-        select: { paket: true, gradeLevel: true, subject: true, title: true },
+        select: { id: true, paket: true, gradeLevel: true, subject: true, title: true, fileUrl: true },
         take: 1000,
       });
+
+      // Upgrade any existing generic homepage / legacy kemdikbud URLs to exact per-subject eModul URLs
+      const urlUpgrades = existing.filter(
+        (row) =>
+          row.fileUrl === "https://emodul.kemendikdasmen.go.id/" ||
+          row.fileUrl.includes("emodul.kemdikbud.go.id"),
+      );
+      for (const row of urlUpgrades) {
+        const paket = normalizeModulePaket(row.paket);
+        if (!paket) continue;
+        const exactUrl = resolveEmodulSubjectUrl(paket, row.subject);
+        if (exactUrl !== row.fileUrl) {
+          await prisma.learningModuleBank
+            .update({ where: { id: row.id }, data: { fileUrl: exactUrl } })
+            .catch(() => null);
+        }
+      }
 
       const existingKeys = new Set(
         existing.map(

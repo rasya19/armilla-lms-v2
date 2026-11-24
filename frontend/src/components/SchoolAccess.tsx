@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  CreditCard,
   Database,
   Eye,
   EyeOff,
@@ -109,6 +110,7 @@ import {
 import { VervalDapodikView } from "./VervalDapodikView";
 import { ModuleBankView } from "./ModuleBankView";
 import { SchoolOnboardingChecklist } from "./SchoolOnboardingChecklist";
+import { SchoolSubscriptionView } from "./SchoolSubscriptionView";
 
 const DEVELOPER_EMAIL = "ismantoj88@gmail.com";
 
@@ -146,7 +148,8 @@ type SchoolView =
   | "presensi"
   | "rekap-akademik"
   | "tema-identitas"
-  | "pengaturan-lanjutan";
+  | "pengaturan-lanjutan"
+  | "langganan";
 
 type SchoolMenuItem = {
   label: string;
@@ -173,6 +176,7 @@ function isSchoolDataKind(view: SchoolView): view is ActiveDataKind {
 const SIDEBAR_TOP_LEVEL_ITEMS: SchoolMenuItem[] = [
   { label: "Dashboard Utama", icon: LayoutDashboard, target: "dashboard" },
   { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
+  { label: "Tagihan & Langganan", icon: CreditCard, target: "langganan" },
 ];
 
 const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
@@ -680,7 +684,13 @@ export function SchoolHome() {
   const [samples, setSamples] = useState<SandboxSamples | null>(null);
   const [samplesLoading, setSamplesLoading] = useState(false);
   const [error, setError] = useState("");
-  const [view, setView] = useState<SchoolView>("dashboard");
+  const [view, setView] = useState<SchoolView>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("payment") === "return") return "langganan";
+    }
+    return "dashboard";
+  });
   const [transitionAlternate, setTransitionAlternate] = useState(false);
   const [dataKind, setDataKind] = useState<ActiveDataKind>("siswa");
   const [mapelSkkTab, setMapelSkkTab] = useState<"mapel" | "skk">("mapel");
@@ -1103,6 +1113,9 @@ export function SchoolHome() {
           {view === "asisten-ai" && hasPlanAccess(plan, "pro") && <AsistenAiView />}
           {view === "manajemen-aset" && hasPlanAccess(plan, "pro") && <ManajemenAsetView />}
           {view === "ruang-diskusi" && <RuangDiskusiView />}
+          {view === "langganan" && (
+            <SchoolSubscriptionView onRefreshPlan={() => void refreshSessionProfile({ manual: true })} />
+          )}
           <SchoolData
             slug={slug}
             kind={dataKind}
@@ -1360,9 +1373,14 @@ function SchoolSidebar({
         <div className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${palette.tierCard}`}>
           <span className={`text-[11px] font-bold ${palette.tierLabel}`}>Tier Akses</span>
           <div className="flex items-center gap-1.5">
-            <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider ${badgeClass}`}>
+            <button
+              type="button"
+              onClick={() => onSelectView("langganan")}
+              title="Buka Tagihan & Langganan"
+              className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider transition hover:opacity-90 ${badgeClass}`}
+            >
               {planStyle.label}
-            </span>
+            </button>
             <button
               type="button"
               disabled={refreshingPlan}

@@ -532,6 +532,122 @@ function readCallbackString(body: Record<string, unknown>, key: string): string 
   return "";
 }
 
+export type CancelInvoiceOutcome =
+  | { ok: true; deletedOrderId: string }
+  | { ok: false; httpStatus: number; error: string };
+
+export interface CancelInvoiceDb {
+  pembayaranLangganan: {
+    findFirst: (args: {
+      where: { OR: Array<{ merchantOrderId: string } | { id: string }> };
+      select: { id: true; sekolahId: true; merchantOrderId: true; status: true };
+    }) => Promise<{ id: string; sekolahId: string; merchantOrderId: string; status: string } | null>;
+    deleteMany: (args: {
+      where: { id: string; sekolahId: string; status: string };
+    }) => Promise<{ count: number }>;
+  };
+}
+
+/**
+ * Cancels / deletes a subscription invoice ONLY if it belongs to the requesting tenant
+ * and is still in PENDING ("MENUNGGU BAYAR") status. Paid invoices are always protected.
+ */
+export async function cancelPendingSubscriptionInvoice(
+  input: { sekolahId: string; orderId: string },
+  db: CancelInvoiceDb = prisma,
+): Promise<CancelInvoiceOutcome> {
+  const orderId = input.orderId.trim();
+  const sekolahId = input.sekolahId.trim();
+  if (!orderId || !sekolahId) {
+    return { ok: false, httpStatus: 400, error: "Order ID atau identitas lembaga tidak valid." };
+  }
+
+  const invoice = await db.pembayaranLangganan.findFirst({
+    where: {
+      OR: [{ merchantOrderId: orderId }, { id: orderId }],
+    },
+    select: {
+      id: true,
+      sekolahId: true,
+      merchantOrderId: true,
+      status: true,
+    },
+  });
+
+  if (!invoice) {
+    return { ok: false, httpStatus: 404, error: "Tagihan tidak ditemukan." };
+  }
+
+  if (invoice.sekolahId !== sekolahId) {
+    return { ok: false, httpStatus: 403, error: "Anda tidak memiliki akses untuk membatalkan tagihan lembaga lain." };
+  }
+
+  const normalizedStatus = invoice.status.trim().toUpperCase();
+  if (normalizedStatus === "PAID") {
+    return { ok: false, httpStatus: 409, error: "Tagihan yang sudah lunas tidak dapat dibatalkan atau dihapus." };
+  }
+  if (normalizedStatus !== "PENDING") {
+    return { ok: false, httpStatus: 409, error: "Hanya tagihan berstatus menunggu pembayaran yang dapat dibatalkan." };
+  }
+
+  const deleted = await db.pembayaranLangganan.deleteMany({
+    where: {
+      id: invoice.id,
+      sekolahId,
+      status: "PENDING",
+    },
+  });
+
+  if (deleted.count !== 1) {
+    return {
+      ok: false,
+      httpStatus: 409,
+      error: "Status tagihan telah berubah dan tidak dapat dibatalkan.",
+    };
+  }
+
+  return { ok: true, deletedOrderId: invoice.merchantOrderId };
+}
+
+/**
+ * Tenant Invoice Cancellation Route: DELETE /api/payment/invoices/:orderId
+ */
+export function tenantPaymentInvoiceRoutes(
+  getAdminSchoolId: (req: Request) => Promise<{ sekolahId: string } | null>,
+) {
+  const router = Router();
+
+  router.delete("/invoices/:orderId", async (req, res) => {
+    try {
+      const ctx = await getAdminSchoolId(req);
+      if (!ctx) return res.status(401).json({ error: "Sesi admin sekolah tidak valid." });
+
+      const orderId = cleanText(req.params.orderId, 80);
+      if (!orderId) return res.status(400).json({ error: "Order ID tidak valid." });
+
+      const outcome = await cancelPendingSubscriptionInvoice({
+        sekolahId: ctx.sekolahId,
+        orderId,
+      });
+
+      if (outcome.ok === false) {
+        return res.status(outcome.httpStatus).json({ error: outcome.error });
+      }
+
+      return res.json({
+        deleted: true,
+        orderId: outcome.deletedOrderId,
+        message: "Tagihan menunggu pembayaran berhasil dibatalkan.",
+      });
+    } catch (error) {
+      console.error("Gagal membatalkan tagihan langganan:", error);
+      return res.status(503).json({ error: "Tagihan belum dapat dibatalkan saat ini." });
+    }
+  });
+
+  return router;
+}
+
 /**
  * Duitku Callback Route: POST /api/payment/callback
  * Full URL for SIPUT PKBM: https://pkbm.siput.id/api/payment/callback

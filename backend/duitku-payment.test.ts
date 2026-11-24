@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import {
   buildSubscriptionOrderId,
+  cancelPendingSubscriptionInvoice,
   checkDuitkuTransactionStatus,
   createDuitkuInvoice,
   createDuitkuPopSignature,
@@ -12,6 +13,7 @@ import {
   normalizeDuitkuEnv,
   resolveTenantReturnUrl,
   verifyDuitkuCallbackSignature,
+  type CancelInvoiceDb,
 } from "./duitku-payment.js";
 import { parseSubscriptionOrderId } from "./notification-payment.js";
 
@@ -200,4 +202,70 @@ test("createDuitkuInvoice and checkDuitkuTransactionStatus send correct headers,
     capturedBody.signature,
     createDuitkuStatusSignature("DS38515", "SUB-pkbm-test-pro-11223344", "unit-test-secret"),
   );
+});
+
+test("cancelPendingSubscriptionInvoice enforces tenant ownership and only deletes PENDING invoices", async () => {
+  const rows = [
+    { id: "inv-pending", sekolahId: "tenant-a", merchantOrderId: "SUB-pkbm-a-pro-1111aaaa", status: "PENDING" },
+    { id: "inv-paid", sekolahId: "tenant-a", merchantOrderId: "SUB-pkbm-a-pro-2222bbbb", status: "PAID" },
+    { id: "inv-other", sekolahId: "tenant-b", merchantOrderId: "SUB-pkbm-b-basic-3333cccc", status: "PENDING" },
+    { id: "inv-failed", sekolahId: "tenant-a", merchantOrderId: "SUB-pkbm-a-reguler-4444dddd", status: "FAILED" },
+  ];
+
+  const mockDb: CancelInvoiceDb = {
+    pembayaranLangganan: {
+      findFirst: async ({ where }) => {
+        const keys = where.OR.map((item) => ("merchantOrderId" in item ? item.merchantOrderId : item.id));
+        return rows.find((r) => keys.includes(r.merchantOrderId) || keys.includes(r.id)) ?? null;
+      },
+      deleteMany: async ({ where }) => {
+        const idx = rows.findIndex(
+          (r) => r.id === where.id && r.sekolahId === where.sekolahId && r.status === where.status,
+        );
+        if (idx === -1) return { count: 0 };
+        rows.splice(idx, 1);
+        return { count: 1 };
+      },
+    },
+  };
+
+  // 1. Missing order -> 404
+  const notFound = await cancelPendingSubscriptionInvoice(
+    { sekolahId: "tenant-a", orderId: "SUB-tidak-ada-pro-00000000" },
+    mockDb,
+  );
+  assert.equal(notFound.ok, false);
+  if (notFound.ok === false) assert.equal(notFound.httpStatus, 404);
+
+  // 2. Wrong tenant -> 403
+  const forbidden = await cancelPendingSubscriptionInvoice(
+    { sekolahId: "tenant-a", orderId: "SUB-pkbm-b-basic-3333cccc" },
+    mockDb,
+  );
+  assert.equal(forbidden.ok, false);
+  if (forbidden.ok === false) assert.equal(forbidden.httpStatus, 403);
+
+  // 3. Already PAID -> 409
+  const paid = await cancelPendingSubscriptionInvoice(
+    { sekolahId: "tenant-a", orderId: "SUB-pkbm-a-pro-2222bbbb" },
+    mockDb,
+  );
+  assert.equal(paid.ok, false);
+  if (paid.ok === false) assert.equal(paid.httpStatus, 409);
+
+  // 4. Non-pending (FAILED) -> 409
+  const failed = await cancelPendingSubscriptionInvoice(
+    { sekolahId: "tenant-a", orderId: "SUB-pkbm-a-reguler-4444dddd" },
+    mockDb,
+  );
+  assert.equal(failed.ok, false);
+  if (failed.ok === false) assert.equal(failed.httpStatus, 409);
+
+  // 5. Owned PENDING invoice -> deleted successfully
+  const success = await cancelPendingSubscriptionInvoice(
+    { sekolahId: "tenant-a", orderId: "SUB-pkbm-a-pro-1111aaaa" },
+    mockDb,
+  );
+  assert.deepEqual(success, { ok: true, deletedOrderId: "SUB-pkbm-a-pro-1111aaaa" });
+  assert.equal(rows.some((r) => r.id === "inv-pending"), false);
 });

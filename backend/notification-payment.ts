@@ -5,6 +5,7 @@ import { cleanText } from "./school-modules-shared.js";
 import { normalizeTenantPlan, type TenantPlan } from "./plan-utils.js";
 import {
   buildSubscriptionOrderId,
+  cancelPendingSubscriptionInvoice,
   createDuitkuInvoice,
   getDuitkuConfig,
   resolveTenantReturnUrl,
@@ -140,6 +141,7 @@ export function subscriptionBillingRoutes(
         paymentGatewayReady: duitku.configured || midtransReady,
         paymentProvider,
         duitkuEnv: duitku.configured ? duitku.environment : null,
+        duitkuMerchantCode: duitku.configured ? duitku.merchantCode : null,
         whatsappReady: Boolean(process.env.WA_GATEWAY_URL?.trim() && process.env.WA_GATEWAY_TOKEN?.trim()),
         plans: ANNUAL_PLAN_PRICES,
         riwayatPembayaran: recentPayments.map((item) => ({
@@ -315,6 +317,33 @@ export function subscriptionBillingRoutes(
     } catch (error) {
       console.error("Gagal membuat checkout langganan:", error);
       return res.status(503).json({ error: "Checkout langganan belum dapat diproses." });
+    }
+  });
+
+  router.delete("/invoices/:orderId", async (req, res) => {
+    try {
+      const ctx = await getAdminSchoolId(req);
+      if (!ctx) return res.status(401).json({ error: "Sesi admin sekolah tidak valid." });
+
+      const orderId = cleanText(req.params.orderId, 80);
+      if (!orderId) return res.status(400).json({ error: "Order ID tidak valid." });
+
+      const outcome = await cancelPendingSubscriptionInvoice({
+        sekolahId: ctx.sekolahId,
+        orderId,
+      });
+      if (outcome.ok === false) {
+        return res.status(outcome.httpStatus).json({ error: outcome.error });
+      }
+
+      return res.json({
+        deleted: true,
+        orderId: outcome.deletedOrderId,
+        message: "Tagihan menunggu pembayaran berhasil dibatalkan.",
+      });
+    } catch (error) {
+      console.error("Gagal membatalkan tagihan langganan:", error);
+      return res.status(503).json({ error: "Tagihan belum dapat dibatalkan saat ini." });
     }
   });
 

@@ -23,7 +23,7 @@ import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
 import { createActionRateLimiter, extractRequestIp } from "./action-rate-limit.js";
 import { paymentWebhookRoutes, sendWhatsAppNotification, subscriptionBillingRoutes, trialReminderCronRoute } from "./notification-payment.js";
-import { duitkuCallbackRoutes, masterPaymentRoutes } from "./duitku-payment.js";
+import { duitkuCallbackRoutes, masterPaymentRoutes, tenantPaymentInvoiceRoutes } from "./duitku-payment.js";
 import { Prisma } from "@prisma/client";
 import { internalProvisionRoutes } from "./internal-provision.js";
 import { forwardRegistrationToMaster } from "./master-admin-registration.js";
@@ -2998,6 +2998,11 @@ app.use("/api/sekolah/langganan", subscriptionBillingRoutes(async (req) => {
   const session = await getSession(req, "ADMIN");
   if (!session?.akun.sekolahId) return null;
   return { sekolahId: session.akun.sekolahId, adminNama: session.akun.nama, adminEmail: session.akun.email ?? null };
+}));
+app.use("/api/payment", tenantPaymentInvoiceRoutes(async (req) => {
+  const session = await getSession(req, "ADMIN");
+  if (!session?.akun.sekolahId) return null;
+  return { sekolahId: session.akun.sekolahId };
 }));
 app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 app.use("/api/sekolah", tahap2AcademicRoutes(resolveAcademicSchoolSession));

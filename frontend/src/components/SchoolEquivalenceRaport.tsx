@@ -16,9 +16,11 @@ import {
   UserCheck,
 } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
+import { buildKopSuratProfile, KopSurat } from "./KopSurat";
 import { QrCodeSvg } from "./QrCodeSvg";
-import { RaportLegerPanel, RaportTranscriptPanel } from "./RaportLegerTranscript";
+import { RaportLegerPanel, RaportSixSemesterLegerPanel, RaportTranscriptPanel } from "./RaportLegerTranscript";
 import { SchoolModal } from "./SchoolModal";
+import type { SchoolProfile } from "./schoolProfile";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
@@ -756,6 +758,7 @@ export function AgendaMengajarView() {
 // ==========================================
 type RaportPayload = {
   sekolah: { nama: string; npsn: string | null; alamat: string | null; kabupatenKota: string | null; kepalaSekolah: string | null; logoUrl: string | null };
+  kopSurat?: SchoolProfile;
   kelasList: KelasOpt[];
   tahunList: TahunOpt[];
   selectedKelasId: string;
@@ -781,10 +784,55 @@ function predikatNilai(skor: number): string {
   return "D (Perlu Bimbingan)";
 }
 
+function detectKurikulumMerdekaPhase(kelasName: string, jenjang?: string | null): { program: string; fase: string } {
+  const text = `${kelasName} ${jenjang ?? ""}`.toLowerCase();
+  const gradeMatch = text.match(/\b(?:kelas|kls|tingkat)?\s*(1[0-2]|[1-9])\b/);
+  const grade = gradeMatch ? Number(gradeMatch[1]) : null;
+
+  if (grade !== null) {
+    if (grade <= 2) return { program: "Program Paket A (Setara SD)", fase: "Fase A" };
+    if (grade <= 4) return { program: "Program Paket A (Setara SD)", fase: "Fase B" };
+    if (grade <= 6) return { program: "Program Paket A (Setara SD)", fase: "Fase C" };
+    if (grade <= 9) return { program: "Program Paket B (Setara SMP)", fase: "Fase D" };
+    if (grade === 10) return { program: "Program Paket C (Setara SMA)", fase: "Fase E" };
+    return { program: "Program Paket C (Setara SMA)", fase: "Fase F" };
+  }
+
+  if (text.includes("paket a")) return { program: "Program Paket A (Setara SD)", fase: "Fase A / B / C" };
+  if (text.includes("paket b")) return { program: "Program Paket B (Setara SMP)", fase: "Fase D" };
+  if (text.includes("paket c")) return { program: "Program Paket C (Setara SMA)", fase: "Fase E / F" };
+  return { program: "Pendidikan Kesetaraan", fase: "Fase Kesetaraan" };
+}
+
+function isPemberdayaanKeterampilanMapel(mapelNama: string): boolean {
+  return /\b(pemberdayaan|keterampilan|prakarya|kewirausahaan|vokasi|tata boga|tata busana|komputer|tik|teknologi informasi|informatika|p5|projek|proyek|kerajinan|pertanian|budidaya)\b/i.test(
+    mapelNama,
+  );
+}
+
+function buildKurikulumMerdekaDescription(mapelNama: string, nilaiAkhir: number | null, customNote: string | null): string {
+  if (customNote && customNote.trim()) {
+    return customNote.trim();
+  }
+  if (nilaiAkhir === null) {
+    return `Belum terdapat capaian nilai akhir pada mata pelajaran ${mapelNama} semester ini.`;
+  }
+  if (nilaiAkhir >= 90) {
+    return `Menunjukkan penguasaan yang sangat baik dalam memahami dan menerapkan kompetensi esensial ${mapelNama}. Perlu pengayaan lanjutan pada penerapan kontekstual dan proyek mandiri.`;
+  }
+  if (nilaiAkhir >= 80) {
+    return `Menunjukkan penguasaan yang baik dalam memahami materi inti ${mapelNama}. Perlu peningkatan konsistensi pada latihan analisis dan penyelesaian masalah mandiri.`;
+  }
+  if (nilaiAkhir >= 70) {
+    return `Menunjukkan penguasaan yang cukup dalam memahami konsep dasar ${mapelNama}. Perlu bimbingan lebih lanjut dalam penerapan kompetensi secara mandiri dan tutorial.`;
+  }
+  return `Mulai memahami sebagian materi dasar ${mapelNama}. Perlu pendampingan intensif dari tutor dan pengulangan modul mandiri untuk mencapai kompetensi minimal.`;
+}
+
 export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<RaportPayload | null>(null);
-  const [raportSubTab, setRaportSubTab] = useState<"raport" | "leger" | "transkrip">("raport");
+  const [raportSubTab, setRaportSubTab] = useState<"raport" | "leger" | "leger-6sem" | "transkrip">("raport");
   const [kelasId, setKelasId] = useState("");
   const [tahunId, setTahunId] = useState("");
   const [selectedSiswaId, setSelectedSiswaId] = useState("");
@@ -975,14 +1023,27 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
   const activeKelasName = data?.kelasList.find((k) => k.id === kelasId)?.nama ?? "-";
   const activeTahunObj = data?.tahunList.find((t) => t.id === tahunId);
+  const phaseInfo = detectKurikulumMerdekaPhase(activeKelasName, activeSiswa?.jenjang);
+  const kelompokUmumScores = useMemo(
+    () => studentScores.filter((row) => !isPemberdayaanKeterampilanMapel(row.mapel.nama)),
+    [studentScores],
+  );
+  const kelompokKeterampilanScores = useMemo(
+    () => studentScores.filter((row) => isPemberdayaanKeterampilanMapel(row.mapel.nama)),
+    [studentScores],
+  );
+  const totalSkkRaport = useMemo(
+    () => studentScores.reduce((sum, row) => sum + (row.mapel.skk || 0), 0),
+    [studentScores],
+  );
 
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <div className="no-print space-y-6">
         <DashboardHero
-          eyebrow="Evaluasi & Rapor Kesetaraan · Paket Reguler+"
+          eyebrow="Evaluasi & Rapor Kesetaraan · Kurikulum Merdeka"
           title="E-Raport, Leger & Transkrip Nilai Ijazah"
-          description="Kelola nilai raport semester, rekap leger kelas, hingga transkrip nilai kelulusan pendamping ijazah (60% Raport 6 Semester + 40% UPK)."
+          description="Kelola laporan hasil belajar E-Raport Kurikulum Merdeka Pendidikan Kesetaraan, leger kelas, hingga cetak transkrip nilai kelulusan siap cetak."
           action={
             raportSubTab === "raport" ? (
               <div className="flex flex-wrap gap-2">
@@ -1008,7 +1069,8 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           {([
             { id: "raport" as const, label: "Input & E-Raport Siswa" },
             { id: "leger" as const, label: "Leger Raport Kelas" },
-            { id: "transkrip" as const, label: "Transkrip Nilai Ijazah (60% Raport + 40% UPK)" },
+            { id: "leger-6sem" as const, label: "Input Leger Semester 1–6" },
+            { id: "transkrip" as const, label: "Transkrip Nilai Ijazah" },
           ]).map((tab) => (
             <button
               key={tab.id}
@@ -1033,7 +1095,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
         {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{notice}</p>}
 
-        {raportSubTab !== "transkrip" && (
+        {raportSubTab !== "transkrip" && raportSubTab !== "leger-6sem" && (
         <div className={`grid gap-4 rounded-2xl p-4 sm:grid-cols-3 ${panelClass(isDark)}`}>
           <label className="block text-xs font-bold">
             Tahun Ajaran &amp; Semester
@@ -1128,6 +1190,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         <RaportLegerPanel
           data={{
             sekolah: data.sekolah,
+            kopSurat: data.kopSurat,
             kelasName: activeKelasName,
             tahunLabel: activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "-",
             waliKelasNama: data.waliKelasNama,
@@ -1138,106 +1201,194 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         />
       )}
 
+      {raportSubTab === "leger-6sem" && (
+        <RaportSixSemesterLegerPanel
+          initialKelasId={kelasId}
+          sandboxRole={sandboxRole}
+          onOpenTranscript={() => setRaportSubTab("transkrip")}
+        />
+      )}
+
       {raportSubTab === "transkrip" && (
         <RaportTranscriptPanel initialKelasId={kelasId} sandboxRole={sandboxRole} />
       )}
 
       {raportSubTab === "raport" && activeSiswa && data && (
-        <div className="rounded-2xl border border-slate-300 bg-white p-6 text-slate-900 shadow-sm sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-900 pb-4">
-            <div className="flex items-center gap-4">
-              {data.sekolah.logoUrl ? (
-                <img src={data.sekolah.logoUrl} alt={data.sekolah.nama} className="h-14 w-14 rounded-lg object-contain" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-sky-900 text-xl font-black text-white">
-                  {data.sekolah.nama.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-sky-800">Laporan Hasil Belajar Pendidikan Kesetaraan</p>
-                <h3 className="text-xl font-black uppercase text-slate-900">{data.sekolah.nama}</h3>
-                <p className="text-xs text-slate-600">
-                  NPSN: {data.sekolah.npsn || "-"} · {data.sekolah.alamat || data.sekolah.kabupatenKota || "Indonesia"}
-                </p>
-              </div>
+        <article className="print-sheet rounded-2xl border border-slate-300 bg-white p-6 text-slate-900 shadow-sm sm:p-8">
+          {/* Kop Surat Resmi Lembaga (Konfigurasi di Profil & Identitas Sekolah) */}
+          <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
+
+          <div className="mt-4 text-center">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-950 sm:text-base">
+              Laporan Hasil Belajar (Rapor) Pendidikan Kesetaraan
+            </h3>
+            <p className="text-xs font-semibold text-slate-700">
+              Kurikulum Merdeka · {phaseInfo.program} · Tahun Pelajaran {activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "2026/2027"}
+            </p>
+          </div>
+
+          {/* Identitas Peserta Didik */}
+          <div className="mt-4 grid gap-x-6 gap-y-1.5 rounded-xl border border-slate-300 bg-slate-50/80 px-4 py-3 text-xs sm:grid-cols-2">
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">Nama Peserta Didik</span>
+              <span className="font-bold text-slate-950">: {activeSiswa.nama}</span>
             </div>
-            <div className="text-right text-xs">
-              <p className="font-bold">Tahun Ajaran {activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "2026/2027"}</p>
-              <p className="text-slate-600">Rombel: {activeKelasName}</p>
+            <div className="flex gap-2">
+              <span className="w-32 shrink-0 text-slate-600">Kelas / Rombel</span>
+              <span className="font-bold text-slate-950">: {activeKelasName}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
+              <span className="font-mono font-bold text-slate-950">: {activeSiswa.nisn}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-32 shrink-0 text-slate-600">Fase</span>
+              <span className="font-bold text-slate-950">: {phaseInfo.fase}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">Satuan Pendidikan</span>
+              <span className="font-semibold text-slate-900">: {data.sekolah.nama}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-32 shrink-0 text-slate-600">Semester / TA</span>
+              <span className="font-semibold text-slate-900">
+                : {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
+              </span>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs sm:grid-cols-2">
-            <div><span className="text-slate-500">Nama Warga Belajar:</span> <strong className="ml-1">{activeSiswa.nama}</strong></div>
-            <div><span className="text-slate-500">NISN / No. Induk:</span> <strong className="ml-1 font-mono">{activeSiswa.nisn}</strong></div>
-            <div><span className="text-slate-500">Program / Kelas:</span> <strong className="ml-1">{activeKelasName}</strong></div>
-            <div><span className="text-slate-500">Status Akhir:</span> <strong className="ml-1 text-emerald-700">{STATUS_KENAIKAN_LABELS[statusKenaikan] ?? statusKenaikan}</strong></div>
-          </div>
-
+          {/* Tabel Capaian Intrakurikuler Kurikulum Merdeka Kesetaraan */}
           <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[600px] border-collapse border border-slate-300 text-left text-xs">
-            <thead>
-              <tr className="bg-slate-100 font-bold text-slate-800">
-                <th className="border border-slate-300 px-3 py-2 text-center">No</th>
-                <th className="border border-slate-300 px-3 py-2">Mata Pelajaran</th>
-                <th className="border border-slate-300 px-3 py-2 text-center">SKK</th>
-                <th className="border border-slate-300 px-3 py-2 text-center">KKM</th>
-                <th className="border border-slate-300 px-3 py-2 text-center">Nilai Akhir</th>
-                <th className="border border-slate-300 px-3 py-2 text-center">Predikat</th>
-                <th className="border border-slate-300 px-3 py-2">Capaian Kompetensi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {studentScores.map((row, index) => (
-                <tr key={row.mapel.id}>
-                  <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">{index + 1}</td>
-                  <td className="border border-slate-300 px-3 py-2 font-semibold">{row.mapel.nama}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">{row.mapel.skk}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center tabular-nums">{row.mapel.kkm}</td>
-                  <td className="border border-slate-300 px-3 py-2 text-center tabular-nums font-bold">
-                    {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
-                  </td>
-                  <td className="border border-slate-300 px-3 py-2 text-center">
-                    {row.nilaiAkhir !== null ? predikatNilai(row.nilaiAkhir) : "-"}
-                  </td>
-                  <td className="border border-slate-300 px-3 py-2 text-slate-700">
-                    {row.catatan || (row.nilaiAkhir !== null && row.nilaiAkhir >= row.mapel.kkm ? "Mencapai ketuntasan minimal kompetensi kesetaraan." : "Belum dinilai / perlu pendampingan.")}
+            <table className="w-full min-w-[620px] border-collapse border border-slate-400 text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100 font-extrabold text-slate-900">
+                  <th className="w-10 border border-slate-400 px-2.5 py-2 text-center">No</th>
+                  <th className="w-52 border border-slate-400 px-3 py-2">Mata Pelajaran</th>
+                  <th className="w-16 border border-slate-400 px-2 py-2 text-center">Bobot SKK</th>
+                  <th className="w-20 border border-slate-400 px-2 py-2 text-center">Nilai Akhir</th>
+                  <th className="border border-slate-400 px-3 py-2">Capaian Kompetensi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="bg-slate-50 font-bold text-slate-900">
+                  <td colSpan={5} className="border border-slate-400 px-3 py-1.5 text-[11px] uppercase tracking-wide">
+                    A. Kelompok Mata Pelajaran Umum
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+                {(kelompokUmumScores.length > 0 ? kelompokUmumScores : studentScores).map((row, index) => (
+                  <tr key={row.mapel.id}>
+                    <td className="border border-slate-400 px-2.5 py-2 text-center align-top tabular-nums">{index + 1}</td>
+                    <td className="border border-slate-400 px-3 py-2 align-top font-semibold text-slate-900">{row.mapel.nama}</td>
+                    <td className="border border-slate-400 px-2 py-2 text-center align-top tabular-nums">{row.mapel.skk}</td>
+                    <td className="border border-slate-400 px-2 py-2 text-center align-top text-sm font-extrabold tabular-nums text-slate-950">
+                      {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
+                    </td>
+                    <td className="border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
+                      {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan)}
+                    </td>
+                  </tr>
+                ))}
+
+                {kelompokKeterampilanScores.length > 0 && (
+                  <>
+                    <tr className="bg-slate-50 font-bold text-slate-900">
+                      <td colSpan={5} className="border border-slate-400 px-3 py-1.5 text-[11px] uppercase tracking-wide">
+                        B. Kelompok Pemberdayaan dan Keterampilan (Integrasi P5)
+                      </td>
+                    </tr>
+                    {kelompokKeterampilanScores.map((row, index) => (
+                      <tr key={row.mapel.id}>
+                        <td className="border border-slate-400 px-2.5 py-2 text-center align-top tabular-nums">{index + 1}</td>
+                        <td className="border border-slate-400 px-3 py-2 align-top font-semibold text-slate-900">{row.mapel.nama}</td>
+                        <td className="border border-slate-400 px-2 py-2 text-center align-top tabular-nums">{row.mapel.skk}</td>
+                        <td className="border border-slate-400 px-2 py-2 text-center align-top text-sm font-extrabold tabular-nums text-slate-950">
+                          {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
+                        </td>
+                        <td className="border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
+                          {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan)}
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-extrabold text-slate-900">
+                  <td colSpan={2} className="border border-slate-400 px-3 py-2 text-right">
+                    Total Bobot SKK Semester Ini
+                  </td>
+                  <td className="border border-slate-400 px-2 py-2 text-center tabular-nums">{totalSkkRaport} SKK</td>
+                  <td colSpan={2} className="border border-slate-400 px-3 py-2 text-[11px] font-medium text-slate-600">
+                    1 SKK setara 1 JP Tatap Muka / 2 JP Tutorial / 3 JP Mandiri (Permendikbudristek No. 12 Tahun 2024)
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-300 p-3 text-xs">
-            <p className="font-bold">Catatan Wali Kelas / Tutor:</p>
-            <p className="mt-1 text-slate-700">{catatanWali}</p>
-          </div>
-
-          <div className="mt-8 grid grid-cols-1 items-end gap-6 text-center text-xs sm:grid-cols-3">
-            <div>
-              <p>Mengetahui,</p>
-              <p className="font-bold">Kepala {data.sekolah.nama}</p>
-              <div className="h-16" />
-              <p className="font-bold underline">{data.sekolah.kepalaSekolah || "Kepala PKBM"}</p>
+          {/* Catatan Wali Kelas, Ketidakhadiran & Keputusan */}
+          <div className="print-avoid-break mt-4 grid gap-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-400 p-3 text-xs sm:col-span-2">
+              <p className="font-extrabold text-slate-900">Catatan Wali Kelas / Tutor Pembimbing</p>
+              <p className="mt-1.5 leading-relaxed text-slate-700">{catatanWali}</p>
+              <p className="mt-3 border-t border-slate-200 pt-2 text-xs">
+                <span className="font-bold text-slate-700">Keputusan Semester:</span>{" "}
+                <strong className="text-slate-950">{STATUS_KENAIKAN_LABELS[statusKenaikan] ?? statusKenaikan}</strong>
+              </p>
             </div>
-            <div className="flex flex-col items-center justify-center">
+            <div className="rounded-xl border border-slate-400 p-3 text-xs">
+              <p className="font-extrabold text-slate-900">Ketidakhadiran</p>
+              <table className="mt-2 w-full text-xs">
+                <tbody>
+                  <tr className="border-b border-slate-200">
+                    <td className="py-1 text-slate-600">Sakit</td>
+                    <td className="py-1 text-right font-semibold">: .... hari</td>
+                  </tr>
+                  <tr className="border-b border-slate-200">
+                    <td className="py-1 text-slate-600">Izin</td>
+                    <td className="py-1 text-right font-semibold">: .... hari</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 text-slate-600">Tanpa Keterangan</td>
+                    <td className="py-1 text-right font-semibold">: .... hari</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Blok Pengesahan Tanda Tangan Siap Cetak */}
+          <div className="print-avoid-break mt-8 grid grid-cols-3 items-end gap-4 text-center text-xs">
+            <div>
+              <p className="text-slate-600">Mengetahui,</p>
+              <p className="font-bold text-slate-900">Orang Tua / Wali</p>
+              <div className="h-16" />
+              <p className="mx-auto w-40 border-b border-slate-800 pb-0.5 font-semibold text-slate-700">&nbsp;</p>
+            </div>
+            <div className="flex flex-col items-center justify-end">
               <QrCodeSvg
                 value={`RAPORT|${data.sekolah.npsn || data.sekolah.nama}|${activeSiswa.nisn}|${activeTahunObj?.nama || "2026"}`}
-                size={76}
+                size={70}
                 label="QR Verifikasi E-Raport"
-                className="rounded-lg border border-slate-200 p-1"
+                className="rounded-lg border border-slate-300 p-1"
               />
-              <p className="mt-1 text-[10px] font-semibold text-slate-500">QR Verifikasi Dokumen</p>
+              <p className="mt-1 text-[9px] font-semibold text-slate-500">QR Verifikasi E-Raport</p>
+              <p className="mt-3 text-slate-600">Mengetahui,</p>
+              <p className="font-bold text-slate-900">Kepala {data.sekolah.nama}</p>
+              <div className="h-14" />
+              <p className="font-bold underline">{data.sekolah.kepalaSekolah || "Kepala PKBM"}</p>
             </div>
             <div>
-              <p>{data.sekolah.kabupatenKota || "Setempat"}, {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
-              <p className="font-bold">Wali Kelas / Tutor</p>
+              <p className="text-slate-600">
+                {data.sekolah.kabupatenKota || "Setempat"},{" "}
+                {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+              </p>
+              <p className="font-bold text-slate-900">Wali Kelas / Tutor</p>
               <div className="h-16" />
               <p className="font-bold underline">{data.waliKelasNama || "Wali Kelas"}</p>
             </div>
           </div>
-        </div>
+        </article>
       )}
     </section>
   );

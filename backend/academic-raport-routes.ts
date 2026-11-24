@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { randomBytes } from "crypto";
 import { prisma } from "./db.js";
+import { readSchoolKopSurat } from "./kop-surat-helper.js";
 import {
   computeTranscriptScore,
   isUpkExam,
@@ -477,6 +478,8 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         }
       }
 
+      const kopSurat = await readSchoolKopSurat(sekolahId);
+
       return res.json({
         sekolah: {
           nama: school?.nama ?? "PKBM",
@@ -486,6 +489,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           kepalaSekolah: school?.namaKepalaSekolah ?? null,
           logoUrl: settings?.logo_url ?? null,
         },
+        kopSurat,
         kelasList,
         tahunList,
         selectedKelasId: activeKelas?.id ?? "",
@@ -639,6 +643,68 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       return res.status(503).json({ error: "Catatan raport belum dapat disimpan." });
     }
   });
+
+  async function ensureSixSemesters(sekolahId: string) {
+    let tahunList = await prisma.tahunAjaran.findMany({
+      where: { sekolahId },
+      select: { id: true, nama: true, semester: true, mulai: true },
+      orderBy: [{ mulai: "asc" }, { nama: "asc" }],
+      take: 40,
+    });
+
+    if (tahunList.length < 6) {
+      const existingKeys = new Set(tahunList.map((t) => `${t.nama}::${t.semester}`));
+      const nowYear = new Date().getUTCFullYear();
+      const candidateSlots: Array<{ nama: string; semester: string; mulai: Date; selesai: Date }> = [];
+      for (let offset = 3; offset >= 0; offset--) {
+        const startYear = nowYear - offset;
+        const nama = `${startYear}/${startYear + 1}`;
+        candidateSlots.push(
+          {
+            nama,
+            semester: "Ganjil",
+            mulai: new Date(`${startYear}-07-01T00:00:00.000Z`),
+            selesai: new Date(`${startYear}-12-31T23:59:59.000Z`),
+          },
+          {
+            nama,
+            semester: "Genap",
+            mulai: new Date(`${startYear + 1}-01-01T00:00:00.000Z`),
+            selesai: new Date(`${startYear + 1}-06-30T23:59:59.000Z`),
+          },
+        );
+      }
+
+      const needed = 6 - tahunList.length;
+      const toCreate = candidateSlots.filter((s) => !existingKeys.has(`${s.nama}::${s.semester}`)).slice(-needed);
+      for (const slot of toCreate) {
+        await prisma.tahunAjaran
+          .create({
+            data: {
+              sekolahId,
+              nama: slot.nama,
+              semester: slot.semester,
+              mulai: slot.mulai,
+              selesai: slot.selesai,
+            },
+          })
+          .catch(() => null);
+      }
+
+      tahunList = await prisma.tahunAjaran.findMany({
+        where: { sekolahId },
+        select: { id: true, nama: true, semester: true, mulai: true },
+        orderBy: [{ mulai: "asc" }, { nama: "asc" }],
+        take: 40,
+      });
+    }
+
+    return tahunList.slice(-6).map((t, idx) => ({
+      id: t.id,
+      label: `Sem ${idx + 1}`,
+      nama: `${t.nama} (${t.semester})`,
+    }));
+  }
 
   // ==========================================
   // 4. TRANSKRIP NILAI KELULUSAN (60% RAPORT 6 SEMESTER + 40% UPK)
@@ -870,6 +936,8 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         };
       });
 
+      const kopSurat = await readSchoolKopSurat(sekolahId);
+
       return res.json({
         bobot: { raport: RAPORT_WEIGHT * 100, upk: UPK_WEIGHT * 100 },
         sekolah: {
@@ -880,6 +948,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           kepalaSekolah: school?.namaKepalaSekolah ?? null,
           logoUrl: settings?.logo_url ?? null,
         },
+        kopSurat,
         kelasList,
         selectedKelasId: activeKelas?.id ?? "",
         selectedKelasNama: activeKelas?.nama ?? "",
@@ -957,6 +1026,147 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menyimpan nilai UPK:", error);
       return res.status(503).json({ error: "Nilai UPK belum dapat disimpan." });
+    }
+  });
+
+  // POST /api/sekolah/raport/leger-semester — Batch input nilai Leger Raport Semester 1-6 (+ opsional UPK)
+  router.post("/raport/leger-semester", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+      if (!siswaId || rawEntries.length === 0) {
+        return res.status(400).json({ error: "Pilih warga belajar dan isi minimal satu mata pelajaran." });
+      }
+
+      const siswa = await prisma.siswa.findFirst({
+        where: { id: siswaId, sekolahId },
+        select: { id: true, kelasId: true },
+      });
+      if (!siswa) {
+        return res.status(404).json({ error: "Warga belajar tidak ditemukan di lembaga ini." });
+      }
+
+      if (peran === "GURU" && guruId) {
+        const teacherScope = await resolveTeacherScope(sekolahId, guruId);
+        if (!teacherScope.isWaliKelas && siswa.kelasId && !teacherScope.assignedKelasIds.includes(siswa.kelasId)) {
+          return res.status(403).json({ error: "Anda tidak memiliki akses ke kelas siswa ini." });
+        }
+      }
+
+      const validMapels = await prisma.mapel.findMany({
+        where: { sekolahId },
+        select: { id: true },
+      });
+      const validMapelIds = new Set(validMapels.map((m) => m.id));
+      const sixSemesters = await ensureSixSemesters(sekolahId);
+
+      let savedCells = 0;
+      const semKeys = ["sem1", "sem2", "sem3", "sem4", "sem5", "sem6"] as const;
+
+      for (const rawItem of rawEntries.slice(0, 100)) {
+        if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) continue;
+        const entry = rawItem as Record<string, unknown>;
+        const mapelId = cleanText(entry.mapelId, 100);
+        if (!mapelId || !validMapelIds.has(mapelId)) continue;
+
+        for (let i = 0; i < Math.min(semKeys.length, sixSemesters.length); i++) {
+          const valRaw = entry[semKeys[i]];
+          if (valRaw === null || valRaw === undefined || valRaw === "") continue;
+          const num = Number(valRaw);
+          if (!Number.isFinite(num) || num < 0 || num > 100) continue;
+          const rounded = round2(num);
+          const tahunAjaranId = sixSemesters[i].id;
+
+          const existing = await prisma.nilai.findFirst({
+            where: {
+              sekolahId,
+              siswaId,
+              mapelId,
+              tahunAjaranId,
+              NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
+            },
+            select: { id: true },
+          });
+
+          if (existing) {
+            await prisma.nilai.update({
+              where: { id: existing.id },
+              data: {
+                nilaiMandiri: rounded,
+                nilaiSimulasi: rounded,
+                nilaiAkhir: rounded,
+                tanggalSimulasi: new Date(),
+              },
+            });
+          } else {
+            await prisma.nilai.create({
+              data: {
+                id: randomBytes(16).toString("hex"),
+                sekolahId,
+                siswaId,
+                mapelId,
+                tahunAjaranId,
+                nilaiMandiri: rounded,
+                nilaiSimulasi: rounded,
+                nilaiAkhir: rounded,
+                catatanKompetensi: null,
+              },
+            });
+          }
+          savedCells += 1;
+        }
+
+        const upkRaw = entry.nilaiUpk;
+        if (upkRaw !== null && upkRaw !== undefined && upkRaw !== "") {
+          const upkNum = Number(upkRaw);
+          if (Number.isFinite(upkNum) && upkNum >= 0 && upkNum <= 100) {
+            const roundedUpk = round2(upkNum);
+            const existingUpk = await prisma.nilai.findFirst({
+              where: { sekolahId, siswaId, mapelId, catatanKompetensi: UPK_OVERRIDE_MARKER },
+              select: { id: true },
+            });
+            if (existingUpk) {
+              await prisma.nilai.update({
+                where: { id: existingUpk.id },
+                data: {
+                  nilaiMandiri: roundedUpk,
+                  nilaiSimulasi: roundedUpk,
+                  nilaiAkhir: roundedUpk,
+                  tanggalSimulasi: new Date(),
+                },
+              });
+            } else {
+              await prisma.nilai.create({
+                data: {
+                  id: randomBytes(16).toString("hex"),
+                  sekolahId,
+                  siswaId,
+                  mapelId,
+                  tahunAjaranId: null,
+                  nilaiMandiri: roundedUpk,
+                  nilaiSimulasi: roundedUpk,
+                  nilaiAkhir: roundedUpk,
+                  catatanKompetensi: UPK_OVERRIDE_MARKER,
+                },
+              });
+            }
+            savedCells += 1;
+          }
+        }
+      }
+
+      return res.json({
+        savedCells,
+        semesters: sixSemesters,
+        message: `Leger Raport Semester 1–6 berhasil disimpan (${savedCells} entri nilai diperbarui) dan siap ditarik ke Transkrip Nilai.`,
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan leger raport semester 1-6:", error);
+      return res.status(503).json({ error: "Leger raport semester 1–6 belum dapat disimpan." });
     }
   });
 

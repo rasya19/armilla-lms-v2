@@ -12,6 +12,7 @@ import {
   Lock,
   MonitorCheck,
   Plus,
+  Printer,
   RefreshCw,
   RotateCcw,
   Save,
@@ -25,6 +26,8 @@ import {
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { CbtAiGeneratorPanel } from "./CbtAiGeneratorPanel";
 import { CbtImportPanel } from "./CbtImportPanel";
+import { buildKopSuratProfile, renderKopSuratHtml } from "./KopSurat";
+import type { SchoolProfile } from "./schoolProfile";
 import {
   CBT_CATEGORIES,
   categoryBadgeLabel,
@@ -938,6 +941,86 @@ export function CbtBankSoalView({
   });
   const activeUjian = filteredUjianList.find((u) => u.id === selectedUjianId) ?? ujianList.find((u) => u.id === selectedUjianId) ?? null;
 
+  async function handlePrintExamSheet(includeAnswerKey: boolean) {
+    if (!activeUjian || soalList.length === 0) return;
+    let kopProfile: SchoolProfile = buildKopSuratProfile(null, { nama: "Lembaga Pendidikan Kesetaraan" });
+    try {
+      const headers = sandboxHeaders(sandboxRole);
+      const res = await fetchWithTimeout("/api/sekolah/cbt/kop-surat", { ...(headers ? { headers } : {}) });
+      if (res.ok) {
+        const body = (await res.json().catch(() => null)) as { kopSurat?: SchoolProfile } | null;
+        if (body?.kopSurat) kopProfile = buildKopSuratProfile(body.kopSurat);
+      }
+    } catch {
+      // use fallback kop profile
+    }
+
+    const esc = (text: string) =>
+      text.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] ?? ch));
+
+    const win = window.open("", "_blank", "width=900,height=980");
+    if (!win) return;
+
+    const categoryLabel = categoryBadgeLabel(detectCbtCategory(activeUjian.kode, activeUjian.judul));
+    const questionBlocks = soalList
+      .map((s, idx) => {
+        const opts =
+          s.tipe === "PG"
+            ? `<div style="margin-top:6px;margin-left:18px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;">${s.opsi
+                .map(
+                  (o) =>
+                    `<div style="font-size:12px;${includeAnswerKey && o.benar ? "font-weight:700;color:#047857;" : ""}"><strong>${esc(o.kode)}.</strong> ${esc(o.teks)}${includeAnswerKey && o.benar ? " ✓" : ""}</div>`,
+                )
+                .join("")}</div>`
+            : `<div style="margin-top:8px;margin-left:18px;border:1px dashed #94a3b8;height:52px;border-radius:6px;"></div>`;
+        const answerNote =
+          includeAnswerKey && (s.pembahasan || s.kunciEsai)
+            ? `<div style="margin-top:6px;margin-left:18px;padding:6px 8px;background:#ecfdf5;border-left:3px solid #059669;font-size:11px;color:#065f46;">${
+                s.kunciEsai ? `<div><strong>Kunci Esai:</strong> ${esc(s.kunciEsai)}</div>` : ""
+              }${s.pembahasan ? `<div><strong>Pembahasan:</strong> ${esc(s.pembahasan)}</div>` : ""}</div>`
+            : "";
+        return `<div style="margin-bottom:14px;break-inside:avoid;page-break-inside:avoid;">
+          <div style="font-size:12.5px;line-height:1.5;"><strong>${idx + 1}.</strong> ${esc(s.teks)}</div>
+          ${opts}
+          ${answerNote}
+        </div>`;
+      })
+      .join("");
+
+    const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Naskah Soal - ${esc(activeUjian.judul)}</title><style>@page{size:A4 portrait;margin:14mm 15mm;}body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;margin:0;padding:20px;max-width:820px;margin-inline:auto;}table.meta{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;}table.meta td{padding:4px 8px;border:1px solid #cbd5e1;}@media print{body{padding:0;max-width:none;}.no-print{display:none!important;}}</style></head><body>
+      <div class="no-print" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:14px;">
+        <button onclick="window.print()" style="padding:8px 16px;border-radius:8px;border:0;background:#1e40af;color:#fff;font-weight:700;cursor:pointer;">Cetak / Simpan PDF</button>
+      </div>
+      ${renderKopSuratHtml(kopProfile)}
+      <div style="text-align:center;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:0.04em;">NASKAH SOAL ${esc(categoryLabel.toUpperCase())}${includeAnswerKey ? " (DILENGKAPI KUNCI JAWABAN)" : ""}</div>
+        <div style="font-size:12.5px;font-weight:700;margin-top:2px;">${esc(activeUjian.judul)}</div>
+      </div>
+      <table class="meta">
+        <tr>
+          <td style="width:18%;background:#f8fafc;font-weight:700;">Mata Pelajaran</td><td style="width:32%;">${esc(activeUjian.mapel.nama)}</td>
+          <td style="width:18%;background:#f8fafc;font-weight:700;">Kelas / Program</td><td style="width:32%;">${esc(activeUjian.kelas.nama)}</td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;font-weight:700;">Kode Paket</td><td style="font-family:monospace;">${esc(activeUjian.kode)}</td>
+          <td style="background:#f8fafc;font-weight:700;">Alokasi Waktu</td><td>${activeUjian.durasiMenit} Menit (${soalList.length} Butir Soal)</td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;font-weight:700;">Nama Peserta</td><td></td>
+          <td style="background:#f8fafc;font-weight:700;">NISN / No. Peserta</td><td></td>
+        </tr>
+      </table>
+      <div style="font-size:11px;margin-bottom:14px;padding:6px 10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;">
+        <strong>Petunjuk Umum:</strong> Berdoalah sebelum mengerjakan. Tuliskan Nama dan NISN pada kolom di atas, bacalah setiap butir soal dengan teliti, lalu pilih satu jawaban yang paling tepat.
+      </div>
+      <div>${questionBlocks}</div>
+    </body></html>`;
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
@@ -1361,6 +1444,24 @@ export function CbtBankSoalView({
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={soalList.length === 0}
+                      onClick={() => void handlePrintExamSheet(false)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      <Printer size={12} aria-hidden="true" />
+                      Cetak Naskah Soal
+                    </button>
+                    <button
+                      type="button"
+                      disabled={soalList.length === 0}
+                      onClick={() => void handlePrintExamSheet(true)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                    >
+                      <Printer size={12} aria-hidden="true" />
+                      Cetak + Kunci
+                    </button>
                     {normalizeVisibility(activeUjian.visibility) !== "PUBLIC" && (
                       <button
                         type="button"

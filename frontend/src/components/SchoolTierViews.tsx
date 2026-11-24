@@ -22,6 +22,8 @@ import {
 import { BulkClassPlacement } from "./BulkClassPlacement";
 import { ClassPromotion } from "./ClassPromotion";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
+import { buildKopSuratProfile, KopSurat } from "./KopSurat";
+import type { SchoolProfile } from "./schoolProfile";
 import { SchoolModal } from "./SchoolModal";
 import { SchoolAttendance } from "./SchoolAttendance";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
@@ -743,6 +745,7 @@ const THEME_OPTIONS: Array<{
 
 type IdentityPayload = {
   sekolah: { nama: string; slug: string; npsn: string | null; themeKey: string };
+  kopSurat?: SchoolProfile;
   settings: {
     primary_color: string;
     logo_url: string | null;
@@ -777,6 +780,14 @@ export function SchoolThemeIdentityView({
     show_gallery: initialIdentity?.settings.show_gallery ?? true,
     show_news: initialIdentity?.settings.show_news ?? true,
   }));
+  const [kopForm, setKopForm] = useState<SchoolProfile>(() =>
+    buildKopSuratProfile(initialIdentity?.kopSurat, {
+      nama: initialIdentity?.sekolah.nama || "PKBM",
+      npsn: initialIdentity?.sekolah.npsn ?? null,
+      logoUrl: initialIdentity?.settings.logo_url ?? null,
+    }),
+  );
+  const [kopBusy, setKopBusy] = useState(false);
   const [loading, setLoading] = useState(!initialIdentity);
   const [formBusy, setFormBusy] = useState(false);
   const [error, setError] = useState("");
@@ -796,6 +807,13 @@ export function SchoolThemeIdentityView({
         show_gallery: cached.settings.show_gallery,
         show_news: cached.settings.show_news,
       });
+      setKopForm(
+        buildKopSuratProfile(cached.kopSurat, {
+          nama: cached.sekolah.nama,
+          npsn: cached.sekolah.npsn,
+          logoUrl: cached.settings.logo_url,
+        }),
+      );
       setLoading(false);
     } else {
       setLoading(true);
@@ -816,6 +834,13 @@ export function SchoolThemeIdentityView({
         if (isThemeKey(data.sekolah.themeKey)) {
           setSelectedTheme(data.sekolah.themeKey);
         }
+        setKopForm(
+          buildKopSuratProfile(data.kopSurat, {
+            nama: data.sekolah.nama,
+            npsn: data.sekolah.npsn,
+            logoUrl: data.settings.logo_url,
+          }),
+        );
         saveCachedTenantProfile(data.sekolah.slug || deriveTenantSlugFromHost(), {
           nama: data.sekolah.nama,
           slug: data.sekolah.slug,
@@ -877,6 +902,54 @@ export function SchoolThemeIdentityView({
       setError(describeFetchError(failure, "Identitas sekolah gagal disimpan."));
     } finally {
       setFormBusy(false);
+    }
+  }
+
+  function handleKopLogoUpload(file: File | undefined) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 250 * 1024) {
+      setError("Logo kop surat harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 250 KB.");
+      return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setKopForm((prev) => ({ ...prev, logoUrl: reader.result as string }));
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveKopSurat(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (kopBusy) return;
+    setKopBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/kop-surat", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(kopForm),
+      });
+      const body = (await res.json().catch(() => null)) as { kopSurat?: SchoolProfile; message?: string; error?: string } | null;
+      if (!res.ok) {
+        throw new Error(body?.error || "Konfigurasi kop surat gagal disimpan.");
+      }
+      if (body?.kopSurat) {
+        setKopForm(body.kopSurat);
+        setForm((prev) => ({ ...prev, logo_url: body.kopSurat?.logoUrl ?? prev.logo_url }));
+      }
+      invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
+      setMessage(
+        body?.message ||
+          "Kop surat resmi lembaga berhasil disimpan dan otomatis diterapkan pada E-Raport, Transkrip, dan Naskah Soal.",
+      );
+    } catch (failure) {
+      setError(describeFetchError(failure, "Konfigurasi kop surat gagal disimpan."));
+    } finally {
+      setKopBusy(false);
     }
   }
 
@@ -1092,6 +1165,154 @@ export function SchoolThemeIdentityView({
             <div className="mt-5 flex justify-end">
               <button type="submit" disabled={formBusy} className="master-primary px-5 py-2.5 disabled:opacity-50">
                 {formBusy ? "Menyimpan..." : "Simpan Identitas Sekolah"}
+              </button>
+            </div>
+          </form>
+
+          <form onSubmit={saveKopSurat} className={panelClass}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                  Konfigurasi Kop Surat Resmi Lembaga
+                </h3>
+                <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                  Digunakan otomatis pada dokumen cetak <strong>E-Raport Kurikulum Merdeka</strong>, <strong>Leger</strong>, <strong>Transkrip Nilai Ijazah</strong>, serta <strong>Naskah Soal UTS / UAS / UPK</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-300 bg-white p-4 text-slate-900">
+              <p className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                Pratinjau Kop Surat Resmi
+              </p>
+              <KopSurat profile={kopForm} />
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Nama Yayasan / Penyelenggara
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={kopForm.namaYayasan ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, namaYayasan: e.target.value })}
+                  className={inputClass}
+                  placeholder="Contoh: YAYASAN PENDIDIKAN HARAPAN BANGSA"
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Nomor SK Izin Operasional
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={kopForm.skIzinOperasional ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, skIzinOperasional: e.target.value })}
+                  className={inputClass}
+                  placeholder="Contoh: 421.9/1234-Disdikbud/2024"
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Nama Kepala / Ketua Lembaga
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={kopForm.namaKetuaPkbm ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, namaKetuaPkbm: e.target.value })}
+                  className={inputClass}
+                  placeholder="Nama lengkap beserta gelar"
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Telepon / WhatsApp Lembaga
+                <input
+                  type="tel"
+                  maxLength={40}
+                  value={kopForm.teleponWa ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, teleponWa: e.target.value })}
+                  className={inputClass}
+                  placeholder="Contoh: 0812-3456-7890"
+                />
+              </label>
+              <label className={`block text-sm font-semibold sm:col-span-2 ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Alamat Lengkap Lembaga
+                <input
+                  type="text"
+                  maxLength={500}
+                  value={kopForm.alamatLengkap ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, alamatLengkap: e.target.value })}
+                  className={inputClass}
+                  placeholder="Jl. Pendidikan No. 10, Kec. ..."
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Kabupaten / Kota
+                <input
+                  type="text"
+                  maxLength={150}
+                  value={kopForm.kabupatenKota ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, kabupatenKota: e.target.value })}
+                  className={inputClass}
+                  placeholder="Contoh: Kabupaten Kuningan"
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Provinsi
+                <input
+                  type="text"
+                  maxLength={150}
+                  value={kopForm.provinsi ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, provinsi: e.target.value })}
+                  className={inputClass}
+                  placeholder="Contoh: Jawa Barat"
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Email Lembaga
+                <input
+                  type="email"
+                  maxLength={254}
+                  value={kopForm.emailSekolah ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, emailSekolah: e.target.value })}
+                  className={inputClass}
+                  placeholder="info@lembaga.sch.id"
+                />
+              </label>
+              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Website Lembaga
+                <input
+                  type="text"
+                  maxLength={300}
+                  value={kopForm.websiteSekolah ?? ""}
+                  onChange={(e) => setKopForm({ ...kopForm, websiteSekolah: e.target.value })}
+                  className={inputClass}
+                  placeholder="https://lembaga.pkbm.siput.id"
+                />
+              </label>
+              <div className="sm:col-span-2">
+                <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                  Unggah Logo Kop Surat (PNG / JPG / WebP, maks. 250 KB)
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => handleKopLogoUpload(e.target.files?.[0])}
+                    className={inputClass}
+                  />
+                </label>
+                {kopForm.logoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setKopForm({ ...kopForm, logoUrl: null })}
+                    className="mt-2 text-xs font-bold text-rose-600 underline"
+                  >
+                    Hapus logo kop surat
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button type="submit" disabled={kopBusy} className="master-primary px-5 py-2.5 disabled:opacity-50">
+                {kopBusy ? "Menyimpan Kop Surat..." : "Simpan Kop Surat Lembaga"}
               </button>
             </div>
           </form>

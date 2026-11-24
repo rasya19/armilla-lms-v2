@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { hasPlanAccess, normalizeTenantPlan, type TenantPlan } from "./plan-utils.js";
 import { getGlobalTheme } from "./global-theme.js";
+import { readSchoolKopSurat, saveSchoolKopSurat } from "./kop-surat-helper.js";
 
 import { MAX_IMAGE_BYTES, validateImageAttachment } from "./upload-validation.js";
 
@@ -191,11 +192,14 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
         }
       }
 
+      const kopSurat = await readSchoolKopSurat(gate.sekolahId);
+
       return res.json({
         sekolah: {
           ...school,
           themeKey: resolvedTheme,
         },
+        kopSurat,
         settings: settings ?? {
           primary_color: "#4f46e5",
           logo_url: null,
@@ -209,6 +213,40 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
     } catch (error) {
       console.error("Gagal memuat identitas sekolah:", error);
       return res.status(503).json({ error: "Identitas sekolah belum dapat dimuat." });
+    }
+  });
+
+  router.get("/kop-surat", async (req, res) => {
+    try {
+      const gate = await requireSchoolSession(req);
+      if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
+      const kopSurat = await readSchoolKopSurat(gate.sekolahId);
+      return res.json({ kopSurat });
+    } catch (error) {
+      console.error("Gagal memuat kop surat lembaga:", error);
+      return res.status(503).json({ error: "Kop surat lembaga belum dapat dimuat." });
+    }
+  });
+
+  router.put("/kop-surat", async (req, res) => {
+    try {
+      const gate = await requireSchoolSession(req);
+      if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
+      const body = req.body;
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return res.status(400).json({ error: "Payload kop surat tidak valid." });
+      }
+      const result = await saveSchoolKopSurat(gate.sekolahId, body as Record<string, unknown>);
+      if (result.ok === false) {
+        return res.status(result.status).json({ error: result.error });
+      }
+      return res.json({
+        kopSurat: result.kopSurat,
+        message: "Konfigurasi Kop Surat & Profil Lembaga berhasil disimpan.",
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan kop surat lembaga:", error);
+      return res.status(503).json({ error: "Kop surat lembaga belum dapat disimpan." });
     }
   });
 

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "./db.js";
+import { readSchoolKopSurat } from "./kop-surat-helper.js";
 import {
   cleanInt,
   cleanText,
@@ -1810,6 +1811,21 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
   });
 
   // ==========================================
+  // KOP SURAT LEMBAGA UNTUK CETAK NASKAH SOAL
+  // ==========================================
+  router.get("/cbt/kop-surat", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const kopSurat = await readSchoolKopSurat(auth.session.sekolahId);
+      return res.json({ kopSurat });
+    } catch (error) {
+      console.error("Gagal memuat kop surat CBT:", error);
+      return res.status(503).json({ error: "Kop surat belum dapat dimuat." });
+    }
+  });
+
+  // ==========================================
   // GENERATE SOAL AI (UTS / UAS / UJIAN AKHIR KELAS AKHIR)
   // ==========================================
   router.post("/cbt/generate-ai", async (req, res) => {
@@ -1855,19 +1871,37 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
       });
 
       if (generated.ok === false) {
-        return res.status(generated.status).json({ error: generated.error });
+        console.error("[POST /api/sekolah/cbt/generate-ai] Gagal generate draf soal:", {
+          sekolahId,
+          kategori,
+          kelasId,
+          mapelId,
+          jumlahSoal,
+          status: generated.status,
+          code: generated.code,
+          detail: generated.detail ?? null,
+        });
+        return res.status(generated.status).json({
+          error: generated.error,
+          code: generated.code,
+        });
       }
 
       return res.json({
         provider: generated.provider,
+        model: generated.model,
         kategori,
         kelas,
         mapel,
         draft: generated.draft,
       });
     } catch (error) {
-      console.error("Gagal menghasilkan soal CBT AI:", error);
-      return res.status(503).json({ error: "Layanan generator soal AI belum tersedia." });
+      const message = error instanceof Error ? error.message : "UnknownError";
+      console.error("[POST /api/sekolah/cbt/generate-ai] Exception tidak terduga:", error);
+      return res.status(500).json({
+        error: `Terjadi kesalahan internal saat menjalankan generator soal AI: ${message}`,
+        code: "INTERNAL_ERROR",
+      });
     }
   });
 

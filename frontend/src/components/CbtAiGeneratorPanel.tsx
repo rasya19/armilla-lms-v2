@@ -112,19 +112,23 @@ export function CbtAiGeneratorPanel({
             jumlahSoal,
           }),
         },
-        35_000,
+        55_000,
       );
       const body = (await res.json().catch(() => null)) as {
         error?: string;
+        code?: string;
+        model?: string;
         draft?: { judulPaket?: string; deskripsiPaket?: string; butirSoal?: DraftQuestion[] };
       } | null;
       if (!res.ok || !body?.draft?.butirSoal?.length) {
-        throw new Error(body?.error || "Draf soal AI belum dapat dibuat.");
+        throw new Error(body?.error || `Draf soal AI belum dapat dibuat (HTTP ${res.status}).`);
       }
       setDraftTitle(body.draft.judulPaket || "");
       setDraftDescription(body.draft.deskripsiPaket || "");
       setDraftQuestions(body.draft.butirSoal);
-      setNotice(`Berhasil menyusun ${body.draft.butirSoal.length} soal dengan AI. Periksa draf di bawah lalu simpan ke CBT.`);
+      setNotice(
+        `Berhasil menyusun ${body.draft.butirSoal.length} soal dengan AI${body.model ? ` (${body.model})` : ""}. Periksa draf di bawah lalu simpan ke CBT.`,
+      );
     } catch (failure) {
       setError(describeFetchError(failure, "Gagal menghasilkan soal dengan AI."));
     } finally {

@@ -728,9 +728,15 @@ html[data-tenant-theme="dark"] .glass-dialog input[type="radio"] {
 
 .print-only { display: none; }
 @media print {
+  @page { size: A4 portrait; margin: 12mm 14mm; }
   .no-print, aside, header.dashboard-header, nav[aria-label^="Navigasi"] { display: none !important; }
   .print-only { display: block !important; }
-  .dashboard-canvas, body, main { background: #ffffff !important; background-image: none !important; color: #0f172a !important; }
+  .dashboard-canvas, body, main { background: #ffffff !important; background-image: none !important; color: #0f172a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .dashboard-canvas::before { display: none !important; }
   .dashboard-canvas * { box-shadow: none !important; }
+  .dashboard-glass { background: transparent !important; border: 0 !important; padding: 0 !important; }
+  .print-sheet { border: 0 !important; border-radius: 0 !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
+  .print-sheet table { page-break-inside: auto; }
+  .print-sheet thead { display: table-header-group; }
+  .print-sheet tr, .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
 }

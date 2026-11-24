@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Award, CheckCircle2, Download, FileSpreadsheet, GraduationCap, Printer, Save } from "lucide-react";
 import { buildSandboxHeaders } from "../utils/safeUrl";
 import { CardGridSkeleton, EmptyState } from "./DashboardUI";
+import { buildKopSuratProfile, KopSurat } from "./KopSurat";
 import { QrCodeSvg } from "./QrCodeSvg";
+import type { SchoolProfile } from "./schoolProfile";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
 
 export type LegerRaportData = {
   sekolah: { nama: string; npsn: string | null; alamat: string | null; kabupatenKota: string | null; kepalaSekolah: string | null; logoUrl: string | null };
+  kopSurat?: SchoolProfile;
   kelasName: string;
   tahunLabel: string;
   waliKelasNama: string | null;
@@ -104,11 +107,13 @@ export function RaportLegerPanel({ data }: { data: LegerRaportData }) {
       {rows.length === 0 ? (
         <EmptyState title="Belum ada siswa pada kelas ini" description="Pilih kelas yang sudah memiliki warga belajar untuk melihat leger raport." />
       ) : (
-        <div className="rounded-2xl border border-slate-300 bg-white p-4 text-slate-900 shadow-xs sm:p-6">
-          <div className="mb-4 border-b-2 border-slate-900 pb-3">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-sky-800">Leger Nilai Raport Pendidikan Kesetaraan</p>
-            <h4 className="text-lg font-black uppercase">{data.sekolah.nama}</h4>
-            <p className="text-xs text-slate-600">
+        <article className="print-sheet rounded-2xl border border-slate-300 bg-white p-4 text-slate-900 shadow-xs sm:p-6">
+          <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
+          <div className="mb-4 mt-4 text-center">
+            <h4 className="text-sm font-black uppercase tracking-wide text-slate-950 sm:text-base">
+              Leger Nilai Raport Pendidikan Kesetaraan
+            </h4>
+            <p className="mt-0.5 text-xs text-slate-600">
               Kelas: <strong>{data.kelasName}</strong> · Tahun Ajaran: <strong>{data.tahunLabel}</strong> · Wali Kelas: <strong>{data.waliKelasNama || "-"}</strong>
             </p>
           </div>
@@ -159,7 +164,7 @@ export function RaportLegerPanel({ data }: { data: LegerRaportData }) {
               </tbody>
             </table>
           </div>
-        </div>
+        </article>
       )}
     </div>
   );
@@ -196,6 +201,7 @@ type TranscriptStudentRow = {
 type TranscriptPayload = {
   bobot: { raport: number; upk: number };
   sekolah: { nama: string; npsn: string | null; alamat: string | null; kabupatenKota: string | null; kepalaSekolah: string | null; logoUrl: string | null };
+  kopSurat?: SchoolProfile;
   kelasList: Array<{ id: string; nama: string }>;
   selectedKelasId: string;
   selectedKelasNama: string;
@@ -203,6 +209,315 @@ type TranscriptPayload = {
   mapel: Array<{ id: string; nama: string; kkm: number; skk: number }>;
   rows: TranscriptStudentRow[];
 };
+
+export function RaportSixSemesterLegerPanel({
+  initialKelasId,
+  sandboxRole,
+  onOpenTranscript,
+}: {
+  initialKelasId?: string;
+  sandboxRole?: "GURU" | "SISWA";
+  onOpenTranscript?: () => void;
+}) {
+  const isDark = useTenantTheme() === "dark";
+  const [data, setData] = useState<TranscriptPayload | null>(null);
+  const [kelasId, setKelasId] = useState(initialKelasId ?? "");
+  const [selectedSiswaId, setSelectedSiswaId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [grid, setGrid] = useState<
+    Record<
+      string,
+      { sem1: string; sem2: string; sem3: string; sem4: string; sem5: string; sem6: string; nilaiUpk: string }
+    >
+  >({});
+
+  const loadData = useCallback(
+    async (targetKelasId: string, signal?: AbortSignal) => {
+      setLoading(true);
+      setError("");
+      try {
+        const qs = targetKelasId ? `?kelasId=${encodeURIComponent(targetKelasId)}` : "";
+        const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined);
+        const res = await fetchWithTimeout(`/api/sekolah/raport/transkrip${qs}`, {
+          signal,
+          ...(headers ? { headers } : {}),
+        });
+        const body = (await res.json().catch(() => null)) as (TranscriptPayload & { error?: string }) | null;
+        if (!res.ok || !body) throw new Error(body?.error || "Data leger semester 1–6 belum dapat dimuat.");
+        setData(body);
+        setKelasId(body.selectedKelasId);
+        setSelectedSiswaId((prev) =>
+          body.rows.some((r) => r.siswa.id === prev) ? prev : (body.rows[0]?.siswa.id ?? ""),
+        );
+      } catch (failure) {
+        if (!isCallerAborted(failure, signal)) {
+          setError(describeFetchError(failure, "Data leger semester 1–6 belum dapat dimuat."));
+        }
+      } finally {
+        if (!signal?.aborted) setLoading(false);
+      }
+    },
+    [sandboxRole],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadData(kelasId, controller.signal);
+    return () => controller.abort();
+  }, [kelasId, loadData]);
+
+  const activeRow = data?.rows.find((r) => r.siswa.id === selectedSiswaId) ?? data?.rows[0] ?? null;
+
+  useEffect(() => {
+    if (!activeRow) {
+      setGrid({});
+      return;
+    }
+    const nextGrid: typeof grid = {};
+    for (const sub of activeRow.subjects) {
+      const vals = [0, 1, 2, 3, 4, 5].map((i) => {
+        const v = sub.semesterBreakdown[i]?.nilai;
+        return v !== null && v !== undefined ? String(v) : "";
+      });
+      nextGrid[sub.mapelId] = {
+        sem1: vals[0],
+        sem2: vals[1],
+        sem3: vals[2],
+        sem4: vals[3],
+        sem5: vals[4],
+        sem6: vals[5],
+        nilaiUpk: sub.nilaiUpk !== null && sub.nilaiUpk !== undefined ? String(sub.nilaiUpk) : "",
+      };
+    }
+    setGrid(nextGrid);
+  }, [activeRow]);
+
+  function updateCell(
+    mapelId: string,
+    field: "sem1" | "sem2" | "sem3" | "sem4" | "sem5" | "sem6" | "nilaiUpk",
+    value: string,
+  ) {
+    setGrid((prev) => ({
+      ...prev,
+      [mapelId]: {
+        ...(prev[mapelId] ?? { sem1: "", sem2: "", sem3: "", sem4: "", sem5: "", sem6: "", nilaiUpk: "" }),
+        [field]: value,
+      },
+    }));
+  }
+
+  async function handleSaveAll(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeRow || saving) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const entries = activeRow.subjects.map((sub) => {
+        const row = grid[sub.mapelId] ?? { sem1: "", sem2: "", sem3: "", sem4: "", sem5: "", sem6: "", nilaiUpk: "" };
+        const toNum = (raw: string) => {
+          const trimmed = raw.trim();
+          if (!trimmed) return null;
+          const n = Number(trimmed);
+          return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+        };
+        return {
+          mapelId: sub.mapelId,
+          sem1: toNum(row.sem1),
+          sem2: toNum(row.sem2),
+          sem3: toNum(row.sem3),
+          sem4: toNum(row.sem4),
+          sem5: toNum(row.sem5),
+          sem6: toNum(row.sem6),
+          nilaiUpk: toNum(row.nilaiUpk),
+        };
+      });
+
+      const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined, {
+        "Content-Type": "application/json",
+      });
+      const res = await fetchWithTimeout("/api/sekolah/raport/leger-semester", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          siswaId: activeRow.siswa.id,
+          entries,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menyimpan leger raport semester 1–6.");
+      setNotice(body?.message || "Leger raport semester 1–6 berhasil disimpan.");
+      await loadData(kelasId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal menyimpan leger raport semester 1–6."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const cardCls = isDark
+    ? "border border-slate-700/60 bg-slate-900/75 text-slate-100"
+    : "border border-slate-200/90 bg-white/95 text-slate-900 shadow-xs";
+
+  const fieldCls = isDark
+    ? "mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-100"
+    : "mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900";
+
+  const cellCls = isDark
+    ? "w-16 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-center text-xs font-semibold tabular-nums text-white focus:border-amber-400 focus:outline-none"
+    : "w-16 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none";
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl p-4 ${cardCls}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-base font-extrabold">
+              <FileSpreadsheet size={18} className="text-sky-600" />
+              Form Input Leger Raport Semester 1–6
+            </h3>
+            <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+              Isi nilai raport Semester 1 s.d. Semester 6 (dan nilai UPK jika diperlukan) untuk setiap mata pelajaran. Setelah disimpan, tab <strong>Transkrip Nilai Ijazah</strong> otomatis menarik nilai akhirnya.
+            </p>
+          </div>
+          {onOpenTranscript && (
+            <button
+              type="button"
+              onClick={onOpenTranscript}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-indigo-500"
+            >
+              <GraduationCap size={14} />
+              Lihat Transkrip Nilai →
+            </button>
+          )}
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block text-xs font-bold">
+            Pilih Kelas / Program
+            <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={fieldCls}>
+              {(data?.kelasList ?? []).map((k) => (
+                <option key={k.id} value={k.id}>{k.nama}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-bold">
+            Pilih Warga Belajar
+            <select value={selectedSiswaId} onChange={(e) => setSelectedSiswaId(e.target.value)} className={fieldCls}>
+              {(data?.rows ?? []).map((r) => (
+                <option key={r.siswa.id} value={r.siswa.id}>
+                  {r.siswa.nama} ({r.siswa.nisn})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
+      {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{notice}</p>}
+
+      {loading ? (
+        <CardGridSkeleton count={2} columns={2} />
+      ) : !activeRow ? (
+        <EmptyState title="Belum ada warga belajar di kelas ini" description="Pilih kelas yang memiliki siswa aktif untuk mengisi leger raport semester 1–6." />
+      ) : (
+        <form onSubmit={handleSaveAll} className={`space-y-4 rounded-2xl p-4 sm:p-5 ${cardCls}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-extrabold">{activeRow.siswa.nama}</p>
+              <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                NISN: <span className="font-mono">{activeRow.siswa.nisn}</span> · {data?.selectedKelasNama}
+              </p>
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <Save size={14} />
+              {saving ? "Menyimpan..." : "Simpan Leger Semester 1–6"}
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[780px] border-collapse text-left text-xs">
+              <thead>
+                <tr className={isDark ? "border-b border-slate-700 text-slate-300" : "border-b border-slate-200 bg-slate-50 text-slate-700"}>
+                  <th className="px-2.5 py-2 text-center">No</th>
+                  <th className="px-2.5 py-2">Mata Pelajaran</th>
+                  <th className="px-1.5 py-2 text-center">Sem 1</th>
+                  <th className="px-1.5 py-2 text-center">Sem 2</th>
+                  <th className="px-1.5 py-2 text-center">Sem 3</th>
+                  <th className="px-1.5 py-2 text-center">Sem 4</th>
+                  <th className="px-1.5 py-2 text-center">Sem 5</th>
+                  <th className="px-1.5 py-2 text-center">Sem 6</th>
+                  <th className="px-1.5 py-2 text-center">Nilai UPK</th>
+                  <th className="px-2.5 py-2 text-center">Nilai Akhir</th>
+                </tr>
+              </thead>
+              <tbody className={`divide-y ${isDark ? "divide-slate-800" : "divide-slate-200"}`}>
+                {activeRow.subjects.map((sub, idx) => {
+                  const r = grid[sub.mapelId] ?? { sem1: "", sem2: "", sem3: "", sem4: "", sem5: "", sem6: "", nilaiUpk: "" };
+                  const semVals = [r.sem1, r.sem2, r.sem3, r.sem4, r.sem5, r.sem6]
+                    .map((v) => (v.trim() === "" ? null : Number(v)))
+                    .filter((n): n is number => n !== null && Number.isFinite(n));
+                  const avgSem = semVals.length > 0 ? semVals.reduce((a, b) => a + b, 0) / semVals.length : null;
+                  const upkVal = r.nilaiUpk.trim() === "" ? null : Number(r.nilaiUpk);
+                  const liveFinal =
+                    avgSem !== null && upkVal !== null && Number.isFinite(upkVal)
+                      ? Math.round((avgSem * 0.6 + upkVal * 0.4) * 100) / 100
+                      : avgSem !== null
+                        ? Math.round(avgSem * 100) / 100
+                        : null;
+
+                  return (
+                    <tr key={sub.mapelId}>
+                      <td className="px-2.5 py-2 text-center tabular-nums">{idx + 1}</td>
+                      <td className="px-2.5 py-2 font-semibold">{sub.mapelNama}</td>
+                      {(["sem1", "sem2", "sem3", "sem4", "sem5", "sem6", "nilaiUpk"] as const).map((field) => (
+                        <td key={field} className="px-1.5 py-1.5 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="0.01"
+                            aria-label={`${sub.mapelNama} ${field}`}
+                            value={r[field]}
+                            onChange={(e) => updateCell(sub.mapelId, field, e.target.value)}
+                            placeholder="-"
+                            className={cellCls}
+                          />
+                        </td>
+                      ))}
+                      <td className="px-2.5 py-2 text-center font-extrabold tabular-nums text-indigo-600">
+                        {liveFinal !== null ? liveFinal : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-extrabold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <Save size={14} />
+              {saving ? "Menyimpan..." : "Simpan Leger Semester 1–6"}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
 
 export function RaportTranscriptPanel({
   initialKelasId,
@@ -301,25 +616,18 @@ export function RaportTranscriptPanel({
       No: idx + 1,
       NISN: r.siswa.nisn,
       "Nama Warga Belajar": r.siswa.nama,
-      "Rata-rata Raport 6 Sem": r.rataRaportKeseluruhan ?? "-",
-      "Rata-rata UPK": r.rataUpkKeseluruhan ?? "-",
-      "Nilai Transkrip Ijazah (60/40)": r.rataTranskrip ?? "-",
+      "Nilai Akhir Transkrip": r.rataTranskrip ?? "-",
       Predikat: r.predikatKeseluruhan,
       Status: r.statusKelulusan,
     }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Leger Transkrip 60-40");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Leger Transkrip");
 
     if (activeRow) {
       const detailRows = activeRow.subjects.map((s, idx) => ({
         No: idx + 1,
         "Mata Pelajaran": s.mapelNama,
-        SKK: s.skk,
-        "Rata-rata Raport (6 Sem)": s.rataRaport ?? "-",
-        "Bobot 60% Raport": s.kontribusiRaport ?? "-",
-        "Nilai UPK": s.nilaiUpk ?? "-",
-        "Bobot 40% UPK": s.kontribusiUpk ?? "-",
-        "Nilai Transkrip (Ijazah)": s.nilaiTranskrip ?? "-",
+        "Nilai Akhir": s.nilaiTranskrip ?? "-",
         Predikat: s.predikat,
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), "Transkrip Siswa");
@@ -348,7 +656,7 @@ export function RaportTranscriptPanel({
                 Transkrip Nilai Kelulusan (Pendamping Ijazah)
               </h3>
               <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                Rumus resmi: <strong>60% Rata-rata Nilai Raport (6 Semester)</strong> + <strong>40% Nilai UPK / Ujian Akhir</strong>. Nilai UPK diambil otomatis dari hasil CBT berkode <code className="font-mono font-bold">UAK-</code>/<code className="font-mono font-bold">UPK-</code> atau dapat diinput manual di bawah.
+                Nilai akhir transkrip dihitung otomatis dari rekap nilai raport dan hasil UPK/Ujian Akhir. Dokumen cetak hanya menampilkan Nilai Akhir &amp; Predikat secara bersih dan siap cetak.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -452,9 +760,7 @@ export function RaportTranscriptPanel({
                   <tr className={isDark ? "border-b border-slate-700 text-slate-300" : "border-b border-slate-200 bg-slate-50 text-slate-700"}>
                     <th className="px-3 py-2">No</th>
                     <th className="px-3 py-2">Nama Warga Belajar</th>
-                    <th className="px-3 py-2 text-center">Rata Raport (60%)</th>
-                    <th className="px-3 py-2 text-center">Rata UPK (40%)</th>
-                    <th className="px-3 py-2 text-center">Nilai Transkrip</th>
+                    <th className="px-3 py-2 text-center">Nilai Akhir</th>
                     <th className="px-3 py-2 text-center">Predikat</th>
                     <th className="px-3 py-2 text-center">Status</th>
                   </tr>
@@ -476,8 +782,6 @@ export function RaportTranscriptPanel({
                     >
                       <td className="px-3 py-2 tabular-nums">{idx + 1}</td>
                       <td className="px-3 py-2 font-bold">{r.siswa.nama}</td>
-                      <td className="px-3 py-2 text-center tabular-nums">{r.rataRaportKeseluruhan ?? "-"}</td>
-                      <td className="px-3 py-2 text-center tabular-nums">{r.rataUpkKeseluruhan ?? "-"}</td>
                       <td className="px-3 py-2 text-center font-extrabold tabular-nums text-indigo-700">{r.rataTranskrip ?? "-"}</td>
                       <td className="px-3 py-2 text-center font-bold">{r.predikatKeseluruhan}</td>
                       <td className="px-3 py-2 text-center">
@@ -501,105 +805,89 @@ export function RaportTranscriptPanel({
 
           {/* Dokumen Resmi Transkrip Nilai Pendamping Ijazah */}
           {activeRow && (
-            <div className="rounded-2xl border border-slate-300 bg-white p-5 text-slate-900 shadow-sm sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-900 pb-4">
-                <div className="flex items-center gap-4">
-                  {data.sekolah.logoUrl ? (
-                    <img src={data.sekolah.logoUrl} alt={data.sekolah.nama} className="h-14 w-14 rounded-lg object-contain" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-indigo-900 text-xl font-black text-white">
-                      {data.sekolah.nama.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-indigo-800">Transkrip Nilai Pendamping Ijazah · Pendidikan Kesetaraan</p>
-                    <h3 className="text-xl font-black uppercase text-slate-900">{data.sekolah.nama}</h3>
-                    <p className="text-xs text-slate-600">
-                      NPSN: {data.sekolah.npsn || "-"} · {data.sekolah.alamat || data.sekolah.kabupatenKota || "Indonesia"}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right text-xs">
-                  <p className="font-extrabold text-indigo-900">Komposisi Nilai Akhir</p>
-                  <p className="text-slate-600">60% Raport (6 Semester) + 40% UPK</p>
-                </div>
+            <article className="print-sheet rounded-2xl border border-slate-300 bg-white p-5 text-slate-900 shadow-sm sm:p-8">
+              <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
+
+              <div className="mt-4 text-center">
+                <h3 className="text-sm font-black uppercase tracking-wide text-slate-950 sm:text-base">
+                  Transkrip Nilai Pendamping Ijazah
+                </h3>
+                <p className="text-xs font-semibold text-slate-700">
+                  Pendidikan Kesetaraan · {data.selectedKelasNama}
+                </p>
               </div>
 
-              <div className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs sm:grid-cols-2">
-                <div><span className="text-slate-500">Nama Lengkap:</span> <strong className="ml-1">{activeRow.siswa.nama}</strong></div>
-                <div><span className="text-slate-500">NISN / No. Induk:</span> <strong className="ml-1 font-mono">{activeRow.siswa.nisn}</strong></div>
-                <div><span className="text-slate-500">Program / Kelas Akhir:</span> <strong className="ml-1">{data.selectedKelasNama}</strong></div>
-                <div>
-                  <span className="text-slate-500">Rata-rata Transkrip Ijazah:</span>{" "}
-                  <strong className="ml-1 text-indigo-800">
-                    {activeRow.rataTranskrip !== null ? `${activeRow.rataTranskrip} (Predikat ${activeRow.predikatKeseluruhan})` : "Belum lengkap"}
+              <div className="mt-4 grid gap-x-6 gap-y-1.5 rounded-xl border border-slate-300 bg-slate-50/80 px-4 py-3 text-xs sm:grid-cols-2">
+                <div className="flex gap-2">
+                  <span className="w-36 shrink-0 text-slate-600">Nama Lengkap</span>
+                  <strong className="text-slate-950">: {activeRow.siswa.nama}</strong>
+                </div>
+                <div className="flex gap-2">
+                  <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
+                  <strong className="font-mono text-slate-950">: {activeRow.siswa.nisn}</strong>
+                </div>
+                <div className="flex gap-2">
+                  <span className="w-36 shrink-0 text-slate-600">Program / Kelas Akhir</span>
+                  <strong className="text-slate-950">: {data.selectedKelasNama}</strong>
+                </div>
+                <div className="flex gap-2">
+                  <span className="w-36 shrink-0 text-slate-600">Rata-rata Nilai Akhir</span>
+                  <strong className="text-slate-950">
+                    :{" "}
+                    {activeRow.rataTranskrip !== null
+                      ? `${activeRow.rataTranskrip} (${activeRow.predikatKeseluruhan})`
+                      : "-"}
                   </strong>
                 </div>
               </div>
 
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[680px] border-collapse border border-slate-300 text-left text-xs">
+                <table className="w-full border-collapse border border-slate-400 text-left text-xs">
                   <thead>
-                    <tr className="bg-slate-100 font-bold text-slate-800">
-                      <th className="border border-slate-300 px-2.5 py-2 text-center">No</th>
-                      <th className="border border-slate-300 px-2.5 py-2">Mata Pelajaran</th>
-                      <th className="border border-slate-300 px-2.5 py-2 text-center">Rata Raport (6 Sem)</th>
-                      <th className="border border-slate-300 bg-sky-50 px-2.5 py-2 text-center">60% Raport</th>
-                      <th className="border border-slate-300 px-2.5 py-2 text-center">Nilai UPK</th>
-                      <th className="border border-slate-300 bg-amber-50 px-2.5 py-2 text-center">40% UPK</th>
-                      <th className="border border-slate-300 bg-indigo-50 px-2.5 py-2 text-center">Nilai Transkrip (Ijazah)</th>
-                      <th className="border border-slate-300 px-2.5 py-2 text-center">Predikat</th>
+                    <tr className="bg-slate-100 font-extrabold text-slate-900">
+                      <th className="w-12 border border-slate-400 px-3 py-2 text-center">No</th>
+                      <th className="border border-slate-400 px-3 py-2">Mata Pelajaran</th>
+                      <th className="w-32 border border-slate-400 px-3 py-2 text-center">Nilai Akhir</th>
+                      <th className="w-28 border border-slate-400 px-3 py-2 text-center">Predikat</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activeRow.subjects.map((sub, idx) => (
                       <tr key={sub.mapelId}>
-                        <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">{idx + 1}</td>
-                        <td className="border border-slate-300 px-2.5 py-2">
-                          <div className="font-semibold">{sub.mapelNama}</div>
-                          <div className="text-[10px] text-slate-500">
-                            {sub.semesterCount} semester tercatat · Sumber UPK:{" "}
-                            {sub.upkSource === "cbt" ? "Otomatis CBT" : sub.upkSource === "manual" ? "Input Manual" : "Belum ada"}
-                          </div>
-                        </td>
-                        <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">{sub.rataRaport ?? "-"}</td>
-                        <td className="border border-slate-300 bg-sky-50/50 px-2.5 py-2 text-center font-semibold tabular-nums">{sub.kontribusiRaport ?? "-"}</td>
-                        <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">{sub.nilaiUpk ?? "-"}</td>
-                        <td className="border border-slate-300 bg-amber-50/50 px-2.5 py-2 text-center font-semibold tabular-nums">{sub.kontribusiUpk ?? "-"}</td>
-                        <td className="border border-slate-300 bg-indigo-50/60 px-2.5 py-2 text-center font-black tabular-nums text-indigo-900">
+                        <td className="border border-slate-400 px-3 py-2 text-center tabular-nums">{idx + 1}</td>
+                        <td className="border border-slate-400 px-3 py-2 font-semibold text-slate-900">{sub.mapelNama}</td>
+                        <td className="border border-slate-400 px-3 py-2 text-center text-sm font-extrabold tabular-nums text-slate-950">
                           {sub.nilaiTranskrip ?? "-"}
                         </td>
-                        <td className="border border-slate-300 px-2.5 py-2 text-center font-bold">{sub.predikat}</td>
+                        <td className="border border-slate-400 px-3 py-2 text-center font-bold text-slate-800">
+                          {sub.nilaiTranskrip !== null ? sub.predikat : "-"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-slate-100 font-extrabold">
-                      <td colSpan={2} className="border border-slate-300 px-2.5 py-2 text-right">Rata-rata Keseluruhan</td>
-                      <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">{activeRow.rataRaportKeseluruhan ?? "-"}</td>
-                      <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">
-                        {activeRow.rataRaportKeseluruhan !== null ? Math.round(activeRow.rataRaportKeseluruhan * 60) / 100 : "-"}
+                    <tr className="bg-slate-100 font-extrabold text-slate-950">
+                      <td colSpan={2} className="border border-slate-400 px-3 py-2 text-right">
+                        Rata-rata Keseluruhan
                       </td>
-                      <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">{activeRow.rataUpkKeseluruhan ?? "-"}</td>
-                      <td className="border border-slate-300 px-2.5 py-2 text-center tabular-nums">
-                        {activeRow.rataUpkKeseluruhan !== null ? Math.round(activeRow.rataUpkKeseluruhan * 40) / 100 : "-"}
-                      </td>
-                      <td className="border border-slate-300 bg-indigo-100 px-2.5 py-2 text-center text-indigo-950 tabular-nums">
+                      <td className="border border-slate-400 px-3 py-2 text-center text-sm tabular-nums">
                         {activeRow.rataTranskrip ?? "-"}
                       </td>
-                      <td className="border border-slate-300 px-2.5 py-2 text-center">{activeRow.predikatKeseluruhan}</td>
+                      <td className="border border-slate-400 px-3 py-2 text-center">
+                        {activeRow.rataTranskrip !== null ? activeRow.predikatKeseluruhan : "-"}
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
 
-              <div className="mt-8 flex flex-wrap items-end justify-between gap-6 text-center text-xs">
+              <div className="print-avoid-break mt-8 flex flex-wrap items-end justify-between gap-6 text-center text-xs">
                 <div className="flex flex-col items-center">
                   <QrCodeSvg
                     value={`TRANSKRIP-IJAZAH|${data.sekolah.npsn || data.sekolah.nama}|${activeRow.siswa.nisn}|${activeRow.rataTranskrip ?? "N/A"}`}
-                    size={84}
+                    size={80}
                     label="QR Verifikasi Transkrip Ijazah"
-                    className="rounded-lg border border-slate-200 p-1"
+                    className="rounded-lg border border-slate-300 p-1"
                   />
                   <p className="mt-1 text-[10px] font-semibold text-slate-500">QR Verifikasi Keaslian Transkrip</p>
                 </div>
@@ -614,7 +902,7 @@ export function RaportTranscriptPanel({
                   <p className="text-[11px] text-slate-500">NPSN: {data.sekolah.npsn || "-"}</p>
                 </div>
               </div>
-            </div>
+            </article>
           )}
         </>
       )}

@@ -24,8 +24,14 @@ import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-lim
 import { Prisma } from "@prisma/client";
 import { internalProvisionRoutes } from "./internal-provision.js";
 import { forwardRegistrationToMaster } from "./master-admin-registration.js";
-import { tenantAccessible } from "./tenant-access.js";
+import { tenantAccessible, tenantBlockReason } from "./tenant-access.js";
 import { tenantHostMiddleware } from "./tenant-host.js";
+import {
+  calculateTrialEndDate,
+  formatIndonesianDateTime,
+  parseTrialSignup,
+  TRIAL_DURATION_DAYS,
+} from "./trial-utils.js";
 import { schoolManagementRoutes } from "./school-management-routes.js";
 import { normalizeTenantPlan } from "./plan-utils.js";
 import { schoolTierRoutes } from "./school-tier-routes.js";
@@ -61,6 +67,7 @@ const dinasCookieName = "dinas_session";
 const sessionDurationMs = 8 * 60 * 60 * 1000;
 const loginFailureLimiter = createLoginFailureLimiter();
 const ppdbSubmissionLimiter = createPpdbSubmissionLimiter();
+const trialSignupMemoryLimiter = createPpdbSubmissionLimiter({ maxSubmissions: 5, windowMs: 10 * 60 * 1000 });
 const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 
 app.disable("x-powered-by");
@@ -244,7 +251,20 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
   try {
     const school = await resolveSchoolWithSandboxSeed(prisma, slug);
     if (!school || !tenantAccessible(school)) {
-      return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar atau tidak aktif." });
+      const reason = tenantBlockReason(school);
+      if (reason === "EXPIRED" && school?.expiresAt) {
+        return res.status(404).json({
+          error: `Masa uji coba 14 hari / masa aktif ${school.nama} telah berakhir pada ${formatIndonesianDateTime(school.expiresAt)}. Akses otomatis diblokir.`,
+          code: "TENANT_EXPIRED",
+          nama: school.nama,
+          slug: school.slug,
+          expiresAt: school.expiresAt.toISOString(),
+        });
+      }
+      return res.status(404).json({
+        error: "Sekolah / Lembaga tidak terdaftar atau tidak aktif.",
+        code: reason === "SUSPENDED" ? "TENANT_SUSPENDED" : "TENANT_NOT_FOUND",
+      });
     }
     let logoUrl: string | null = null;
     try {
@@ -264,6 +284,7 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
       npsn: school.npsn ?? null,
       plan: normalizeTenantPlan(school.plan),
       status: school.status,
+      expiresAt: school.expiresAt ? school.expiresAt.toISOString() : null,
       themeKey,
       logoUrl,
     });
@@ -275,6 +296,164 @@ async function handlePublicSchoolLookup(req: express.Request, res: express.Respo
 
 app.get("/api/public/sekolah", (req, res) => handlePublicSchoolLookup(req, res));
 app.get("/api/public/sekolah/:slug", (req, res) => handlePublicSchoolLookup(req, res, req.params.slug));
+
+const limitProductionTrial = registrationRateLimit(loginPool, limitSecret, !!process.env.VERCEL && process.env.VERCEL_ENV === "preview", "registration");
+
+app.post("/api/pendaftaran-sekolah/coba-gratis", async (req, res) => {
+  const clientIp = loginIp(req);
+  const memLimit = trialSignupMemoryLimiter.consume(clientIp);
+  if (!memLimit.allowed) {
+    res.setHeader("Retry-After", String(memLimit.retryAfter));
+    return res.status(429).json({
+      error: "Terlalu banyak permintaan uji coba gratis dari jaringan ini. Coba beberapa menit lagi.",
+      code: "TRIAL_RATE_LIMITED",
+    });
+  }
+  if (production && process.env.VERCEL) {
+    try {
+      const dbLimit = await limitProductionTrial(clientIp);
+      if (!dbLimit.allowed) {
+        res.setHeader("Retry-After", String(dbLimit.retryAfter));
+        return res.status(429).json({
+          error: "Terlalu banyak permintaan uji coba gratis. Coba lagi nanti.",
+          code: "TRIAL_RATE_LIMITED",
+        });
+      }
+    } catch (error) {
+      console.error("Pembatas uji coba gratis tidak tersedia:", error instanceof Error ? error.name : "UnknownError");
+      return res.status(503).json({ error: "Perlindungan pendaftaran uji coba tidak tersedia." });
+    }
+  }
+
+  const parsed = parseTrialSignup(req.body);
+  if ("error" in parsed) {
+    return res.status(400).json({ error: parsed.error, code: "TRIAL_SIGNUP_INVALID" });
+  }
+  const { namaSekolah, slug, npsn, wilayah, namaKontak, emailKontak, teleponKontak, password, planSlug, paketLabel } = parsed.data;
+
+  try {
+    const [existingSlug, existingEmail, existingNpsn] = await Promise.all([
+      prisma.sekolah.findUnique({ where: { slug }, select: { id: true } }),
+      prisma.akun.findUnique({ where: { email: emailKontak }, select: { id: true } }),
+      npsn ? prisma.sekolah.findUnique({ where: { npsn }, select: { id: true } }) : Promise.resolve(null),
+    ]);
+    if (existingSlug) {
+      return res.status(409).json({ error: `Subdomain "${slug}" sudah digunakan oleh lembaga lain.`, code: "TRIAL_SLUG_CONFLICT" });
+    }
+    if (existingEmail) {
+      return res.status(409).json({ error: `Email "${emailKontak}" sudah terdaftar pada sistem.`, code: "TRIAL_EMAIL_CONFLICT" });
+    }
+    if (existingNpsn) {
+      return res.status(409).json({ error: `NPSN "${npsn}" sudah terdaftar pada sistem.`, code: "TRIAL_NPSN_CONFLICT" });
+    }
+
+    const startDate = new Date();
+    const expiresAt = calculateTrialEndDate(startDate, TRIAL_DURATION_DAYS);
+    const passwordHash = await hashPassword(password);
+    const globalTheme = await getGlobalTheme(prisma);
+
+    const createdSchool = await prisma.$transaction(async (tx) => {
+      const school = await tx.sekolah.create({
+        data: {
+          nama: namaSekolah,
+          slug,
+          npsn,
+          kabupatenKota: wilayah,
+          status: "ACTIVE",
+          plan: planSlug,
+          themeKey: globalTheme,
+          expiresAt,
+        },
+        select: {
+          id: true,
+          nama: true,
+          slug: true,
+          npsn: true,
+          plan: true,
+          status: true,
+          expiresAt: true,
+        },
+      });
+      await tx.akun.create({
+        data: {
+          sekolahId: school.id,
+          nama: namaKontak,
+          email: emailKontak,
+          passwordHash,
+          peran: "ADMIN",
+          aktif: true,
+          wajibGantiPassword: false,
+        },
+      });
+      return school;
+    });
+
+    const endDateIso = (createdSchool.expiresAt ?? expiresAt).toISOString();
+    try {
+      await prisma.websiteSettings.create({
+        data: {
+          school_id: createdSchool.id,
+          footer_text: `© ${startDate.getUTCFullYear()} ${createdSchool.nama} · Uji Coba Gratis 14 Hari`,
+        },
+      });
+    } catch {
+      // Optional WebsiteSettings table may not exist in minimal DBs
+    }
+
+    try {
+      await prisma.pendaftaranSekolah.create({
+        data: {
+          id: randomUUID(),
+          namaSekolah,
+          npsn,
+          wilayah,
+          namaKontak,
+          emailKontak,
+          teleponKontak,
+          paket: paketLabel,
+          status: "DISETUJUI",
+          sekolahId: createdSchool.id,
+          catatanTinjauan: `Uji Coba Gratis ${TRIAL_DURATION_DAYS} Hari · Berakhir ${endDateIso}`,
+        },
+        select: { id: true },
+      });
+    } catch {
+      // Audit log in PendaftaranSekolah is best-effort
+    }
+
+    return res.status(201).json({
+      message: `Uji coba gratis ${TRIAL_DURATION_DAYS} hari untuk ${createdSchool.nama} aktif hingga ${formatIndonesianDateTime(endDateIso)}.`,
+      trialDays: TRIAL_DURATION_DAYS,
+      startDate: startDate.toISOString(),
+      endDate: endDateIso,
+      expiresAt: endDateIso,
+      adminEmail: emailKontak,
+      loginPath: "/login",
+      portalUrl: `https://${createdSchool.slug}.pkbm.siput.id`,
+      sekolah: {
+        id: createdSchool.id,
+        nama: createdSchool.nama,
+        slug: createdSchool.slug,
+        npsn: createdSchool.npsn,
+        plan: normalizeTenantPlan(createdSchool.plan),
+        status: createdSchool.status,
+        expiresAt: endDateIso,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return res.status(409).json({
+        error: "Subdomain, NPSN, atau email admin sudah terdaftar.",
+        code: "TRIAL_CONFLICT",
+      });
+    }
+    console.error("Gagal mengaktifkan uji coba gratis 14 hari:", error);
+    return res.status(503).json({
+      error: "Layanan uji coba gratis belum dapat diproses. Pastikan database siap.",
+      code: "TRIAL_UNAVAILABLE",
+    });
+  }
+});
 
 app.use("/api/pendaftaran-sekolah", registrationRoutes({
   production,
@@ -491,6 +670,34 @@ app.post("/api/auth/dinas/logout", async (req, res) => {
   }
 });
 
+async function inspectExpiredSessionBlock(req: express.Request, role: "ADMIN" | "LMS"): Promise<{ reason: "EXPIRED" | "SUSPENDED"; expiresAt: string | null } | null> {
+  const token = sessionToken(req.headers.cookie, role === "ADMIN" ? schoolCookieName : lmsCookieName);
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+  try {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const session = await prisma.sesiAkun.findUnique({
+      where: { tokenHash },
+      include: { akun: { include: { sekolah: { select: { id: true, status: true, expiresAt: true } } } } },
+    });
+    if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.akun.aktif || !session.akun.sekolahId) {
+      return null;
+    }
+    if (req.tenant?.kind === "school" && session.akun.sekolahId !== req.tenant.id) {
+      return null;
+    }
+    const reason = tenantBlockReason(session.akun.sekolah);
+    if (reason === "EXPIRED" || reason === "SUSPENDED") {
+      return {
+        reason,
+        expiresAt: session.akun.sekolah?.expiresAt ? session.akun.sekolah.expiresAt.toISOString() : null,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 app.post("/api/auth/sekolah/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== "string" || typeof password !== "string" || email.length > 254 || password.length > 1024) return res.status(400).json({ error: "Email dan kata sandi wajib diisi." });
@@ -501,17 +708,24 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
     return res.status(429).json({ error: "Terlalu banyak percobaan login gagal. Coba lagi nanti." });
   }
   try {
-    const result = await limitLogin<{
-      token: string;
-      nama: string;
-      email: string | null;
-      isDeveloper: boolean;
-      sekolah: string;
-      slug: string;
-      plan: string;
-      rawPlan: string | null;
-      themeKey: string;
-    }>(clientIp, email, async () => {
+    const result = await limitLogin<
+      | {
+          blockedReason: "EXPIRED" | "SUSPENDED";
+          expiresAt: string | null;
+        }
+      | {
+          token: string;
+          nama: string;
+          email: string | null;
+          isDeveloper: boolean;
+          sekolah: string;
+          slug: string;
+          plan: string;
+          rawPlan: string | null;
+          themeKey: string;
+          expiresAt: string | null;
+        }
+    >(clientIp, email, async () => {
       const account = await prisma.akun.findUnique({ where: { email: email.trim().toLowerCase() } });
       const valid = await verifyPassword(password, account?.passwordHash || dummyHash);
       if (!account || !valid || !account.aktif || account.peran !== "ADMIN" || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id)) return { kind: "failure" };
@@ -520,11 +734,23 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
         prisma.sekolah
           .findUnique({
             where: { id: account.sekolahId },
-            select: { nama: true, slug: true, plan: true, themeKey: true },
+            select: { nama: true, slug: true, plan: true, themeKey: true, status: true, expiresAt: true },
           })
           .catch(() => null),
       ]);
-      if (!token) return { kind: "failure" };
+      if (!token) {
+        const reason = tenantBlockReason(schoolInfo);
+        if (reason === "EXPIRED" || reason === "SUSPENDED") {
+          return {
+            kind: "success",
+            value: {
+              blockedReason: reason,
+              expiresAt: schoolInfo?.expiresAt ? schoolInfo.expiresAt.toISOString() : null,
+            },
+          };
+        }
+        return { kind: "failure" };
+      }
       const themeKey = await getGlobalTheme(prisma, schoolInfo?.themeKey);
       return {
         kind: "success",
@@ -538,6 +764,7 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
           plan: normalizeTenantPlan(schoolInfo?.plan),
           rawPlan: schoolInfo?.plan ?? null,
           themeKey,
+          expiresAt: schoolInfo?.expiresAt ? schoolInfo.expiresAt.toISOString() : null,
         },
       };
     });
@@ -549,23 +776,39 @@ app.post("/api/auth/sekolah/login", async (req, res) => {
       loginFailureLimiter.recordFailure(clientIp, email);
       return res.status(401).json({ error: "Email atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
     }
+    const loginVal = result.value;
+    if (!("token" in loginVal)) {
+      if (loginVal.blockedReason === "EXPIRED") {
+        return res.status(403).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(loginVal.expiresAt)}. Akses otomatis diblokir.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: loginVal.expiresAt,
+        });
+      }
+      return res.status(403).json({
+        error: "Akses lembaga sedang dinonaktifkan oleh pengelola.",
+        code: "TENANT_SUSPENDED",
+        expiresAt: loginVal.expiresAt,
+      });
+    }
     loginFailureLimiter.recordSuccess(clientIp, email);
-    res.cookie(schoolCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
+    res.cookie(schoolCookieName, loginVal.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({
-      nama: result.value.nama,
-      email: result.value.email,
-      isDeveloper: result.value.isDeveloper,
-      sekolah: result.value.sekolah,
-      slug: result.value.slug,
-      plan: result.value.plan,
-      rawPlan: result.value.rawPlan,
-      themeKey: result.value.themeKey,
-      token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
+      nama: loginVal.nama,
+      email: loginVal.email,
+      isDeveloper: loginVal.isDeveloper,
+      sekolah: loginVal.sekolah,
+      slug: loginVal.slug,
+      plan: loginVal.plan,
+      rawPlan: loginVal.rawPlan,
+      themeKey: loginVal.themeKey,
+      expiresAt: loginVal.expiresAt,
+      token: createHash("sha256").update(loginVal.token).digest("hex").slice(0, 32),
       user: {
-        nama: result.value.nama,
-        email: result.value.email,
+        nama: loginVal.nama,
+        email: loginVal.email,
         peran: "ADMIN",
-        isDeveloper: result.value.isDeveloper,
+        isDeveloper: loginVal.isDeveloper,
       },
     });
   } catch (error) {
@@ -579,7 +822,7 @@ async function buildSchoolProfilePayload(req: express.Request) {
   if (!session || !session.akun.sekolahId) return null;
   const school = await prisma.sekolah.findUnique({
     where: { id: session.akun.sekolahId },
-    select: { nama: true, slug: true, plan: true, themeKey: true },
+    select: { nama: true, slug: true, plan: true, themeKey: true, expiresAt: true },
   });
   if (!school) return null;
   const themeKey = await getGlobalTheme(prisma, school.themeKey);
@@ -592,6 +835,7 @@ async function buildSchoolProfilePayload(req: express.Request) {
     plan: normalizeTenantPlan(school.plan),
     rawPlan: school.plan ?? null,
     themeKey,
+    expiresAt: school.expiresAt ? school.expiresAt.toISOString() : null,
   };
 }
 
@@ -599,7 +843,17 @@ app.get("/api/auth/sekolah/session", async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   try {
     const profile = await buildSchoolProfilePayload(req);
-    if (!profile) return res.status(401).json({ error: "Sesi tidak valid." });
+    if (!profile) {
+      const blocked = await inspectExpiredSessionBlock(req, "ADMIN");
+      if (blocked?.reason === "EXPIRED") {
+        return res.status(403).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(blocked.expiresAt)}. Akses otomatis diblokir.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: blocked.expiresAt,
+        });
+      }
+      return res.status(401).json({ error: "Sesi tidak valid." });
+    }
     return res.json(profile);
   } catch (error) {
     console.error("Gagal memeriksa sesi sekolah:", error);
@@ -611,7 +865,17 @@ app.get("/api/sekolah/me", async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   try {
     const profile = await buildSchoolProfilePayload(req);
-    if (!profile) return res.status(401).json({ error: "Sesi tidak valid." });
+    if (!profile) {
+      const blocked = await inspectExpiredSessionBlock(req, "ADMIN");
+      if (blocked?.reason === "EXPIRED") {
+        return res.status(403).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(blocked.expiresAt)}. Akses otomatis diblokir.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: blocked.expiresAt,
+        });
+      }
+      return res.status(401).json({ error: "Sesi tidak valid." });
+    }
     return res.json(profile);
   } catch (error) {
     console.error("Gagal memuat profil admin sekolah:", error);
@@ -897,15 +1161,21 @@ app.post("/api/auth/lms/login", async (req, res) => {
     return res.status(429).json({ error: "Terlalu banyak percobaan login gagal. Coba lagi nanti." });
   }
   try {
-    const result = await limitLogin<{
-      token: string;
-      nama: string;
-      peran: "SISWA" | "GURU";
-      wajibGantiPassword: boolean;
-      sekolahId: string;
-      siswaId: string | null;
-      kelasId: string | null;
-    }>(clientIp, identitas, async () => {
+    const result = await limitLogin<
+      | {
+          blockedReason: "EXPIRED" | "SUSPENDED";
+          expiresAt: string | null;
+        }
+      | {
+          token: string;
+          nama: string;
+          peran: "SISWA" | "GURU";
+          wajibGantiPassword: boolean;
+          sekolahId: string;
+          siswaId: string | null;
+          kelasId: string | null;
+        }
+    >(clientIp, identitas, async () => {
       const identity = identitas.trim().toLowerCase();
       const account = peran === "SISWA"
         ? await prisma.akun.findFirst({
@@ -930,7 +1200,25 @@ app.post("/api/auth/lms/login", async (req, res) => {
       const related = account?.peran === "SISWA" ? account.siswa : account?.peran === "GURU" ? account.guru : null;
       if (!account || !valid || account.peran !== peran || !account.aktif || !account.sekolahId || (req.tenant?.kind === "school" && account.sekolahId !== req.tenant.id) || !related || related.sekolahId !== account.sekolahId || related.status !== "Aktif" || (peran === "SISWA" ? !!account.guruId : !!account.siswaId)) return { kind: "failure" };
       const token = await createLoginSession(account, new Date(Date.now() + sessionDurationMs));
-      if (!token) return { kind: "failure" };
+      if (!token) {
+        const schoolInfo = await prisma.sekolah
+          .findUnique({
+            where: { id: account.sekolahId },
+            select: { status: true, expiresAt: true },
+          })
+          .catch(() => null);
+        const reason = tenantBlockReason(schoolInfo);
+        if (reason === "EXPIRED" || reason === "SUSPENDED") {
+          return {
+            kind: "success",
+            value: {
+              blockedReason: reason,
+              expiresAt: schoolInfo?.expiresAt ? schoolInfo.expiresAt.toISOString() : null,
+            },
+          };
+        }
+        return { kind: "failure" };
+      }
       return {
         kind: "success",
         value: {
@@ -952,31 +1240,46 @@ app.post("/api/auth/lms/login", async (req, res) => {
       loginFailureLimiter.recordFailure(clientIp, identitas);
       return res.status(401).json({ error: "Identitas atau kata sandi salah, atau akun tidak terdaftar pada instansi ini." });
     }
+    const lmsVal = result.value;
+    if (!("token" in lmsVal)) {
+      if (lmsVal.blockedReason === "EXPIRED") {
+        return res.status(403).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(lmsVal.expiresAt)}. Akses otomatis diblokir.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: lmsVal.expiresAt,
+        });
+      }
+      return res.status(403).json({
+        error: "Akses lembaga sedang dinonaktifkan.",
+        code: "TENANT_SUSPENDED",
+        expiresAt: lmsVal.expiresAt,
+      });
+    }
     loginFailureLimiter.recordSuccess(clientIp, identitas);
 
     let presensiHariIni = null;
-    if (result.value.peran === "SISWA" && result.value.siswaId) {
+    if (lmsVal.peran === "SISWA" && lmsVal.siswaId) {
       presensiHariIni = await recordStudentLoginAttendance(prisma, {
-        sekolahId: result.value.sekolahId,
-        siswaId: result.value.siswaId,
-        kelasId: result.value.kelasId,
+        sekolahId: lmsVal.sekolahId,
+        siswaId: lmsVal.siswaId,
+        kelasId: lmsVal.kelasId,
       }).catch((err) => {
         console.error("Gagal mencatat presensi otomatis saat login siswa:", err);
         return null;
       });
     }
 
-    res.cookie(lmsCookieName, result.value.token, { ...cookieOptions(), maxAge: sessionDurationMs });
+    res.cookie(lmsCookieName, lmsVal.token, { ...cookieOptions(), maxAge: sessionDurationMs });
     return res.json({
-      nama: result.value.nama,
-      peran: result.value.peran,
-      wajibGantiPassword: result.value.wajibGantiPassword,
+      nama: lmsVal.nama,
+      peran: lmsVal.peran,
+      wajibGantiPassword: lmsVal.wajibGantiPassword,
       presensiHariIni,
-      token: createHash("sha256").update(result.value.token).digest("hex").slice(0, 32),
+      token: createHash("sha256").update(lmsVal.token).digest("hex").slice(0, 32),
       user: {
-        nama: result.value.nama,
-        peran: result.value.peran,
-        wajibGantiPassword: result.value.wajibGantiPassword,
+        nama: lmsVal.nama,
+        peran: lmsVal.peran,
+        wajibGantiPassword: lmsVal.wajibGantiPassword,
       },
     });
   } catch (error) {
@@ -988,10 +1291,20 @@ app.post("/api/auth/lms/login", async (req, res) => {
 app.get("/api/auth/lms/session", async (req, res) => {
   try {
     const session = await getLmsSession(req);
-    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    if (!session) {
+      const blocked = await inspectExpiredSessionBlock(req, "LMS");
+      if (blocked?.reason === "EXPIRED") {
+        return res.status(403).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(blocked.expiresAt)}. Akses otomatis diblokir.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: blocked.expiresAt,
+        });
+      }
+      return res.status(401).json({ error: "Sesi tidak valid." });
+    }
     const [school, guru, siswaProfile, presensiHariIni] = await Promise.all([
       session.akun.sekolahId
-        ? prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true, plan: true } })
+        ? prisma.sekolah.findUnique({ where: { id: session.akun.sekolahId }, select: { nama: true, slug: true, plan: true, expiresAt: true } })
         : null,
       session.akun.peran === "GURU" && session.akun.guruId && session.akun.sekolahId
         ? prisma.guru.findFirst({
@@ -1031,6 +1344,7 @@ app.get("/api/auth/lms/session", async (req, res) => {
       sekolah: school?.nama ?? "",
       slug: school?.slug ?? "",
       plan: normalizeTenantPlan(school?.plan),
+      expiresAt: school?.expiresAt ? school.expiresAt.toISOString() : null,
       guruId: session.akun.guruId ?? null,
       siswaId: siswaProfile?.id ?? session.akun.siswaId ?? null,
       nisn: siswaProfile?.nisn ?? null,
@@ -3118,8 +3432,18 @@ app.get("/api/ppdb/:slug", async (req, res) => {
   try {
     const sekolah = req.params.slug === SANDBOX_SLUG
       ? await resolveSchoolWithSandboxSeed(prisma, req.params.slug)
-      : await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { nama: true } });
-    if (!sekolah) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+      : await prisma.sekolah.findUnique({ where: { slug: req.params.slug }, select: { nama: true, status: true, expiresAt: true } });
+    if (!sekolah || !tenantAccessible(sekolah)) {
+      const reason = tenantBlockReason(sekolah);
+      if (reason === "EXPIRED" && sekolah?.expiresAt) {
+        return res.status(404).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(sekolah.expiresAt)}.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: sekolah.expiresAt.toISOString(),
+        });
+      }
+      return res.status(404).json({ error: "Sekolah tidak ditemukan atau tidak aktif." });
+    }
     return res.json({ nama: sekolah.nama });
   } catch (error) {
     console.error("Gagal memuat sekolah PPDB:", error);
@@ -3158,8 +3482,18 @@ async function handlePublicPpdbSubmission(req: express.Request, res: express.Res
   try {
     const school = slug === SANDBOX_SLUG
       ? await resolveSchoolWithSandboxSeed(prisma, slug)
-      : await prisma.sekolah.findUnique({ where: { slug }, select: { id: true } });
-    if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
+      : await prisma.sekolah.findUnique({ where: { slug }, select: { id: true, status: true, expiresAt: true } });
+    if (!school || !tenantAccessible(school)) {
+      const reason = tenantBlockReason(school);
+      if (reason === "EXPIRED" && school?.expiresAt) {
+        return res.status(404).json({
+          error: `Masa uji coba 14 hari / masa aktif lembaga telah berakhir pada ${formatIndonesianDateTime(school.expiresAt)}.`,
+          code: "TENANT_EXPIRED",
+          expiresAt: school.expiresAt.toISOString(),
+        });
+      }
+      return res.status(404).json({ error: "Sekolah tidak ditemukan atau tidak aktif." });
+    }
     await prisma.pPDB.create({ data: { ...data, sekolahId: school.id, noDaftar: randomBytes(16).toString("hex"), status: "Pending" } });
     return res.status(201).json({ message: "Pendaftaran diterima dan menunggu pemeriksaan admin sekolah." });
   } catch (error) {
@@ -3638,13 +3972,14 @@ app.get("/api/master/sekolah", async (req, res) => {
       npsn: string | null;
       plan: string | null;
       status: string;
+      expiresAt: Date | null;
       kabupatenKota?: string | null;
       izinVervalDinas?: boolean;
       createdAt: Date;
     }>;
     try {
       schools = await prisma.sekolah.findMany({
-        select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, kabupatenKota: true, izinVervalDinas: true, createdAt: true },
+        select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, expiresAt: true, kabupatenKota: true, izinVervalDinas: true, createdAt: true },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize + 1,
@@ -3652,7 +3987,7 @@ app.get("/api/master/sekolah", async (req, res) => {
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2022") {
         schools = await prisma.sekolah.findMany({
-          select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, createdAt: true },
+          select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, expiresAt: true, createdAt: true },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           skip: (page - 1) * pageSize,
           take: pageSize + 1,
@@ -3665,6 +4000,7 @@ app.get("/api/master/sekolah", async (req, res) => {
       sekolah: schools.slice(0, pageSize).map((school) => ({
         ...school,
         plan: normalizeTenantPlan(school.plan),
+        expiresAt: school.expiresAt ? school.expiresAt.toISOString() : null,
         kabupatenKota: school.kabupatenKota ?? null,
         izinVervalDinas: school.izinVervalDinas ?? true,
       })),
@@ -3693,6 +4029,17 @@ app.post("/api/master/sekolah", async (req, res) => {
     const adminPassword = typeof body.adminPassword === "string" ? body.adminPassword : "";
     const plan = toCleanPlanCode(body.plan ?? body.paket) ?? "reguler";
     const isiKontenSiapPakai = body.isiKontenSiapPakai === true || body.seedMasterContent === true;
+    const trial14Hari = body.trial14Hari === true;
+    let resolvedExpiresAt: Date | null = null;
+    if (trial14Hari) {
+      resolvedExpiresAt = calculateTrialEndDate(new Date(), TRIAL_DURATION_DAYS);
+    } else if (typeof body.expiresAt === "string" && body.expiresAt.trim()) {
+      const parsedDate = new Date(body.expiresAt.trim());
+      if (Number.isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ error: "Format tanggal akhir masa aktif (expiresAt) tidak valid." });
+      }
+      resolvedExpiresAt = parsedDate;
+    }
 
     if (!nama || nama.length < 3 || nama.length > 200) {
       return res.status(400).json({ error: "Nama sekolah wajib diisi (3–200 karakter)." });
@@ -3721,8 +4068,9 @@ app.post("/api/master/sekolah", async (req, res) => {
           status: "ACTIVE",
           plan,
           themeKey: globalTheme,
+          expiresAt: resolvedExpiresAt,
         },
-        select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true },
+        select: { id: true, nama: true, slug: true, npsn: true, plan: true, status: true, expiresAt: true },
       });
       await tx.akun.create({
         data: {
@@ -3751,7 +4099,10 @@ app.post("/api/master/sekolah", async (req, res) => {
     }
 
     return res.status(201).json({
-      sekolah: createdSchool,
+      sekolah: {
+        ...createdSchool,
+        expiresAt: createdSchool.expiresAt ? createdSchool.expiresAt.toISOString() : null,
+      },
       seedSummary,
       message: seedSummary
         ? `Sekolah ${createdSchool.nama} berhasil dibuat beserta ${seedSummary.copiedModul} modul & ${seedSummary.copiedBankSoal} paket soal dari Pustaka Pusat.`
@@ -3763,6 +4114,89 @@ app.post("/api/master/sekolah", async (req, res) => {
     }
     console.error("Gagal membuat tenant sekolah baru:", error);
     return res.status(503).json({ error: "Sekolah baru belum dapat dibuat." });
+  }
+});
+
+app.patch("/api/master/sekolah/:id/masa-aktif", async (req, res) => {
+  try {
+    const session = await getSession(req, "MASTER_ADMIN");
+    if (!session) return res.status(401).json({ error: "Sesi tidak valid." });
+    const body = (req.body && typeof req.body === "object" && !Array.isArray(req.body)
+      ? req.body
+      : {}) as Record<string, unknown>;
+    const mode = typeof body.mode === "string" ? body.mode.trim().toLowerCase() : "custom";
+
+    const existing = await prisma.sekolah.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, nama: true, status: true, expiresAt: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Tenant sekolah tidak ditemukan." });
+    }
+
+    const now = new Date();
+    let nextStatus: "ACTIVE" | "SUSPENDED" = existing.status;
+    let nextExpiresAt: Date | null = existing.expiresAt;
+    let successMessage = `Masa aktif ${existing.nama} berhasil diperbarui.`;
+
+    if (mode === "trial14") {
+      nextStatus = "ACTIVE";
+      nextExpiresAt = calculateTrialEndDate(now, TRIAL_DURATION_DAYS);
+      successMessage = `Uji coba 14 hari untuk ${existing.nama} diaktifkan hingga ${formatIndonesianDateTime(nextExpiresAt)}.`;
+    } else if (mode === "extend14") {
+      const anchor = existing.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
+      nextStatus = "ACTIVE";
+      nextExpiresAt = calculateTrialEndDate(anchor, TRIAL_DURATION_DAYS);
+      successMessage = `Masa aktif ${existing.nama} diperpanjang 14 hari hingga ${formatIndonesianDateTime(nextExpiresAt)}.`;
+    } else if (mode === "unlimited") {
+      nextStatus = "ACTIVE";
+      nextExpiresAt = null;
+      successMessage = `${existing.nama} diaktifkan penuh tanpa batas waktu kedaluwarsa.`;
+    } else if (mode === "suspend") {
+      nextStatus = "SUSPENDED";
+      successMessage = `Akses ${existing.nama} diblokir sementara (SUSPENDED).`;
+    } else if (mode === "custom") {
+      if (body.status !== undefined) {
+        if (body.status !== "ACTIVE" && body.status !== "SUSPENDED") {
+          return res.status(400).json({ error: "Status harus ACTIVE atau SUSPENDED." });
+        }
+        nextStatus = body.status;
+      }
+      if (body.expiresAt === null || body.expiresAt === "") {
+        nextExpiresAt = null;
+      } else if (typeof body.expiresAt === "string") {
+        const rawDate = body.expiresAt.trim();
+        const parsed = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+          ? new Date(`${rawDate}T23:59:59.999+07:00`)
+          : new Date(rawDate);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: "Format tanggal berakhir masa aktif tidak valid." });
+        }
+        nextExpiresAt = parsed;
+      }
+      successMessage = nextExpiresAt
+        ? `Tanggal berakhir ${existing.nama} diatur hingga ${formatIndonesianDateTime(nextExpiresAt)} (${nextStatus}).`
+        : `Status ${existing.nama} diatur ke ${nextStatus} tanpa batas kedaluwarsa.`;
+    } else {
+      return res.status(400).json({ error: "Mode pengaturan masa aktif tidak valid." });
+    }
+
+    const updated = await prisma.sekolah.update({
+      where: { id: existing.id },
+      data: { status: nextStatus, expiresAt: nextExpiresAt },
+      select: { id: true, nama: true, status: true, expiresAt: true },
+    });
+
+    return res.json({
+      message: successMessage,
+      sekolah: {
+        ...updated,
+        expiresAt: updated.expiresAt ? updated.expiresAt.toISOString() : null,
+      },
+    });
+  } catch (error) {
+    console.error("Gagal memperbarui masa aktif sekolah:", error);
+    return res.status(503).json({ error: "Masa aktif sekolah belum dapat diperbarui." });
   }
 });
 

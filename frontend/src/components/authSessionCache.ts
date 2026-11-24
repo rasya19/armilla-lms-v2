@@ -4,6 +4,7 @@ export type CachedTenantProfile = {
   logoUrl: string | null;
   themeKey: string;
   plan?: string;
+  expiresAt?: string | null;
   updatedAt: number;
 };
 
@@ -29,6 +30,7 @@ export type SchoolAuthCache = {
   plan: string;
   rawPlan?: string | null;
   themeKey?: string;
+  expiresAt?: string | null;
   user?: {
     nama?: string;
     email?: string | null;
@@ -43,6 +45,7 @@ export type LmsAuthCache = {
   nama: string;
   peran: "SISWA" | "GURU";
   wajibGantiPassword: boolean;
+  expiresAt?: string | null;
   user?: {
     nama?: string;
     peran?: "SISWA" | "GURU";
@@ -127,6 +130,7 @@ export function getCachedTenantProfile(slug: string): CachedTenantProfile | null
       logoUrl: typeof obj.logoUrl === "string" ? obj.logoUrl : null,
       themeKey: typeof obj.themeKey === "string" ? obj.themeKey : "ocean",
       plan: typeof obj.plan === "string" ? obj.plan : undefined,
+      expiresAt: typeof obj.expiresAt === "string" ? obj.expiresAt : obj.expiresAt === null ? null : undefined,
       updatedAt: typeof obj.updatedAt === "number" ? obj.updatedAt : Date.now(),
     };
   } catch {
@@ -136,7 +140,7 @@ export function getCachedTenantProfile(slug: string): CachedTenantProfile | null
 
 export function saveCachedTenantProfile(
   slug: string,
-  profile: { nama: string; slug?: string; logoUrl?: string | null; themeKey?: string; plan?: string },
+  profile: { nama: string; slug?: string; logoUrl?: string | null; themeKey?: string; plan?: string; expiresAt?: string | null },
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -148,6 +152,7 @@ export function saveCachedTenantProfile(
       logoUrl: profile.logoUrl !== undefined ? profile.logoUrl : existing?.logoUrl ?? null,
       themeKey: profile.themeKey ?? existing?.themeKey ?? "ocean",
       plan: profile.plan ?? existing?.plan,
+      expiresAt: profile.expiresAt !== undefined ? profile.expiresAt : existing?.expiresAt,
       updatedAt: Date.now(),
     };
     window.localStorage.setItem(profileStorageKey(normalizedSlug), JSON.stringify(payload));

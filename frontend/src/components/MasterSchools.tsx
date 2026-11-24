@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, Check, CheckCircle2, Landmark, Loader2, MapPin, Palette, Plus, RefreshCw, X } from "lucide-react";
+import { AlertCircle, CalendarClock, Check, CheckCircle2, Landmark, Loader2, MapPin, Palette, Plus, RefreshCw, ShieldAlert, X } from "lucide-react";
 import { resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { TableSkeleton } from "./DashboardUI";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { dispatchTenantThemeChange, isThemeKey, type ThemeKey } from "./TenantThemeProvider";
+import { formatDateInputValue, getTrialCountdown } from "./trialDates";
 
 type School = {
   id: string;
@@ -14,6 +15,7 @@ type School = {
   npsn: string | null;
   plan?: PlanSlug;
   status?: string;
+  expiresAt?: string | null;
   kabupatenKota?: string | null;
   izinVervalDinas?: boolean;
 };
@@ -72,6 +74,24 @@ export function MasterSchools() {
   const [regionKabupaten, setRegionKabupaten] = useState("");
   const [regionIzin, setRegionIzin] = useState(true);
   const [regionBusy, setRegionBusy] = useState(false);
+  const [expiryModalSchool, setExpiryModalSchool] = useState<School | null>(null);
+  const [expiryDateInput, setExpiryDateInput] = useState("");
+  const [expiryStatusInput, setExpiryStatusInput] = useState<"ACTIVE" | "SUSPENDED">("ACTIVE");
+  const [expiryBusy, setExpiryBusy] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    nama: "",
+    slug: "",
+    npsn: "",
+    adminName: "",
+    adminEmail: "",
+    adminPassword: "",
+    plan: "pro" as PlanSlug,
+    trial14Hari: true,
+    isiKontenSiapPakai: true,
+  });
+  const [reloadTick, setReloadTick] = useState(0);
   const [toast, setToast] = useState<ToastState>(null);
   const [error, setError] = useState("");
 
@@ -119,7 +139,7 @@ export function MasterSchools() {
         }
       });
     return () => controller.abort();
-  }, [endpoint, page]);
+  }, [endpoint, page, reloadTick]);
 
   async function syncPlanToLms(school: School, nextPlan: PlanSlug) {
     const cleanPlan = resolvePlanSlug(nextPlan);
@@ -232,6 +252,84 @@ export function MasterSchools() {
     }
   }
 
+  async function updateSchoolExpiry(
+    school: School,
+    payload: { mode: "trial14" | "extend14" | "unlimited" | "suspend" | "custom"; expiresAt?: string | null; status?: "ACTIVE" | "SUSPENDED" },
+  ) {
+    setExpiryBusy(true);
+    setToast(null);
+    try {
+      const response = await fetchWithTimeout(`/api/master/sekolah/${encodeURIComponent(school.id)}/masa-aktif`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+        sekolah?: { status: string; expiresAt: string | null };
+      } | null;
+      if (!response.ok || !body?.sekolah) {
+        throw new Error(body?.error || "Gagal memperbarui masa aktif tenant.");
+      }
+      invalidateCache("/api/master/sekolah");
+      setResult((previous) =>
+        previous
+          ? {
+              ...previous,
+              sekolah: previous.sekolah.map((item) =>
+                item.id === school.id
+                  ? { ...item, status: body.sekolah!.status, expiresAt: body.sekolah!.expiresAt }
+                  : item,
+              ),
+            }
+          : previous,
+      );
+      setToast({ kind: "success", text: body.message || `Masa aktif ${school.nama} berhasil diperbarui.` });
+      setExpiryModalSchool(null);
+    } catch (failure: unknown) {
+      setToast({ kind: "error", text: describeFetchError(failure, "Gagal memperbarui masa aktif tenant.") });
+    } finally {
+      setExpiryBusy(false);
+    }
+  }
+
+  async function createNewSchool(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreateBusy(true);
+    setToast(null);
+    try {
+      const response = await fetchWithTimeout("/api/master/sekolah", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createForm),
+      });
+      const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!response.ok) {
+        throw new Error(body?.error || "Gagal membuat tenant sekolah baru.");
+      }
+      invalidateCache(["/api/master/sekolah", "/api/master/overview"]);
+      setToast({ kind: "success", text: body?.message || "Tenant sekolah baru berhasil dibuat." });
+      setCreateOpen(false);
+      setCreateForm({
+        nama: "",
+        slug: "",
+        npsn: "",
+        adminName: "",
+        adminEmail: "",
+        adminPassword: "",
+        plan: "pro",
+        trial14Hari: true,
+        isiKontenSiapPakai: true,
+      });
+      setReloadTick((value) => value + 1);
+    } catch (failure: unknown) {
+      setToast({ kind: "error", text: describeFetchError(failure, "Gagal membuat tenant baru.") });
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <MasterGlobalThemePanel />
@@ -240,9 +338,17 @@ export function MasterSchools() {
           <div>
             <h2 className="text-lg font-bold">Kelola Tenant</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Atur paket langganan tenant dan sinkronkan langsung ke server LMS (<code className="font-mono text-xs text-indigo-800">pkbm.siput.id</code>).
+              Atur paket langganan, masa uji coba 14 hari (end date), dan sinkronisasi langsung ke server LMS (<code className="font-mono text-xs text-indigo-800">pkbm.siput.id</code>).
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="master-primary inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold"
+          >
+            <Plus size={15} aria-hidden="true" />
+            Buat Tenant / Trial 14 Hari
+          </button>
         </div>
 
       {toast && (
@@ -289,6 +395,7 @@ export function MasterSchools() {
                     <th className="py-3 pr-4">Nama sekolah</th>
                     <th className="py-3 pr-4">Slug</th>
                     <th className="py-3 pr-4">NPSN</th>
+                    <th className="py-3 pr-4">Masa Aktif / End Date</th>
                     <th className="py-3 pr-4">Wilayah Dinas</th>
                     <th className="py-3 pr-4">Paket Langganan</th>
                     <th className="py-3">Sinkronisasi LMS</th>
@@ -298,6 +405,8 @@ export function MasterSchools() {
                   {result.sekolah.map((school) => {
                     const currentPlan = selectedPlans[school.id] ?? resolvePlanSlug(school.plan);
                     const busy = syncingId === school.id;
+                    const countdown = getTrialCountdown(school.expiresAt);
+                    const isSuspended = school.status === "SUSPENDED";
                     return (
                       <tr key={school.id} className="border-b border-[#e6dfd0]">
                         <td data-label="Nama sekolah" className="py-3 pr-4 font-semibold">
@@ -308,6 +417,45 @@ export function MasterSchools() {
                         </td>
                         <td data-label="NPSN" className="py-3 pr-4">
                           {school.npsn ?? "Belum diisi"}
+                        </td>
+                        <td data-label="Masa Aktif / End Date" className="py-3 pr-4">
+                          <div className="space-y-1">
+                            {isSuspended ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
+                                <ShieldAlert size={11} aria-hidden="true" />
+                                Diblokir (Suspended)
+                              </span>
+                            ) : countdown.hasExpiry ? (
+                              countdown.expired ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold text-rose-800">
+                                  <ShieldAlert size={11} aria-hidden="true" />
+                                  Kedaluwarsa ({countdown.formattedDate})
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-900">
+                                  <CalendarClock size={11} aria-hidden="true" />
+                                  s.d. {countdown.formattedDate} ({countdown.daysLeft} hari)
+                                </span>
+                              )
+                            ) : (
+                              <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+                                Aktif Penuh
+                              </span>
+                            )}
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpiryModalSchool(school);
+                                  setExpiryDateInput(formatDateInputValue(school.expiresAt));
+                                  setExpiryStatusInput(school.status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE");
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-indigo-800 hover:bg-indigo-50"
+                              >
+                                <CalendarClock size={12} aria-hidden="true" /> Atur End Date
+                              </button>
+                            </div>
+                          </div>
                         </td>
                         <td data-label="Wilayah Dinas" className="py-3 pr-4">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -449,6 +597,255 @@ export function MasterSchools() {
               </button>
               <button type="submit" disabled={regionBusy} className="master-primary px-4 py-2 text-xs">
                 {regionBusy ? "Menyimpan..." : "Simpan Wilayah"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {expiryModalSchool && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md space-y-4 rounded-2xl border border-white/60 bg-white p-6 text-slate-900 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">MASA AKTIF &amp; UJI COBA 14 HARI</p>
+                <h3 className="mt-1 text-lg font-extrabold">{expiryModalSchool.nama}</h3>
+              </div>
+              <button
+                type="button"
+                disabled={expiryBusy}
+                onClick={() => setExpiryModalSchool(null)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={expiryBusy}
+                onClick={() => void updateSchoolExpiry(expiryModalSchool, { mode: "trial14" })}
+                className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+              >
+                Mulai Trial 14 Hari Baru
+              </button>
+              <button
+                type="button"
+                disabled={expiryBusy}
+                onClick={() => void updateSchoolExpiry(expiryModalSchool, { mode: "extend14" })}
+                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+              >
+                Perpanjang +14 Hari
+              </button>
+              <button
+                type="button"
+                disabled={expiryBusy}
+                onClick={() => void updateSchoolExpiry(expiryModalSchool, { mode: "unlimited" })}
+                className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                Aktif Penuh (Unlimited)
+              </button>
+              <button
+                type="button"
+                disabled={expiryBusy}
+                onClick={() => void updateSchoolExpiry(expiryModalSchool, { mode: "suspend" })}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+              >
+                Blokir Sekarang
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void updateSchoolExpiry(expiryModalSchool, {
+                  mode: "custom",
+                  expiresAt: expiryDateInput.trim() || null,
+                  status: expiryStatusInput,
+                });
+              }}
+              className="space-y-3 border-t border-slate-200 pt-3"
+            >
+              <label className="block text-xs font-bold text-slate-700">
+                Tanggal Berakhir (End Date)
+                <input
+                  type="date"
+                  value={expiryDateInput}
+                  onChange={(e) => setExpiryDateInput(e.target.value)}
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+                <span className="mt-1 block text-[11px] font-normal text-slate-500">
+                  Kosongkan untuk menghapus tanggal kedaluwarsa. Setelah melewati end date, portal otomatis diblokir.
+                </span>
+              </label>
+
+              <label className="block text-xs font-bold text-slate-700">
+                Status Tenant
+                <select
+                  value={expiryStatusInput}
+                  onChange={(e) => setExpiryStatusInput(e.target.value === "SUSPENDED" ? "SUSPENDED" : "ACTIVE")}
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                >
+                  <option value="ACTIVE">ACTIVE (Mengikuti End Date)</option>
+                  <option value="SUSPENDED">SUSPENDED (Blokir Paksa)</option>
+                </select>
+              </label>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={expiryBusy}
+                  onClick={() => setExpiryModalSchool(null)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700"
+                >
+                  Batal
+                </button>
+                <button type="submit" disabled={expiryBusy} className="master-primary px-4 py-2 text-xs">
+                  {expiryBusy ? "Menyimpan..." : "Simpan End Date"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={createNewSchool}
+            className="max-h-[90vh] w-full max-w-lg space-y-3.5 overflow-y-auto rounded-2xl border border-white/60 bg-white p-6 text-slate-900 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">PROVISIONING TENANT BARU</p>
+                <h3 className="mt-1 text-lg font-extrabold">Buat Lembaga / Uji Coba 14 Hari</h3>
+              </div>
+              <button
+                type="button"
+                disabled={createBusy}
+                onClick={() => setCreateOpen(false)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-bold text-slate-700 sm:col-span-2">
+                Nama Sekolah / PKBM
+                <input
+                  type="text"
+                  required
+                  minLength={3}
+                  value={createForm.nama}
+                  onChange={(e) => setCreateForm({ ...createForm, nama: e.target.value })}
+                  placeholder="Contoh: PKBM Karya Mandiri"
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                Subdomain / Slug
+                <input
+                  type="text"
+                  required
+                  value={createForm.slug}
+                  onChange={(e) => setCreateForm({ ...createForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+                  placeholder="karya-mandiri"
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 font-mono text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                NPSN (Opsional)
+                <input
+                  type="text"
+                  maxLength={8}
+                  value={createForm.npsn}
+                  onChange={(e) => setCreateForm({ ...createForm, npsn: e.target.value.toUpperCase() })}
+                  placeholder="P9900112"
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                Paket Langganan
+                <select
+                  value={createForm.plan}
+                  onChange={(e) => setCreateForm({ ...createForm, plan: resolvePlanSlug(e.target.value) })}
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                >
+                  {PLAN_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                Nama Admin Sekolah
+                <input
+                  type="text"
+                  required
+                  minLength={2}
+                  value={createForm.adminName}
+                  onChange={(e) => setCreateForm({ ...createForm, adminName: e.target.value })}
+                  placeholder="Admin PKBM"
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                Email Login Admin
+                <input
+                  type="email"
+                  required
+                  value={createForm.adminEmail}
+                  onChange={(e) => setCreateForm({ ...createForm, adminEmail: e.target.value })}
+                  placeholder="admin@pkbm.sch.id"
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">
+                Password Awal Admin
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={createForm.adminPassword}
+                  onChange={(e) => setCreateForm({ ...createForm, adminPassword: e.target.value })}
+                  placeholder="Minimal 6 karakter"
+                  className="master-field mt-1 w-full rounded-xl px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-950">
+              <input
+                type="checkbox"
+                checked={createForm.trial14Hari}
+                onChange={(e) => setCreateForm({ ...createForm, trial14Hari: e.target.checked })}
+                className="h-4 w-4 rounded border-amber-300"
+              />
+              Aktifkan sebagai Uji Coba Gratis 14 Hari (otomatis blokir setelah 14 hari)
+            </label>
+
+            <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={createForm.isiKontenSiapPakai}
+                onChange={(e) => setCreateForm({ ...createForm, isiKontenSiapPakai: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Salin modul &amp; bank soal siap pakai dari Pustaka Pusat
+            </label>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={createBusy}
+                onClick={() => setCreateOpen(false)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700"
+              >
+                Batal
+              </button>
+              <button type="submit" disabled={createBusy} className="master-primary px-4 py-2 text-xs">
+                {createBusy ? "Membuat..." : "Simpan Tenant"}
               </button>
             </div>
           </form>

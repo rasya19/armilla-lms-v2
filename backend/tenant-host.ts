@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { tenantAccessible } from "./tenant-access.js";
+import { tenantAccessible, tenantBlockReason } from "./tenant-access.js";
 
 type Tenant = { id: string; slug: string; status: "ACTIVE" | "SUSPENDED"; expiresAt: Date | null };
 export type HostTenant = { kind: "main" | "local" } | { kind: "school"; id: string; slug: string };
@@ -45,11 +45,24 @@ export function tenantHost(host: string | undefined, production: boolean, appOri
 export function tenantHostMiddleware(production: boolean, findSchool: (slug: string) => Promise<Tenant | null>, appOrigin?: string): RequestHandler {
   return async (req, res, next) => {
     const host = tenantHost(req.get("host"), production, appOrigin);
-    if (host.kind === "invalid") return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar." });
+    if (host.kind === "invalid") return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar.", code: "TENANT_NOT_FOUND" });
     if (host.kind === "school") {
       try {
         const school = await findSchool(host.slug);
-        if (!school || !tenantAccessible(school)) return res.status(404).json({ error: "Sekolah / Lembaga tidak terdaftar atau tidak aktif." });
+        if (!school || !tenantAccessible(school)) {
+          const reason = tenantBlockReason(school);
+          if (reason === "EXPIRED" && school?.expiresAt) {
+            return res.status(404).json({
+              error: "Masa uji coba 14 hari / masa aktif lembaga telah berakhir. Akses otomatis diblokir.",
+              code: "TENANT_EXPIRED",
+              expiresAt: school.expiresAt.toISOString(),
+            });
+          }
+          return res.status(404).json({
+            error: "Sekolah / Lembaga tidak terdaftar atau tidak aktif.",
+            code: reason === "SUSPENDED" ? "TENANT_SUSPENDED" : "TENANT_NOT_FOUND",
+          });
+        }
         req.tenant = { kind: "school", id: school.id, slug: school.slug };
       } catch (error) {
         console.error("Gagal memeriksa subdomain sekolah:", error instanceof Error ? error.name : "UnknownError");

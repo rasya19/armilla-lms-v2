@@ -68,6 +68,7 @@ import {
 } from "./authSessionCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { getPlanBySlug, hasPlanAccess, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
+import { formatEndDateId, getTrialCountdown } from "./trialDates";
 import {
   CekRaportView,
   ModulKesetaraanView,
@@ -579,10 +580,12 @@ export function SchoolLogin() {
             plan?: string;
             rawPlan?: string | null;
             themeKey?: string;
+            expiresAt?: string | null;
             user?: SchoolAuthCache["user"];
           };
           const resolvedSlug = typeof payload.slug === "string" ? payload.slug : hostSlug;
           const resolvedSchool = typeof payload.sekolah === "string" && payload.sekolah ? payload.sekolah : schoolName;
+          const resolvedExpiresAt = typeof payload.expiresAt === "string" ? payload.expiresAt : null;
           if (resolvedSlug) setCacheScope(resolvedSlug);
           saveAuthCache<SchoolAuthCache>("sekolah", {
             token: payload.token,
@@ -594,6 +597,7 @@ export function SchoolLogin() {
             plan: resolvePlanSlug(payload.plan ?? payload.rawPlan ?? null),
             rawPlan: payload.rawPlan ?? null,
             themeKey: payload.themeKey,
+            expiresAt: resolvedExpiresAt,
             user: payload.user,
             updatedAt: Date.now(),
           });
@@ -604,6 +608,7 @@ export function SchoolLogin() {
               logoUrl,
               themeKey: payload.themeKey,
               plan: payload.plan,
+              expiresAt: resolvedExpiresAt,
             });
           }
         }
@@ -654,10 +659,12 @@ export function SchoolHome() {
   if (fallbackSlug) {
     setCacheScope(fallbackSlug);
   }
-  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() => (initialAuth ? "ready" : "loading"));
+  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "blocked" | "error">(() => (initialAuth ? "ready" : "loading"));
   const [school, setSchool] = useState(() => initialAuth?.sekolah || formatSlugDisplayName(fallbackSlug));
   const [slug, setSlug] = useState(() => fallbackSlug);
   const [plan, setPlan] = useState<PlanSlug>(() => (initialAuth ? resolvePlanSlug(initialAuth.plan ?? initialAuth.rawPlan ?? null) : "basic"));
+  const [expiresAt, setExpiresAt] = useState<string | null>(() => initialAuth?.expiresAt ?? null);
+  const [blockedDetail, setBlockedDetail] = useState<{ error: string; expiresAt?: string | null } | null>(null);
   const [cachedTheme, setCachedTheme] = useState<ThemeKey | undefined>(() =>
     initialAuth?.themeKey && isThemeKey(initialAuth.themeKey) ? initialAuth.themeKey : undefined,
   );
@@ -703,6 +710,25 @@ export function SchoolHome() {
         setStatus("unauthorized");
         return;
       }
+      if (response.status === 403) {
+        const blockedBody = (await response.json().catch(() => null)) as {
+          code?: string;
+          error?: string;
+          expiresAt?: string | null;
+        } | null;
+        if (blockedBody?.code === "TENANT_EXPIRED" || blockedBody?.code === "TENANT_SUSPENDED") {
+          clearAuthCache("sekolah");
+          invalidateCache();
+          setBlockedDetail({
+            error:
+              blockedBody.error ||
+              "Masa uji coba 14 hari / masa aktif lembaga telah berakhir. Akses portal diblokir otomatis.",
+            expiresAt: blockedBody.expiresAt ?? null,
+          });
+          setStatus("blocked");
+          return;
+        }
+      }
       if (!response.ok) throw new Error("Gagal memeriksa sesi sekolah.");
       const rawData: unknown = await response.json();
       const data = unwrapSchoolPayload(rawData);
@@ -722,6 +748,7 @@ export function SchoolHome() {
         (typeof data.plan === "string" ? data.plan : null) ??
         (typeof data.rawPlan === "string" ? data.rawPlan : null);
       const resolvedPlan = resolvePlanSlug(rawOrNormalized);
+      const resolvedExpiresAt = typeof data.expiresAt === "string" ? data.expiresAt : null;
       const devFlag =
         data.isDeveloper === true ||
         (typeof data.email === "string" && data.email.trim().toLowerCase() === DEVELOPER_EMAIL);
@@ -729,6 +756,7 @@ export function SchoolHome() {
 
       setSchool(resolvedSchoolName);
       setSlug(resolvedSlug);
+      setExpiresAt(resolvedExpiresAt);
       setCacheScope(resolvedSlug);
       setPlan((prevPlan) => {
         if (prevPlan !== resolvedPlan) {
@@ -759,6 +787,7 @@ export function SchoolHome() {
         plan: resolvedPlan,
         rawPlan: typeof data.rawPlan === "string" ? data.rawPlan : null,
         themeKey: themeKeyValue,
+        expiresAt: resolvedExpiresAt,
         updatedAt: Date.now(),
       });
       saveCachedTenantProfile(resolvedSlug, {
@@ -766,6 +795,7 @@ export function SchoolHome() {
         slug: resolvedSlug,
         themeKey: themeKeyValue,
         plan: resolvedPlan,
+        expiresAt: resolvedExpiresAt,
       });
       if (upgradePrompt && hasPlanAccess(resolvedPlan, upgradePrompt.requiredPlan)) {
         setUpgradePrompt(null);
@@ -894,6 +924,32 @@ export function SchoolHome() {
   const effectiveRole: SandboxRole = isDeveloper ? sandboxRole : "ADMIN";
 
   if (status === "unauthorized") return <Navigate to="/login" replace />;
+  if (status === "blocked") {
+    return (
+      <main className="glass-shell flex min-h-screen items-center justify-center p-6">
+        <div className="glass-panel max-w-md rounded-3xl p-7 text-slate-900">
+          <h1 className="text-2xl font-bold">Masa Uji Coba 14 Hari Berakhir</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-700">
+            {blockedDetail?.error ||
+              "Masa uji coba 14 hari / masa aktif lembaga telah berakhir. Akses portal diblokir otomatis."}
+          </p>
+          {blockedDetail?.expiresAt && (
+            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-900">
+              End Date: {formatEndDateId(blockedDetail.expiresAt, true)}
+            </p>
+          )}
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link to="/login" className="master-primary rounded-xl px-4 py-2.5 text-xs font-bold">
+              Kembali ke Login
+            </Link>
+            <Link to="/" className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700">
+              Beranda Utama
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
   if (status === "loading") return <PortalSpinner label="Memuat portal sekolah" />;
   if (status !== "ready") return <main className="school-dashboard min-h-screen bg-slate-950 p-8 text-white">{error || "Sesi tidak tersedia. Muat ulang halaman."}</main>;
 
@@ -931,6 +987,7 @@ export function SchoolHome() {
         <SchoolPortalHeader
           school={school}
           planStyle={planStyle}
+          expiresAt={expiresAt}
           menuOpen={menuOpen}
           desktopSidebarOpen={desktopSidebarOpen}
           onToggleSidebar={toggleSidebar}
@@ -942,6 +999,7 @@ export function SchoolHome() {
               school={school}
               slug={slug}
               plan={plan}
+              expiresAt={expiresAt}
               onSelect={(target) => selectView(target)}
               onOpenView={(target, req, lbl) => selectView(target, req, lbl)}
               onRequireUpgrade={openUpgradePrompt}
@@ -1336,12 +1394,14 @@ function SchoolSidebar({
 function SchoolPortalHeader({
   school,
   planStyle,
+  expiresAt,
   menuOpen,
   desktopSidebarOpen,
   onToggleSidebar,
 }: {
   school: string;
   planStyle: { label: string; sidebarClass: string; headerClass: string };
+  expiresAt: string | null;
   menuOpen: boolean;
   desktopSidebarOpen: boolean;
   onToggleSidebar: () => void;
@@ -1350,6 +1410,7 @@ function SchoolPortalHeader({
   const isDark = theme === "dark";
   const palette = SIDEBAR_THEMES[theme] ?? SIDEBAR_THEMES.ocean;
   const headerBadgeClass = isDark ? planStyle.sidebarClass : planStyle.headerClass;
+  const countdown = getTrialCountdown(expiresAt);
   return (
     <header className="dashboard-header sticky top-0 z-30 mx-4 mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-6 sm:mt-6 sm:px-6">
       <button
@@ -1388,6 +1449,19 @@ function SchoolPortalHeader({
           <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${headerBadgeClass}`}>
             {planStyle.label}
           </span>
+          {countdown.hasExpiry && (
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold ${
+                isDark
+                  ? "border-amber-400/40 bg-amber-500/15 text-amber-200"
+                  : "border-amber-300 bg-amber-50 text-amber-900"
+              }`}
+            >
+              {countdown.expired
+                ? "Masa Uji Coba Berakhir"
+                : `Uji Coba · Sisa ${countdown.daysLeft} hari (s.d. ${countdown.formattedDate})`}
+            </span>
+          )}
         </div>
       </div>
       {isDark ? (
@@ -1502,6 +1576,7 @@ function SchoolOverview({
   school,
   slug,
   plan,
+  expiresAt,
   onSelect,
   onOpenView,
   onRequireUpgrade,
@@ -1509,6 +1584,7 @@ function SchoolOverview({
   school: string;
   slug: string;
   plan: PlanSlug;
+  expiresAt: string | null;
   onSelect: (view: ActiveDataKind) => void;
   onOpenView: (view: SchoolView, requiredPlan?: Exclude<PlanSlug, "basic">, label?: string) => void;
   onRequireUpgrade: (featureName: string, requiredPlan: Exclude<PlanSlug, "basic">) => void;
@@ -1520,6 +1596,7 @@ function SchoolOverview({
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
   const activePlan = getPlanBySlug(plan);
+  const countdown = getTrialCountdown(expiresAt);
   const canUseRecap = hasPlanAccess(plan, "reguler");
   const canUsePro = hasPlanAccess(plan, "pro");
 
@@ -1972,6 +2049,14 @@ function SchoolOverview({
                     <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Kapasitas Guru &amp; Kelas</dt>
                     <dd className={`font-bold tabular-nums ${isDark ? "text-white" : "text-slate-900"}`}>
                       {summary.guru} guru · {summary.kelas} kelas
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Masa Aktif / End Date</dt>
+                    <dd className={`font-bold ${countdown.hasExpiry ? (isDark ? "text-amber-300" : "text-amber-800") : (isDark ? "text-emerald-300" : "text-emerald-700")}`}>
+                      {countdown.hasExpiry
+                        ? `${countdown.formattedDate} (Sisa ${countdown.daysLeft} hari)`
+                        : "Aktif Penuh"}
                     </dd>
                   </div>
                 </dl>

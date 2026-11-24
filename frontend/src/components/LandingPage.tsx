@@ -386,19 +386,20 @@ export const LandingPage: React.FC = () => {
           <nav aria-label="Navigasi utama" className="hidden items-center gap-7 text-sm font-medium lg:flex">
             {nav}
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <PWAInstallButton
               compact
-              className="landing-secondary hidden items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:inline-flex"
+              className="landing-secondary hidden items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold transition sm:inline-flex"
             />
-            <Link to="/dinas" className="landing-secondary hidden items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition sm:flex">
+            <Link to="/dinas" className="landing-secondary hidden items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold transition xl:flex">
               Portal Dinas
             </Link>
-            <Link to="/login" className="landing-secondary hidden items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition sm:flex">
+            <Link to="/login" className="landing-secondary hidden items-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-sm font-semibold transition sm:flex">
               <LogIn size={15} /> Masuk LMS
             </Link>
-            <Link to="/daftar" className="landing-primary hidden rounded-full px-5 py-2.5 text-sm font-bold transition md:block">
-              Daftar lembaga
+            <Link to="/daftar?mode=trial" className="landing-primary hidden shrink-0 whitespace-nowrap rounded-full px-5 py-2.5 text-sm font-bold transition md:inline-flex md:items-center md:gap-2">
+              <Sparkles size={15} aria-hidden="true" />
+              Coba Gratis 14 Hari
             </Link>
             <button
               type="button"
@@ -420,8 +421,11 @@ export const LandingPage: React.FC = () => {
             />
             <Link to="/dinas" onClick={() => setMenuOpen(false)}>Portal Dinas</Link>
             <Link to="/login" onClick={() => setMenuOpen(false)}>Masuk LMS</Link>
-            <Link to="/daftar" onClick={() => setMenuOpen(false)} className={palette.mobileCta}>
-              Daftar lembaga <ArrowRight size={15} className="inline" />
+            <Link to="/daftar?mode=trial" onClick={() => setMenuOpen(false)} className={palette.mobileCta}>
+              Coba Gratis 14 Hari <ArrowRight size={15} className="inline" />
+            </Link>
+            <Link to="/daftar" onClick={() => setMenuOpen(false)}>
+              Daftar lembaga tahunan
             </Link>
           </nav>
         )}
@@ -443,10 +447,15 @@ export const LandingPage: React.FC = () => {
                 Platform pendidikan untuk membantu berbagai lembaga mengelola administrasi dan kegiatan belajar dalam satu tempat.
               </p>
               <div className="mt-9 flex flex-wrap gap-3">
-                <a href="#paket" className="landing-primary inline-flex items-center gap-4 rounded-full px-6 py-4 text-sm font-bold transition">
-                  Lihat paket langganan <ArrowRight size={17} />
+                <Link to="/daftar?mode=trial" className="landing-primary inline-flex shrink-0 items-center gap-3 whitespace-nowrap rounded-full px-6 py-4 text-sm font-bold transition">
+                  <Sparkles size={16} aria-hidden="true" />
+                  Coba Gratis 14 Hari
+                  <ArrowRight size={17} />
+                </Link>
+                <a href="#paket" className="landing-secondary inline-flex shrink-0 items-center gap-3 whitespace-nowrap rounded-full px-6 py-4 text-sm font-semibold transition">
+                  Lihat paket langganan
                 </a>
-                <a href="#program" className="landing-secondary inline-flex items-center gap-3 rounded-full px-6 py-4 text-sm font-semibold transition">
+                <a href="#program" className="landing-secondary inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-5 py-4 text-sm font-semibold transition">
                   Jelajahi fitur <ArrowDown size={16} />
                 </a>
               </div>
@@ -653,14 +662,22 @@ export const LandingPage: React.FC = () => {
                       ))}
                     </ul>
                   </div>
-                  <Link
-                    to={`/daftar?paket=${plan.slug}`}
-                    className={`mt-8 inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3.5 text-sm font-bold transition ${
-                      plan.popular ? 'landing-primary' : 'landing-secondary'
-                    }`}
-                  >
-                    Pilih Paket <ArrowRight size={16} />
-                  </Link>
+                  <div className="mt-8 space-y-2.5">
+                    <Link
+                      to={`/daftar?paket=${plan.slug}`}
+                      className={`inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3.5 text-sm font-bold transition ${
+                        plan.popular ? 'landing-primary' : 'landing-secondary'
+                      }`}
+                    >
+                      Pilih Paket <ArrowRight size={16} />
+                    </Link>
+                    <Link
+                      to={`/daftar?mode=trial&paket=${plan.slug}`}
+                      className={`block text-center text-xs font-bold underline-offset-4 transition hover:underline ${palette.eyebrow}`}
+                    >
+                      Atau coba gratis 14 hari dulu
+                    </Link>
+                  </div>
                 </article>
               ))}
             </div>
@@ -677,12 +694,18 @@ export const LandingPage: React.FC = () => {
                 Bertumbuh bersama dalam pendidikan.
               </h2>
               <p className={`mt-5 max-w-xl text-sm leading-7 ${palette.bodyText}`}>
-                Daftarkan lembaga untuk menggunakan layanan LMS Kesetaraan.
+                Aktifkan uji coba gratis 14 hari sekarang untuk langsung mencoba portal sekolah, atau daftarkan langganan resmi lembaga Anda.
               </p>
             </div>
-            <Link to="/daftar" className="landing-primary inline-flex shrink-0 items-center gap-3 rounded-full px-6 py-4 text-sm font-bold transition">
-              Daftar lembaga <ArrowRight size={17} />
-            </Link>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link to="/daftar?mode=trial" className="landing-primary inline-flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-full px-6 py-4 text-sm font-bold transition">
+                <Sparkles size={16} aria-hidden="true" />
+                Coba Gratis 14 Hari <ArrowRight size={17} />
+              </Link>
+              <Link to="/daftar" className="landing-secondary inline-flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-full px-6 py-4 text-sm font-semibold transition">
+                Daftar lembaga
+              </Link>
+            </div>
           </div>
         </section>
       </main>

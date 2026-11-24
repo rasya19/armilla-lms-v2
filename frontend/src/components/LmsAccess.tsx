@@ -40,6 +40,7 @@ type Session = {
   sekolah?: string;
   slug?: string;
   plan?: PlanSlug;
+  expiresAt?: string | null;
   email?: string | null;
   nuptk?: string | null;
   telepon?: string | null;
@@ -245,7 +246,8 @@ export function LmsHome() {
       ? { nama: initialCache.nama, peran: initialCache.peran, wajibGantiPassword: Boolean(initialCache.wajibGantiPassword) }
       : null,
   );
-  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "error">(() => (initialCache ? "ready" : "loading"));
+  const [status, setStatus] = useState<"loading" | "ready" | "unauthorized" | "blocked" | "error">(() => (initialCache ? "ready" : "loading"));
+  const [blockedMessage, setBlockedMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeNav, setActiveNav] = useState(() => hashNav[window.location.hash] ?? "beranda");
@@ -265,6 +267,18 @@ export function LmsHome() {
           clearAuthCache("lms");
           setStatus("unauthorized");
           return;
+        }
+        if (response.status === 403) {
+          const blockedBody = (await response.json().catch(() => null)) as { code?: string; error?: string } | null;
+          if (blockedBody?.code === "TENANT_EXPIRED" || blockedBody?.code === "TENANT_SUSPENDED") {
+            clearAuthCache("lms");
+            setBlockedMessage(
+              blockedBody.error ||
+                "Masa uji coba 14 hari / masa aktif lembaga telah berakhir. Akses otomatis diblokir.",
+            );
+            setStatus("blocked");
+            return;
+          }
         }
         if (!response.ok) throw new Error("Sesi LMS tidak tersedia.");
         const data: unknown = await response.json();
@@ -304,6 +318,7 @@ export function LmsHome() {
           sekolah: typeof raw.sekolah === "string" ? raw.sekolah : undefined,
           slug: typeof raw.slug === "string" ? raw.slug : undefined,
           plan: resolvePlanSlug(typeof raw.plan === "string" ? raw.plan : undefined),
+          expiresAt: typeof raw.expiresAt === "string" ? raw.expiresAt : null,
           email: typeof raw.email === "string" ? raw.email : null,
           nuptk: typeof raw.nuptk === "string" ? raw.nuptk : null,
           telepon: typeof raw.telepon === "string" ? raw.telepon : null,
@@ -319,6 +334,7 @@ export function LmsHome() {
           nama: nextSession.nama,
           peran: nextSession.peran,
           wajibGantiPassword: nextSession.wajibGantiPassword,
+          expiresAt: nextSession.expiresAt ?? null,
           updatedAt: Date.now(),
         });
         setStatus("ready");
@@ -351,6 +367,24 @@ export function LmsHome() {
   }
 
   if (status === "unauthorized") return <Navigate to="/lms/login" replace />;
+  if (status === "blocked") {
+    return (
+      <main className="glass-shell flex min-h-screen items-center justify-center p-6">
+        <div className="glass-panel max-w-md rounded-3xl p-7 text-slate-900">
+          <h1 className="text-2xl font-bold">Masa Uji Coba 14 Hari Berakhir</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-700">{blockedMessage}</p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link to="/lms/login" className="master-primary rounded-xl px-4 py-2.5 text-xs font-bold">
+              Kembali ke Login LMS
+            </Link>
+            <Link to="/" className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700">
+              Beranda
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
   if (status === "loading") return <PortalSpinner label="Memuat portal LMS" />;
   if (status !== "ready" || !session) return <main className="min-h-screen bg-slate-950 p-8 text-white">{error || "Layanan sesi tidak tersedia. Muat ulang halaman."}</main>;
   return (

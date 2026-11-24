@@ -505,9 +505,13 @@ async function loadProfile(slug: string, signal: AbortSignal): Promise<PublicPro
   if (!slugValid(slug)) throw new Error("Sekolah tidak ditemukan.");
   const response = await fetch(`/api/public/sekolah/${encodeURIComponent(slug)}`, { signal });
   if (!response.ok) {
+    const errPayload = (await response.json().catch(() => null)) as { code?: string; error?: string } | null;
+    if (errPayload?.code === "TENANT_EXPIRED" && errPayload.error) {
+      throw new Error(errPayload.error);
+    }
     throw new Error(
       response.status === 404
-        ? "Sekolah tidak ditemukan atau tidak aktif."
+        ? errPayload?.error || "Sekolah tidak ditemukan atau tidak aktif."
         : "Portal sekolah belum dapat dimuat.",
     );
   }
@@ -877,9 +881,11 @@ function SchoolPortal({ slug }: { slug: string }) {
           {loadError ? (
             <>
               <h1 className={`mt-5 text-xl font-bold tracking-tight ${fallbackPalette.heading}`}>
-                Portal Belum Tersedia
+                {loadError.toLowerCase().includes("uji coba") || loadError.toLowerCase().includes("diblokir")
+                  ? "Akses Portal Diblokir Otomatis"
+                  : "Portal Belum Tersedia"}
               </h1>
-              <p role="alert" className="mt-2 text-sm text-rose-700">
+              <p role="alert" className="mt-2 text-sm leading-6 text-rose-700">
                 {loadError}
               </p>
               <Link

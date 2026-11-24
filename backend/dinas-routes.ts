@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Request } from "express";
 import { prisma } from "./db.js";
+import { tenantAccessible } from "./tenant-access.js";
 import {
   computeVervalCompleteness,
   detectPaketCategory,
@@ -74,10 +75,12 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
     try {
       const { cutoffDate, cutoffLabel } = resolveActiveCutoffDate();
 
+      const now = new Date();
+      const activeExpiryFilter = { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] };
       const [allEligibleSchools, schools] = await Promise.all([
         ctx.isSuperAdmin
           ? prisma.sekolah.findMany({
-              where: { status: "ACTIVE", izinVervalDinas: true, kabupatenKota: { not: null } },
+              where: { status: "ACTIVE", ...activeExpiryFilter, izinVervalDinas: true, kabupatenKota: { not: null } },
               select: { kabupatenKota: true },
               distinct: ["kabupatenKota"],
               orderBy: { kabupatenKota: "asc" },
@@ -86,6 +89,7 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
         prisma.sekolah.findMany({
           where: {
             status: "ACTIVE",
+            ...activeExpiryFilter,
             izinVervalDinas: true,
             ...(effectiveWilayah
               ? { kabupatenKota: { equals: effectiveWilayah.trim(), mode: "insensitive" } }
@@ -318,10 +322,10 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
     try {
       const school = await prisma.sekolah.findUnique({
         where: { id: sekolahId },
-        select: { id: true, nama: true, npsn: true, slug: true, kabupatenKota: true, izinVervalDinas: true, tanggalCutOffDapodik: true, status: true },
+        select: { id: true, nama: true, npsn: true, slug: true, kabupatenKota: true, izinVervalDinas: true, tanggalCutOffDapodik: true, status: true, expiresAt: true },
       });
-      if (!school || school.status !== "ACTIVE" || !school.izinVervalDinas) {
-        return res.status(404).json({ error: "PKBM tidak ditemukan atau tidak mengaktifkan akses verval Dinas." });
+      if (!school || !tenantAccessible(school) || !school.izinVervalDinas) {
+        return res.status(404).json({ error: "PKBM tidak ditemukan, masa aktif berakhir, atau tidak mengaktifkan akses verval Dinas." });
       }
       if (!ctx.isSuperAdmin && !sameRegion(school.kabupatenKota, ctx.wilayahKabupaten)) {
         return res.status(403).json({ error: "PKBM ini berada di luar wilayah tugas Anda." });
@@ -479,14 +483,15 @@ export function dinasRoutes(resolveDinas: (req: Request) => Promise<DinasContext
             select: {
               id: true,
               status: true,
+              expiresAt: true,
               kabupatenKota: true,
               izinVervalDinas: true,
             },
           },
         },
       });
-      if (!target || !target.sekolah || target.sekolah.status !== "ACTIVE" || !target.sekolah.izinVervalDinas) {
-        return res.status(404).json({ error: "Siswa atau PKBM tidak ditemukan atau tidak aktif untuk verval Dinas." });
+      if (!target || !target.sekolah || !tenantAccessible(target.sekolah) || !target.sekolah.izinVervalDinas) {
+        return res.status(404).json({ error: "Siswa atau PKBM tidak ditemukan, masa aktif berakhir, atau tidak aktif untuk verval Dinas." });
       }
       if (!ctx.isSuperAdmin && !sameRegion(target.sekolah.kabupatenKota, ctx.wilayahKabupaten)) {
         return res.status(403).json({ error: "Siswa ini berada di PKBM di luar wilayah kabupaten/kota Anda." });

@@ -17,6 +17,7 @@ import {
   type MasterAuthCache,
 } from "./components/authSessionCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./components/fetchWithTimeout";
+import { formatEndDateId } from "./components/trialDates";
 
 function Unavailable({ schoolLogin = false }: { schoolLogin?: boolean }) {
   return <main className="min-h-screen bg-slate-950 px-6 py-24 text-white"><div className="mx-auto max-w-lg"><h1 className="text-3xl font-bold">{schoolLogin ? "Masuk melalui subdomain sekolah" : "Fitur belum tersedia"}</h1><p className="mt-4 leading-7 text-slate-300">{schoolLogin ? "Gunakan alamat login sekolah Anda. Hubungi admin sekolah jika belum mengetahui alamatnya." : "Layanan ini sedang disiapkan dan belum menerima data. Silakan kembali ke halaman utama."}</p><Link className="mt-8 inline-block text-amber-300 underline" to="/">Kembali ke beranda</Link></div></main>;
@@ -156,6 +157,7 @@ export default function App() {
   const schoolDomain = !!matchedBase && !mainDomain;
   const subdomainSlug = schoolDomain && matchedBase ? hostname.slice(0, -(matchedBase.length + 1)) : "";
   const [status, setStatus] = useState<"ready" | "missing">("ready");
+  const [missingInfo, setMissingInfo] = useState<{ code?: string; error?: string; expiresAt?: string | null } | null>(null);
   const [contextWarning, setContextWarning] = useState("");
 
   useEffect(() => {
@@ -164,6 +166,12 @@ export default function App() {
     fetchWithTimeout("/api/tenant/context", { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404) {
+          const errBody = (await response.json().catch(() => null)) as {
+            code?: string;
+            error?: string;
+            expiresAt?: string | null;
+          } | null;
+          setMissingInfo(errBody);
           setStatus("missing");
           return;
         }
@@ -184,6 +192,7 @@ export default function App() {
           throw new Error("Respons sekolah tidak valid.");
         }
         setContextWarning("");
+        setMissingInfo(null);
         setStatus("ready");
       })
       .catch((failure: unknown) => {
@@ -194,7 +203,28 @@ export default function App() {
     return () => controller.abort();
   }, [schoolDomain]);
 
-  if (status === "missing") return <main className="glass-shell flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md rounded-3xl p-6"><h1 className="text-2xl font-bold">Sekolah / Lembaga Tidak Terdaftar (404)</h1><p className="mt-4 text-sm">Sekolah tidak ditemukan atau tidak aktif.</p><a className="master-primary mt-5 inline-block" href={`https://${matchedBase ?? "pkbm.siput.id"}`}>Kembali ke domain utama</a></div></main>;
+  if (status === "missing") {
+    const isExpired = missingInfo?.code === "TENANT_EXPIRED";
+    return (
+      <main className="glass-shell flex min-h-screen items-center justify-center p-6">
+        <div className="glass-panel max-w-md rounded-3xl p-7">
+          <h1 className="text-2xl font-bold text-slate-900">
+            {isExpired ? "Masa Uji Coba 14 Hari Berakhir" : "Sekolah / Lembaga Tidak Terdaftar (404)"}
+          </h1>
+          <p className="mt-4 text-sm leading-6 text-slate-700">
+            {isExpired
+              ? `Akses portal sekolah (${subdomainSlug}.${matchedBase ?? "pkbm.siput.id"}) otomatis diblokir karena masa uji coba / masa aktif telah berakhir${
+                  missingInfo?.expiresAt ? ` pada ${formatEndDateId(missingInfo.expiresAt, true)}` : ""
+                }. Hubungi admin Rasyatech untuk mengaktifkan atau memperpanjang paket langganan.`
+              : missingInfo?.error || "Sekolah tidak ditemukan atau tidak aktif."}
+          </p>
+          <a className="master-primary mt-5 inline-block rounded-xl px-5 py-2.5 text-sm font-bold" href={`https://${matchedBase ?? "pkbm.siput.id"}`}>
+            Kembali ke domain utama
+          </a>
+        </div>
+      </main>
+    );
+  }
   if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
   if (schoolDomain) {
     return (

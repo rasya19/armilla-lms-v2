@@ -33,7 +33,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 5 Paket A (Kls 5): Hidup Rukun, Jujur, dan Berakhlak Mulia",
     summary: "Penguatan karakter keimanan dan budi pekerti warga belajar Paket A Fase C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PAI-5/A-PAI-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -41,7 +41,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 5 Paket A (Kls 5): Nilai Pancasila, Gotong Royong & Musyawarah",
     summary: "Penerapan nilai Pancasila dalam kehidupan keluarga dan masyarakat sekitar.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PPKn-5/A-PPKn-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -49,7 +49,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 5 Paket A (Kls 5): Membaca Kritis Teks Informasi & Menulis Cerita Pengalaman",
     summary: "Pengembangan literasi membaca pemahaman dan menulis kreatif Fase C Paket A.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-BInd-5/A-BInd-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -57,7 +57,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 5 Paket A (Kls 5): Pecahan, Desimal, dan Pengukuran Bangun Datar",
     summary: "Latihan pemecahan masalah pecahan dan luas bangun datar kontekstual.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-Mat-5/A-Mat-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -65,7 +65,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPAS",
     title: "Modul 5 Paket A (Kls 5): Ekosistem, Cahaya, Bunyi & Kondisi Geografis Indonesia",
     summary: "Integrasi Ilmu Pengetahuan Alam dan Sosial Fase C Paket A Setara SD.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-IPA-5/A-IPA-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -73,7 +73,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 5 Paket A (Kls 5): Daily Vocabulary, Numbers & Simple Expressions",
     summary: "Pengenalan kosakata dasar dan ungkapan sederhana bahasa Inggris sehari-hari.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-BIng-5/A-BIng-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -81,7 +81,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 5 Paket A (Kls 5): Gerak Dasar, Kebugaran & Kebersihan Diri",
     summary: "Aktivitas jasmani sederhana dan pembiasaan hidup bersih serta sehat.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PJOK-5/A-PJOK-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -89,7 +89,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 5 Paket A (Kls 5): Menggambar Ekspresif, Lagu Daerah & Kerajinan Tangan",
     summary: "Apresiasi seni rupa, musik daerah, dan keterampilan kreatif tingkat dasar.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-SBD-5/A-SBD-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -97,7 +97,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan & Keterampilan",
     title: "Modul 5 Paket A (Kls 5): Kemandirian Belajar, Kerapian & Prakarya Sederhana",
     summary: "Modul khas kesetaraan untuk melatih kemandirian dan keterampilan fungsional.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PK-5/A-PK-5.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // --- Paket A · Kelas 6 ---
@@ -107,7 +107,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 6 Paket A (Kls 6): Tanggung Jawab, Toleransi & Persiapan Lulus Paket A",
     summary: "Pemantapan nilai keimanan, empati, dan akhlak mulia kelas akhir Paket A.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PAI-6/A-PAI-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -115,7 +115,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 6 Paket A (Kls 6): Persatuan dalam Keberagaman & Hak Kewajiban Anak",
     summary: "Pemahaman kebinekaan, persatuan bangsa, dan aturan hidup bermasyarakat.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PPKn-6/A-PPKn-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -123,7 +123,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 6 Paket A (Kls 6): Teks Eksplanasi, Pidato Singkat & Ringkasan Bacaan",
     summary: "Keterampilan literasi akhir Fase C Paket A sebelum melanjutkan ke Paket B.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-BInd-6/A-BInd-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -131,7 +131,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 6 Paket A (Kls 6): Bilangan Bulat, Bangun Ruang & Pengolahan Data Dasar",
     summary: "Penguatan numerasi akhir Fase C dan persiapan evaluasi kelulusan Paket A.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-Mat-6/A-Mat-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -139,7 +139,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPAS",
     title: "Modul 6 Paket A (Kls 6): Sistem Tata Surya, Peta Indonesia, dan Ekonomi Lokal",
     summary: "Persiapan ketuntasan belajar Fase C Paket A Setara SD sebelum lanjut ke Paket B.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-IPS-6/A-IPS-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -147,7 +147,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 6 Paket A (Kls 6): Simple Sentences, Telling Time & Daily Activities",
     summary: "Pemantapan kosakata dan kalimat sederhana bahasa Inggris Fase C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-BIng-6/A-BIng-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -155,7 +155,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 6 Paket A (Kls 6): Kebugaran Jasmani, Kesehatan Lingkungan & Gizi Seimbang",
     summary: "Pembiasaan pola hidup sehat dan aktivitas olahraga teratur.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PJOK-6/A-PJOK-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -163,7 +163,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 6 Paket A (Kls 6): Karya Seni Terapan, Tari Daerah & Pameran Kelas",
     summary: "Eksplorasi karya seni Nusantara dan penyajian karya kreatif sederhana.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-SBD-6/A-SBD-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket A",
@@ -171,7 +171,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan & Keterampilan",
     title: "Modul 6 Paket A (Kls 6): Proyek Kemandirian Diri dan Kerajinan Lingkungan",
     summary: "Modul khas Pendidikan Kesetaraan bermuatan SKK pemberdayaan dan kecakapan hidup.",
-    fileUrl: "https://emodul.kemdikbud.go.id/A-PK-6/A-PK-6.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // =========================================================================
@@ -184,7 +184,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 1 Paket B (Kls 7): Iman, Ibadah, dan Akhlak Mulia dalam Kehidupan",
     summary: "Penguatan karakter religius, kejujuran, dan toleransi warga belajar Paket B Fase D.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PAI-1/B-PAI-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -192,7 +192,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 1 Paket B (Kls 7): Sejarah Kelahiran Pancasila & Norma Bermasyarakat",
     summary: "Memahami nilai dasar Pancasila dan penerapannya dalam tata tertib lingkungan.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PPKn-1/B-PPKn-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -200,7 +200,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 1 Paket B (Kls 7): Teks Deskripsi, Narasi Imajinatif, dan Teks Prosedur",
     summary: "Modul ajar Kurikulum Merdeka Fase D untuk pemahaman ragam teks fungsional.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-BInd-1/B-BInd-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -208,7 +208,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 1 Paket B (Kls 7): Bilangan Bulat, Rasio, dan Bentuk Aljabar Dasar",
     summary: "Penguatan konsep aljabar awal dan penalaran proporsional Fase D Paket B.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-Mat-1/B-Mat-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -216,7 +216,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPA",
     title: "Modul 1 Paket B (Kls 7): Hakikat Sains, Pengukuran, Zat dan Perubahannya",
     summary: "Eksperimen sederhana di rumah dan tutorial kelompok untuk warga belajar Paket B.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-IPA-1/B-IPA-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -224,7 +224,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPS",
     title: "Modul 1 Paket B (Kls 7): Kondisi Geografis Indonesia & Interaksi Sosial",
     summary: "Mengenal potensi sumber daya alam, peta wilayah, dan kehidupan sosial masyarakat.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-IPS-1/B-IPS-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -232,7 +232,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 1 Paket B (Kls 7): Greeting, Self Introduction & Daily Routines",
     summary: "Komunikasi dasar bahasa Inggris lisan dan tulis dalam keseharian.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-BIng-1/B-BIng-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -240,7 +240,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 1 Paket B (Kls 7): Kebugaran Jasmani, Pola Hidup Sehat & Aktivitas Gerak",
     summary: "Panduan latihan kebugaran mandiri dan pola makan bergizi seimbang.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PJOK-1/B-PJOK-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -248,7 +248,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Informatika",
     title: "Modul 1 Paket B (Kls 7): Berpikir Komputasional & Pengenalan Perangkat TIK",
     summary: "Dasar pengoperasian komputer, perangkat lunak perkantoran, dan etika digital.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-Inf-1/B-Inf-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -256,7 +256,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 1 Paket B (Kls 7): Menggambar Flora, Fauna & Apresiasi Seni Nusantara",
     summary: "Eksplorasi karya seni rupa dan ragam budaya daerah Indonesia.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-SBD-1/B-SBD-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -264,7 +264,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan",
     title: "Modul 1 Paket B (Kls 7): Pengembangan Diri, Komunikasi Efektif & Karakter P5",
     summary: "Penguatan kemandirian belajar dan partisipasi aktif dalam komunitas.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PMB-1/B-PMB-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -272,7 +272,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Keterampilan",
     title: "Modul 1 Paket B (Kls 7): Kerajinan Bahan Alam & Pengolahan Produk Sederhana",
     summary: "Praktik keterampilan fungsional bernilai guna di lingkungan sekitar.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-KTR-1/B-KTR-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // --- Paket B · Kelas 8 ---
@@ -282,7 +282,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 2 Paket B (Kls 8): Moderasi Beragama, Empati & Tanggung Jawab Sosial",
     summary: "Implementasi nilai keimanan dalam membangun kerukunan bermasyarakat.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PAI-2/B-PAI-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -290,7 +290,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 2 Paket B (Kls 8): Konstitusi UUD 1945, Norma, dan Kebinekaan",
     summary: "Pemahaman hak dan kewajiban warga negara serta musyawarah mufakat.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PPKn-2/B-PPKn-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -298,7 +298,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 2 Paket B (Kls 8): Teks Berita, Iklan, Eksposisi & Ulasan Karya",
     summary: "Keterampilan literasi media, menyusun argumen, dan mengevaluasi informasi.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-BInd-2/B-BInd-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -306,7 +306,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 2 Paket B (Kls 8): Pola Bilangan, Relasi Fungsi & Sistem Persamaan Linear",
     summary: "Pemodelan masalah nyata menggunakan fungsi linear dan sistem persamaan.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-Mat-2/B-Mat-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -314,7 +314,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPA",
     title: "Modul 2 Paket B (Kls 8): Gerak, Gaya, Sistem Pencernaan & Getaran Gelombang",
     summary: "Konsep fisika dan biologi terapan pada tubuh manusia dan fenomena alam.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-IPA-2/B-IPA-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -322,7 +322,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPS",
     title: "Modul 2 Paket B (Kls 8): Kemajemukan Masyarakat Indonesia & Aktivitas Ekonomi",
     summary: "Analisis dinamika sosial, mobilitas penduduk, dan kearifan ekonomi masyarakat.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-IPS-2/B-IPS-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -330,7 +330,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 2 Paket B (Kls 8): Everyday Communication, Recount Text & Notices",
     summary: "Praktik membaca dan menyusun teks interaksi sehari-hari berbahasa Inggris.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-BIng-2/B-BIng-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -338,7 +338,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 2 Paket B (Kls 8): Permainan Bola Besar, Atletik & Pencegahan Pergaulan Bebas",
     summary: "Aktivitas olahraga terstruktur serta edukasi kesehatan remaja.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PJOK-2/B-PJOK-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -346,7 +346,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Informatika",
     title: "Modul 2 Paket B (Kls 8): Jaringan Komputer, Internet Sehat & Pengolah Angka",
     summary: "Pemanfaatan spreadsheet dan literasi keamanan berinternet.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-Inf-2/B-Inf-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -354,7 +354,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 2 Paket B (Kls 8): Desain Poster, Ilustrasi & Musik Tradisional Daerah",
     summary: "Pengembangan kreativitas visual dan apresiasi musik tradisional.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-SBD-2/B-SBD-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -362,7 +362,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan",
     title: "Modul 2 Paket B (Kls 8): Kepemimpinan Muda, Gotong Royong & Projek P5",
     summary: "Praktik kerja tim dan pemecahan masalah sosial di lingkungan sekitar.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PMB-2/B-PMB-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -370,7 +370,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Keterampilan",
     title: "Modul 2 Paket B (Kls 8): Tata Boga Dasar, Pengemasan & Produk UMKM Lokal",
     summary: "Keterampilan pengolahan pangan higienis dan teknik pengemasan produk.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-KTR-2/B-KTR-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // --- Paket B · Kelas 9 ---
@@ -380,7 +380,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 3 Paket B (Kls 9): Etika Pergaulan, Kepedulian Sosial & Persiapan Lulus",
     summary: "Internalisasi nilai spiritual dan kesiapan moral warga belajar kelas akhir Paket B.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PAI-3/B-PAI-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -388,7 +388,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 3 Paket B (Kls 9): Kedaulatan NKRI, Demokrasi & Harmoni dalam Keberagaman",
     summary: "Pemantapan wawasan kebangsaan dan kesadaran hukum warga negara.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PPKn-3/B-PPKn-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -396,7 +396,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 3 Paket B (Kls 9): Teks Laporan Percobaan, Pidato Persuasif & Cerpen",
     summary: "Keterampilan menyusun laporan ilmiah sederhana dan komunikasi persuasif.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-BInd-3/B-BInd-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -404,7 +404,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 3 Paket B (Kls 9): Persamaan Linear, Teorema Pythagoras, dan Peluang",
     summary: "Pendalaman materi numerasi kunci kelas akhir Paket B Setara SMP.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-Mat-3/B-Mat-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -412,7 +412,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPA",
     title: "Modul 3 Paket B (Kls 9): Listrik Dinamis, Pewarisan Sifat & Bioteknologi",
     summary: "Materi IPA terapan kelas akhir Paket B dan persiapan UPK.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-IPA-3/B-IPA-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -420,7 +420,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "IPS",
     title: "Modul 3 Paket B (Kls 9): Globalisasi, Perdagangan Internasional & Ekonomi Kreatif",
     summary: "Memahami keterkaitan ekonomi lokal dengan pasar global secara kontekstual.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-IPS-3/B-IPS-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -428,7 +428,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 3 Paket B (Kls 9): Procedure Text, Report Text & Narrative Comprehension",
     summary: "Penguasaan teks fungsional dan persiapan ujian akhir Bahasa Inggris Paket B.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-BIng-3/B-BIng-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -436,7 +436,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 3 Paket B (Kls 9): Manajemen Kebugaran, P3K & Pencegahan Cedera Olahraga",
     summary: "Pengetahuan pertolongan pertama dan gaya hidup aktif berkelanjutan.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PJOK-3/B-PJOK-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -444,7 +444,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Informatika",
     title: "Modul 3 Paket B (Kls 9): Literasi Digital, Pengolah Data, dan Keamanan Siber",
     summary: "Keterampilan dasar teknologi informasi dan etika bermedia digital.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-Inf-3/B-Inf-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -452,7 +452,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 3 Paket B (Kls 9): Seni Grafis, Pameran Karya & Ekonomi Kreatif Seni",
     summary: "Merancang dan memamerkan karya seni terapan di lingkungan PKBM.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-SBD-3/B-SBD-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -460,7 +460,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan",
     title: "Modul 3 Paket B (Kls 9): Perencanaan Masa Depan, Literasi Finansial & Projek P5",
     summary: "Pengelolaan keuangan pribadi dan kesiapan melanjutkan ke Paket C / dunia kerja.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-PMB-3/B-PMB-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket B",
@@ -468,7 +468,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Keterampilan",
     title: "Modul 3 Paket B (Kls 9): Kewirausahaan Mikro & Pemasaran Produk Komunitas",
     summary: "Menyusun perhitungan modal sederhana dan pemasaran karya vokasi.",
-    fileUrl: "https://emodul.kemdikbud.go.id/B-KTR-3/B-KTR-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // =========================================================================
@@ -481,7 +481,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 1 Paket C (Kls 10): Etos Kerja, Integritas & Nilai Keimanan Remaja",
     summary: "Pembinaan akhlak mulia, etika kerja, dan moderasi beragama Fase E.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PAI-1/C-PAI-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -489,7 +489,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 1 Paket C (Kls 10): Pancasila sebagai Ideologi Terbuka & Bhinneka Tunggal Ika",
     summary: "Kajian nilai dasar Pancasila dalam kehidupan berbangsa dan bernegara.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PPKn-1/C-PPKn-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -497,7 +497,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 1 Paket C (Kls 10): Teks Laporan Hasil Observasi, Anekdot, dan Negosiasi",
     summary: "Kurikulum Merdeka Fase E untuk kemampuan analisis kritis dan komunikasi formal.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-BInd-1/C-BInd-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -505,7 +505,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 1 Paket C (Kls 10): Eksponen, Logaritma, Barisan & Deret, dan Trigonometri",
     summary: "Modul ajar Fase E Matematika Umum Paket C Setara SMA.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Mat-1/C-Mat-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -513,7 +513,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 1 Paket C (Kls 10): Descriptive, Recount & Functional Workplace English",
     summary: "Penguatan komunikasi bahasa Inggris akademik dan dunia kerja Fase E.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-BIng-1/C-BIng-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -521,7 +521,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Sejarah",
     title: "Modul 1 Paket C (Kls 10): Pengantar Ilmu Sejarah & Jalur Rempah Nusantara",
     summary: "Pembelajaran sejarah kontekstual untuk warga belajar Paket C Fase E.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Sej-1/C-Sej-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -529,7 +529,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 1 Paket C (Kls 10): Aktivitas Kebugaran, Kesehatan Reproduksi & Gaya Hidup Aktif",
     summary: "Penerapan latihan kebugaran dan manajemen kesehatan jasmani mandiri.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PJOK-1/C-PJOK-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -537,7 +537,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 1 Paket C (Kls 10): Estetika Seni Rupa, Desain & Kritik Karya Budaya",
     summary: "Pengenalan konsep seni modern dan pelestarian kearifan budaya lokal.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-SBD-1/C-SBD-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -545,7 +545,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Informatika",
     title: "Modul 1 Paket C (Kls 10): Algoritma Pemrograman Dasar & Analisis Data Digital",
     summary: "Pengenalan logika komputasi, pengolahan data, dan dampak sosial informatika.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Inf-1/C-Inf-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -553,7 +553,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Fisika",
     title: "Modul 1 Paket C (Kls 10 · IPA): Pengukuran, Energi Terbarukan & Pemanasan Global",
     summary: "Konsep dasar fisika terapan untuk jurusan IPA Paket C Fase E.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Fis-1/C-Fis-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -561,7 +561,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Kimia",
     title: "Modul 1 Paket C (Kls 10 · IPA): Kimia Hijau, Struktur Atom & Hukum Dasar Kimia",
     summary: "Pengantar ilmu kimia ramah lingkungan untuk jurusan IPA Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Kim-1/C-Kim-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -569,7 +569,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Biologi",
     title: "Modul 1 Paket C (Kls 10 · IPA): Virus, Keanekaragaman Hayati & Ekosistem",
     summary: "Kajian biologi lingkungan dan kesehatan untuk jurusan IPA Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Bio-1/C-Bio-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -577,7 +577,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Ekonomi",
     title: "Modul 1 Paket C (Kls 10 · IPS): Konsep Ilmu Ekonomi, Kelangkaan & Lembaga Keuangan",
     summary: "Dasar literasi ekonomi dan keuangan untuk jurusan IPS Paket C Fase E.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Eko-1/C-Eko-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -585,7 +585,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Sosiologi",
     title: "Modul 1 Paket C (Kls 10 · IPS): Individu, Masyarakat & Metode Penelitian Sosial",
     summary: "Pengantar sosiologi dan observasi gejala sosial untuk jurusan IPS Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Sos-1/C-Sos-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -593,7 +593,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Geografi",
     title: "Modul 1 Paket C (Kls 10 · IPS): Dasar Pemetaan, Penginderaan Jauh & Dinamika Bumi",
     summary: "Pemahaman ruang geografis dan lingkungan hidup untuk jurusan IPS Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Geo-1/C-Geo-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -601,7 +601,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan & Keterampilan",
     title: "Modul 1 Paket C (Kls 10): Pengenalan Potensi Diri, Literasi Kerja & Vokasi Dasar",
     summary: "Fondasi kecakapan hidup dan kemandirian warga belajar Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PK-1/C-PK-1.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // --- Paket C · Kelas 11 (Fase F) ---
@@ -611,7 +611,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 2 Paket C (Kls 11): Etika Bermedia, Ukhuwah & Kepemimpinan Berintegritas",
     summary: "Implementasi nilai moral dan etika sosial pada era digital Fase F.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PAI-2/C-PAI-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -619,7 +619,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 2 Paket C (Kls 11): Demokrasi Konstitusional, HAM & Sistem Hukum Nasional",
     summary: "Pendalaman hak asasi manusia dan partisipasi warga dalam negara hukum.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PPKn-2/C-PPKn-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -627,7 +627,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 2 Paket C (Kls 11): Teks Argumentasi, Proposal Kegiatan & Karya Ilmiah",
     summary: "Keterampilan menulis akademik, proposal usaha/komunitas, dan presentasi efektif.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-BInd-2/C-BInd-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -635,7 +635,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 2 Paket C (Kls 11): Komposisi Fungsi, Lingkaran & Statistika Regresi",
     summary: "Matematika Wajib Fase F untuk penalaran kuantitatif dan analisis data.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Mat-2/C-Mat-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -643,7 +643,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 2 Paket C (Kls 11): Analytical Exposition, Argumentative & Digital Literacy",
     summary: "Penguatan literasi teks akademik dan opini Fase F Bahasa Inggris Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-BIng-2/C-BIng-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -651,7 +651,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Sejarah",
     title: "Modul 2 Paket C (Kls 11): Pergerakan Nasional Indonesia hingga Proklamasi 1945",
     summary: "Kajian perjuangan kemerdekaan dan pembentukan identitas kebangsaan.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Sej-2/C-Sej-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -659,7 +659,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 2 Paket C (Kls 11): Program Latihan Kebugaran & Manajemen Stres Kerja",
     summary: "Menjaga kesehatan fisik dan mental bagi warga belajar usia produktif.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PJOK-2/C-PJOK-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -667,7 +667,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 2 Paket C (Kls 11): Desain Komunikasi Visual & Produksi Karya Kreatif",
     summary: "Penerapan prinsip desain untuk media promosi dan produk kreatif lokal.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-SBD-2/C-SBD-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -675,7 +675,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Informatika",
     title: "Modul 2 Paket C (Kls 11): Pengolahan Basis Data, Web Dasar & Kolaborasi Cloud",
     summary: "Penerapan aplikasi produktivitas dan teknologi web untuk kebutuhan kerja.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Inf-2/C-Inf-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -683,7 +683,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Fisika",
     title: "Modul 2 Paket C (Kls 11 · IPA): Vektor, Kinematika, Fluida & Termodinamika",
     summary: "Pendalaman fisika mekanika dan energi untuk jurusan IPA Paket C Fase F.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Fis-2/C-Fis-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -691,7 +691,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Kimia",
     title: "Modul 2 Paket C (Kls 11 · IPA): Stoikiometri, Termokimia, Laju Reaksi & Kesetimbangan",
     summary: "Analisis reaksi kimia terapan untuk jurusan IPA Paket C Fase F.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Kim-2/C-Kim-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -699,7 +699,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Biologi",
     title: "Modul 2 Paket C (Kls 11 · IPA): Struktur Sel, Sistem Organ Manusia & Imunitas",
     summary: "Memahami fisiologi tubuh dan kesehatan untuk jurusan IPA Paket C Fase F.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Bio-2/C-Bio-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -707,7 +707,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Ekonomi",
     title: "Modul 2 Paket C (Kls 11 · IPS): Badan Usaha, Koperasi, Kebijakan Moneter & Fiskal",
     summary: "Pengantar ilmu ekonomi mikro-makro terapan bagi pelaku usaha & warga belajar.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Eko-2/C-Eko-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -715,7 +715,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Sosiologi",
     title: "Modul 2 Paket C (Kls 11 · IPS): Kelompok Sosial, Kesetaraan, dan Perubahan Masyarakat",
     summary: "Studi kasus dinamika sosial dan pemberdayaan komunitas Fase F.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Sos-2/C-Sos-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -723,7 +723,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Geografi",
     title: "Modul 2 Paket C (Kls 11 · IPS): Posisi Strategis Indonesia, Sumber Daya Alam & Mitigasi",
     summary: "Pemetaan wilayah, pelestarian lingkungan, dan kesiapsiagaan bencana.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Geo-2/C-Geo-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -731,7 +731,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan & Keterampilan",
     title: "Modul 2 Paket C (Kls 11): Manajemen Proyek Komunitas & Aplikasi Perkantoran",
     summary: "Penguasaan tata kelola administrasi, spreadsheet, dan desain publikasi.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PK-2/C-PK-2.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 
   // --- Paket C · Kelas 12 (Fase F Akhir / Persiapan UPK) ---
@@ -741,7 +741,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Agama dan Budi Pekerti",
     title: "Modul 3 Paket C (Kls 12): Tanggung Jawab Kehidupan, Etika Profesi & Kerukunan",
     summary: "Pemantapan karakter dan kesiapan mental lulusan Paket C Setara SMA.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PAI-3/C-PAI-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -749,7 +749,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pendidikan Pancasila",
     title: "Modul 3 Paket C (Kls 12): Tata Kelola Pemerintahan, Wawasan Nusantara & Globalisasi",
     summary: "Analisis peran warga negara Indonesia di tengah tantangan global.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PPKn-3/C-PPKn-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -757,7 +757,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Indonesia",
     title: "Modul 3 Paket C (Kls 12): Surat Lamaran Kerja, Artikel Ilmiah & Editorial Kritis",
     summary: "Kecakapan menulis profesional dan kesiapan karier/studi lanjut lulusan Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-BInd-3/C-BInd-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -765,7 +765,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Matematika",
     title: "Modul 3 Paket C (Kls 12): Peluang, Kaidah Pencacahan, dan Statistika Terapan",
     summary: "Persiapan asesmen akhir dan literasi numerasi kelas 12 Paket C.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Mat-3/C-Mat-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -773,7 +773,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Bahasa Inggris",
     title: "Modul 3 Paket C (Kls 12): Job Application, Discussion Text & Exam Readiness",
     summary: "Persiapan wawancara kerja, komunikasi profesional, dan UPK Bahasa Inggris.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-BIng-3/C-BIng-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -781,7 +781,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Sejarah",
     title: "Modul 3 Paket C (Kls 12): Indonesia Masa Demokrasi, Orde Baru hingga Reformasi",
     summary: "Kajian sejarah kontemporer Indonesia sebagai bekal wawasan kebangsaan.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Sej-3/C-Sej-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -789,7 +789,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "PJOK",
     title: "Modul 3 Paket C (Kls 12): Evaluasi Kebugaran Jasmani & Kesehatan Lingkungan Kerja",
     summary: "Penerapan keselamatan kerja dan kebugaran jangka panjang.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PJOK-3/C-PJOK-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -797,7 +797,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Seni dan Budaya",
     title: "Modul 3 Paket C (Kls 12): Manajemen Pergelaran, Portofolio & Industri Kreatif",
     summary: "Pengembangan portofolio karya seni dan peluang usaha kreatif.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-SBD-3/C-SBD-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -805,7 +805,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Informatika",
     title: "Modul 3 Paket C (Kls 12): Keamanan Informasi, Otomasi Kerja & Proyek Digital",
     summary: "Penerapan teknologi informasi untuk produktivitas bisnis dan karier.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Inf-3/C-Inf-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -813,7 +813,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Fisika",
     title: "Modul 3 Paket C (Kls 12 · IPA): Listrik Magnet, Gelombang Elektromagnetik & Fisika Modern",
     summary: "Pemantapan konsep fisika kelas akhir dan latihan komprehensif UPK IPA.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Fis-3/C-Fis-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -821,7 +821,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Kimia",
     title: "Modul 3 Paket C (Kls 12 · IPA): Elektrokimia, Senyawa Karbon & Makromolekul",
     summary: "Aplikasi kimia dalam industri, pangan, dan persiapan UPK jurusan IPA.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Kim-3/C-Kim-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -829,7 +829,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Biologi",
     title: "Modul 3 Paket C (Kls 12 · IPA): Metabolisme, Genetika, Evolusi & Bioteknologi Modern",
     summary: "Pendalaman biologi kelas akhir untuk kesiapan UPK dan studi lanjut IPA.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Bio-3/C-Bio-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -837,7 +837,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Ekonomi",
     title: "Modul 3 Paket C (Kls 12 · IPS): Akuntansi Perusahaan Jasa/Dagang & Ekonomi Digital",
     summary: "Keterampilan pembukuan usaha dan analisis laporan keuangan jurusan IPS.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Eko-3/C-Eko-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -845,7 +845,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Sosiologi",
     title: "Modul 3 Paket C (Kls 12 · IPS): Perubahan Sosial, Ketimpangan & Pemberdayaan Komunitas",
     summary: "Analisis kritis isu sosial kontemporer dan persiapan UPK jurusan IPS.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Sos-3/C-Sos-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -853,7 +853,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Geografi",
     title: "Modul 3 Paket C (Kls 12 · IPS): Tata Ruang Wilayah, Interaksi Desa-Kota & Negara Maju",
     summary: "Kajian pembangunan wilayah berkelanjutan untuk persiapan UPK jurusan IPS.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-Geo-3/C-Geo-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
   {
     paket: "Paket C",
@@ -861,7 +861,7 @@ export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
     subject: "Pemberdayaan & Keterampilan",
     title: "Modul 3 Paket C (Kls 12): Kewirausahaan Digital, Pemasaran Produk & Rencana Usaha",
     summary: "Modul keterampilan vokasi Pendidikan Kesetaraan berbasis usaha mandiri.",
-    fileUrl: "https://emodul.kemdikbud.go.id/C-PK-3/C-PK-3.pdf",
+    fileUrl: "https://emodul.kemendikdasmen.go.id/",
   },
 ];
 
@@ -1234,6 +1234,20 @@ export function moduleBankRoutes(getSchoolSession: SchoolContextResolver) {
   // POST /api/module-bank/seed-national
   router.post("/seed-national", async (_req, res) => {
     try {
+      // Migrate any legacy dead emodul.kemdikbud.go.id URLs to the active Kemendikdasmen portal
+      await prisma.learningModuleBank
+        .updateMany({
+          where: {
+            schoolId: null,
+            originSchoolName: NATIONAL_ORIGIN_NAME,
+            fileUrl: { contains: "emodul.kemdikbud.go.id" },
+          },
+          data: {
+            fileUrl: "https://emodul.kemendikdasmen.go.id/",
+          },
+        })
+        .catch(() => null);
+
       // Remove legacy Paket A Kelas 1-4 entries from national catalog (keep Paket A Kls 5-6, Paket B, and Paket C)
       await prisma.learningModuleBank
         .deleteMany({

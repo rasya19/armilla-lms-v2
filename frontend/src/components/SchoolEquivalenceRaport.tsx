@@ -16,6 +16,8 @@ import {
   UserCheck,
 } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
+import { QrCodeSvg } from "./QrCodeSvg";
+import { RaportLegerPanel, RaportTranscriptPanel } from "./RaportLegerTranscript";
 import { SchoolModal } from "./SchoolModal";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
@@ -782,6 +784,7 @@ function predikatNilai(skor: number): string {
 export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<RaportPayload | null>(null);
+  const [raportSubTab, setRaportSubTab] = useState<"raport" | "leger" | "transkrip">("raport");
   const [kelasId, setKelasId] = useState("");
   const [tahunId, setTahunId] = useState("");
   const [selectedSiswaId, setSelectedSiswaId] = useState("");
@@ -898,6 +901,31 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     }
   }
 
+  async function syncGradesFromTasksAndCbt() {
+    if (busy || !kelasId || !tahunId) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/raport/sinkron-otomatis", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({ kelasId, tahunAjaranId: tahunId }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menyinkronkan nilai otomatis.");
+      setNotice(body?.message || "Sinkronisasi nilai selesai.");
+      await loadRaport(kelasId, tahunId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Sinkronisasi nilai otomatis gagal."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveHomeroomNote(event: React.FormEvent) {
     event.preventDefault();
     if (!activeSiswa || !kelasId || !tahunId) return;
@@ -953,19 +981,59 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       <div className="no-print space-y-6">
         <DashboardHero
           eyebrow="Evaluasi & Rapor Kesetaraan · Paket Reguler+"
-          title="Cek & Cetak E-Raport PKBM"
-          description="Rekap nilai akhir warga belajar per kelas & semester, lengkapi catatan wali kelas, dan cetak dokumen E-Raport formal PKBM siap tanda tangan."
+          title="E-Raport, Leger & Transkrip Nilai Ijazah"
+          description="Kelola nilai raport semester, rekap leger kelas, hingga transkrip nilai kelulusan pendamping ijazah (60% Raport 6 Semester + 40% UPK)."
           action={
-            <button type="button" onClick={() => window.print()} disabled={!activeSiswa} className="dashboard-hero-action">
-              <Printer size={16} />
-              Cetak / PDF E-Raport
-            </button>
+            raportSubTab === "raport" ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy || !kelasId || !tahunId}
+                  onClick={() => void syncGradesFromTasksAndCbt()}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-extrabold text-white shadow-xs transition hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  <CheckCircle2 size={15} />
+                  {busy ? "Menyinkronkan..." : "Sinkron Nilai Tugas & CBT"}
+                </button>
+                <button type="button" onClick={() => window.print()} disabled={!activeSiswa} className="dashboard-hero-action">
+                  <Printer size={16} />
+                  Cetak / PDF E-Raport
+                </button>
+              </div>
+            ) : undefined
           }
         />
+
+        <div className={`flex flex-wrap gap-2 rounded-2xl p-1.5 ${panelClass(isDark)}`}>
+          {([
+            { id: "raport" as const, label: "Input & E-Raport Siswa" },
+            { id: "leger" as const, label: "Leger Raport Kelas" },
+            { id: "transkrip" as const, label: "Transkrip Nilai Ijazah (60% Raport + 40% UPK)" },
+          ]).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              aria-pressed={raportSubTab === tab.id}
+              onClick={() => setRaportSubTab(tab.id)}
+              className={`rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+                raportSubTab === tab.id
+                  ? isDark
+                    ? "bg-amber-400 text-slate-950"
+                    : "bg-sky-700 text-white shadow-xs"
+                  : isDark
+                    ? "text-slate-300 hover:bg-slate-800"
+                    : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
         {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{notice}</p>}
 
+        {raportSubTab !== "transkrip" && (
         <div className={`grid gap-4 rounded-2xl p-4 sm:grid-cols-3 ${panelClass(isDark)}`}>
           <label className="block text-xs font-bold">
             Tahun Ajaran &amp; Semester
@@ -979,15 +1047,18 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               {data?.kelasList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
             </select>
           </label>
+          {raportSubTab === "raport" && (
           <label className="block text-xs font-bold">
             Pilih Warga Belajar
             <select value={activeSiswa?.id ?? ""} onChange={(e) => setSelectedSiswaId(e.target.value)} className={inputClass(isDark)}>
               {data?.siswa.map((s) => <option key={s.id} value={s.id}>{s.nama} ({s.nisn})</option>)}
             </select>
           </label>
+          )}
         </div>
+        )}
 
-        {loading ? (
+        {raportSubTab === "raport" && (loading ? (
           <CardGridSkeleton count={2} columns={2} />
         ) : !activeSiswa ? (
           <EmptyState title="Belum ada warga belajar di kelas terpilih" description="Pastikan kelas memiliki warga belajar aktif melalui menu Penempatan / Kenaikan Kelas." />
@@ -1050,10 +1121,28 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               </div>
             </form>
           </div>
-        )}
+        ))}
       </div>
 
-      {activeSiswa && data && (
+      {raportSubTab === "leger" && data && (
+        <RaportLegerPanel
+          data={{
+            sekolah: data.sekolah,
+            kelasName: activeKelasName,
+            tahunLabel: activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "-",
+            waliKelasNama: data.waliKelasNama,
+            mapel: data.mapel,
+            siswa: data.siswa,
+            nilai: data.nilai,
+          }}
+        />
+      )}
+
+      {raportSubTab === "transkrip" && (
+        <RaportTranscriptPanel initialKelasId={kelasId} sandboxRole={sandboxRole} />
+      )}
+
+      {raportSubTab === "raport" && activeSiswa && data && (
         <div className="rounded-2xl border border-slate-300 bg-white p-6 text-slate-900 shadow-sm sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-900 pb-4">
             <div className="flex items-center gap-4">
@@ -1125,12 +1214,21 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             <p className="mt-1 text-slate-700">{catatanWali}</p>
           </div>
 
-          <div className="mt-8 grid grid-cols-2 gap-8 text-center text-xs">
+          <div className="mt-8 grid grid-cols-1 items-end gap-6 text-center text-xs sm:grid-cols-3">
             <div>
               <p>Mengetahui,</p>
               <p className="font-bold">Kepala {data.sekolah.nama}</p>
               <div className="h-16" />
               <p className="font-bold underline">{data.sekolah.kepalaSekolah || "Kepala PKBM"}</p>
+            </div>
+            <div className="flex flex-col items-center justify-center">
+              <QrCodeSvg
+                value={`RAPORT|${data.sekolah.npsn || data.sekolah.nama}|${activeSiswa.nisn}|${activeTahunObj?.nama || "2026"}`}
+                size={76}
+                label="QR Verifikasi E-Raport"
+                className="rounded-lg border border-slate-200 p-1"
+              />
+              <p className="mt-1 text-[10px] font-semibold text-slate-500">QR Verifikasi Dokumen</p>
             </div>
             <div>
               <p>{data.sekolah.kabupatenKota || "Setempat"}, {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>

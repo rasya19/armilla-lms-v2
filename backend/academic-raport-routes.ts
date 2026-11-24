@@ -2,6 +2,15 @@ import { Router } from "express";
 import { randomBytes } from "crypto";
 import { prisma } from "./db.js";
 import {
+  computeTranscriptScore,
+  isUpkExam,
+  RAPORT_WEIGHT,
+  round2,
+  transcriptPredikat,
+  UPK_OVERRIDE_MARKER,
+  UPK_WEIGHT,
+} from "./transcript-calc.js";
+import {
   cleanInt,
   cleanText,
   isPrismaMissingSchema,
@@ -445,7 +454,12 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const [nilaiRows, catatanRows] = siswaIds.length
         ? await Promise.all([
             prisma.nilai.findMany({
-              where: { sekolahId, siswaId: { in: siswaIds } },
+              where: {
+                sekolahId,
+                siswaId: { in: siswaIds },
+                ...(activeTahun ? { OR: [{ tahunAjaranId: activeTahun.id }, { tahunAjaranId: null }] } : {}),
+                NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
+              },
               orderBy: { tanggalSimulasi: "desc" },
             }),
             activeTahun
@@ -623,6 +637,487 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menyimpan catatan raport:", error);
       return res.status(503).json({ error: "Catatan raport belum dapat disimpan." });
+    }
+  });
+
+  // ==========================================
+  // 4. TRANSKRIP NILAI KELULUSAN (60% RAPORT 6 SEMESTER + 40% UPK)
+  // ==========================================
+  router.get("/raport/transkrip", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const requestedKelasId = cleanText(req.query.kelasId, 100);
+      const teacherScope = peran === "GURU" && guruId ? await resolveTeacherScope(sekolahId, guruId) : null;
+      const restrictToAssigned = Boolean(teacherScope && !teacherScope.isWaliKelas);
+
+      const [school, settings, kelasList, tahunList, mapelList, modulList] = await Promise.all([
+        prisma.sekolah.findUnique({
+          where: { id: sekolahId },
+          select: { nama: true, npsn: true, alamatSekolah: true, kabupatenKota: true, namaKepalaSekolah: true },
+        }),
+        prisma.websiteSettings.findUnique({ where: { school_id: sekolahId }, select: { logo_url: true } }).catch(() => null),
+        prisma.kelas.findMany({
+          where: {
+            sekolahId,
+            ...(restrictToAssigned ? { id: { in: teacherScope!.assignedKelasIds } } : {}),
+          },
+          select: { id: true, nama: true, waliGuruId: true },
+          orderBy: { nama: "asc" },
+          take: 200,
+        }),
+        prisma.tahunAjaran.findMany({
+          where: { sekolahId },
+          select: { id: true, nama: true, semester: true, mulai: true },
+          orderBy: { mulai: "asc" },
+          take: 50,
+        }),
+        prisma.mapel.findMany({
+          where: { sekolahId },
+          select: { id: true, nama: true, kkm: true },
+          orderBy: { nama: "asc" },
+          take: 300,
+        }),
+        prisma.modulKesetaraan.findMany({
+          where: { sekolahId },
+          select: { mapelId: true, skkTotal: true },
+          take: 500,
+        }).catch(() => []),
+      ]);
+
+      // Default to final-grade class (Kelas 6 / 9 / 12) when not specified
+      const finalClassFallback = kelasList.find((k) => /\b(kelas\s*)?(6|9|12|vi|ix|xii)\b/i.test(k.nama));
+      const activeKelas = kelasList.find((k) => k.id === requestedKelasId) ?? finalClassFallback ?? kelasList[0] ?? null;
+
+      // Keep up to 6 latest semesters in chronological order (Semester 1..6)
+      const sixSemesters = tahunList.slice(-6).map((t, idx) => ({
+        id: t.id,
+        label: `Sem ${idx + 1}`,
+        nama: `${t.nama} (${t.semester})`,
+      }));
+      const sixSemesterIds = new Set(sixSemesters.map((s) => s.id));
+
+      const siswaList = activeKelas
+        ? await prisma.siswa.findMany({
+            where: { sekolahId, kelasId: activeKelas.id, status: "Aktif" },
+            select: { id: true, nama: true, nisn: true, jenjang: true, tempatLahir: true, tanggalLahir: true },
+            orderBy: { nama: "asc" },
+            take: 500,
+          })
+        : [];
+
+      const siswaIds = siswaList.map((s) => s.id);
+      const [allNilai, upkAttempts] = siswaIds.length
+        ? await Promise.all([
+            prisma.nilai.findMany({
+              where: { sekolahId, siswaId: { in: siswaIds } },
+              select: {
+                siswaId: true,
+                mapelId: true,
+                tahunAjaranId: true,
+                nilaiAkhir: true,
+                catatanKompetensi: true,
+                tanggalSimulasi: true,
+              },
+              orderBy: { tanggalSimulasi: "desc" },
+            }),
+            prisma.percobaanUjian.findMany({
+              where: {
+                siswaId: { in: siswaIds },
+                ujian: { sekolahId },
+              },
+              select: {
+                siswaId: true,
+                nilai: true,
+                nilaiOverride: true,
+                dikumpulkanPada: true,
+                ujian: { select: { kode: true, judul: true, mapelId: true } },
+              },
+              orderBy: { dikumpulkanPada: "desc" },
+            }),
+          ])
+        : [[], []];
+
+      const skkByMapel = new Map<string, number>();
+      for (const m of modulList) {
+        if (m.mapelId && !skkByMapel.has(m.mapelId)) {
+          skkByMapel.set(m.mapelId, m.skkTotal);
+        }
+      }
+
+      // Index manual UPK overrides and semester raport values per (siswaId, mapelId)
+      const manualUpkMap = new Map<string, number>();
+      const semesterScoreMap = new Map<string, Map<string, number>>();
+      const unlinkedRaportMap = new Map<string, number[]>();
+
+      for (const row of allNilai) {
+        const key = `${row.siswaId}::${row.mapelId}`;
+        if (row.catatanKompetensi === UPK_OVERRIDE_MARKER) {
+          if (!manualUpkMap.has(key)) manualUpkMap.set(key, row.nilaiAkhir);
+          continue;
+        }
+        if (row.tahunAjaranId && sixSemesterIds.has(row.tahunAjaranId)) {
+          let bySem = semesterScoreMap.get(key);
+          if (!bySem) {
+            bySem = new Map();
+            semesterScoreMap.set(key, bySem);
+          }
+          if (!bySem.has(row.tahunAjaranId)) {
+            bySem.set(row.tahunAjaranId, row.nilaiAkhir);
+          }
+        } else {
+          const list = unlinkedRaportMap.get(key) ?? [];
+          if (list.length < 6) list.push(row.nilaiAkhir);
+          unlinkedRaportMap.set(key, list);
+        }
+      }
+
+      // Index CBT UPK exam scores per (siswaId, mapelId)
+      const cbtUpkMap = new Map<string, number>();
+      for (const att of upkAttempts) {
+        if (!isUpkExam(att.ujian.kode, att.ujian.judul)) continue;
+        const score = att.nilaiOverride ?? att.nilai;
+        if (typeof score !== "number" || !Number.isFinite(score)) continue;
+        const key = `${att.siswaId}::${att.ujian.mapelId}`;
+        if (!cbtUpkMap.has(key)) {
+          cbtUpkMap.set(key, score);
+        }
+      }
+
+      const mapelPayload = mapelList.map((m) => ({
+        ...m,
+        skk: skkByMapel.get(m.id) ?? 4,
+      }));
+
+      const studentsTranscript = siswaList.map((st) => {
+        const subjects = mapelPayload.map((m) => {
+          const key = `${st.id}::${m.id}`;
+          const bySem = semesterScoreMap.get(key);
+          const semesterBreakdown = sixSemesters.map((sem) => ({
+            tahunAjaranId: sem.id,
+            label: sem.label,
+            nilai: bySem?.get(sem.id) ?? null,
+          }));
+
+          const semesterValues = semesterBreakdown
+            .map((b) => b.nilai)
+            .filter((v): v is number => v !== null);
+          const effectiveSemValues =
+            semesterValues.length > 0 ? semesterValues : (unlinkedRaportMap.get(key) ?? []);
+
+          const hasManualUpk = manualUpkMap.has(key);
+          const hasCbtUpk = cbtUpkMap.has(key);
+          const resolvedUpk = hasManualUpk
+            ? manualUpkMap.get(key)!
+            : hasCbtUpk
+              ? cbtUpkMap.get(key)!
+              : null;
+          const upkSource: "manual" | "cbt" | "none" = hasManualUpk ? "manual" : hasCbtUpk ? "cbt" : "none";
+
+          const calc = computeTranscriptScore(effectiveSemValues, resolvedUpk);
+          return {
+            mapelId: m.id,
+            mapelNama: m.nama,
+            kkm: m.kkm,
+            skk: m.skk,
+            semesterBreakdown,
+            upkSource,
+            ...calc,
+          };
+        });
+
+        const completedTranscript = subjects.filter((s) => s.nilaiTranskrip !== null);
+        const rataTranskrip =
+          completedTranscript.length > 0
+            ? round2(
+                completedTranscript.reduce((sum, s) => sum + (s.nilaiTranskrip ?? 0), 0) /
+                  completedTranscript.length,
+              )
+            : null;
+        const completedRaport = subjects.filter((s) => s.rataRaport !== null);
+        const rataRaportKeseluruhan =
+          completedRaport.length > 0
+            ? round2(
+                completedRaport.reduce((sum, s) => sum + (s.rataRaport ?? 0), 0) /
+                  completedRaport.length,
+              )
+            : null;
+        const completedUpk = subjects.filter((s) => s.nilaiUpk !== null);
+        const rataUpkKeseluruhan =
+          completedUpk.length > 0
+            ? round2(
+                completedUpk.reduce((sum, s) => sum + (s.nilaiUpk ?? 0), 0) /
+                  completedUpk.length,
+              )
+            : null;
+
+        const lulus =
+          completedTranscript.length > 0 &&
+          completedTranscript.every((s) => (s.nilaiTranskrip ?? 0) >= s.kkm);
+
+        return {
+          siswa: st,
+          subjects,
+          rataRaportKeseluruhan,
+          rataUpkKeseluruhan,
+          rataTranskrip,
+          predikatKeseluruhan: transcriptPredikat(rataTranskrip),
+          mapelLengkapCount: completedTranscript.length,
+          totalMapelCount: subjects.length,
+          statusKelulusan: completedTranscript.length === 0 ? "BELUM_LENGKAP" : lulus ? "LULUS" : "PERLU_PERBAIKAN",
+        };
+      });
+
+      return res.json({
+        bobot: { raport: RAPORT_WEIGHT * 100, upk: UPK_WEIGHT * 100 },
+        sekolah: {
+          nama: school?.nama ?? "PKBM",
+          npsn: school?.npsn ?? null,
+          alamat: school?.alamatSekolah ?? null,
+          kabupatenKota: school?.kabupatenKota ?? null,
+          kepalaSekolah: school?.namaKepalaSekolah ?? null,
+          logoUrl: settings?.logo_url ?? null,
+        },
+        kelasList,
+        selectedKelasId: activeKelas?.id ?? "",
+        selectedKelasNama: activeKelas?.nama ?? "",
+        semesters: sixSemesters,
+        mapel: mapelPayload,
+        rows: studentsTranscript,
+      });
+    } catch (error) {
+      console.error("Gagal memuat Transkrip Nilai Kelulusan:", error);
+      return res.status(503).json({ error: "Transkrip nilai belum dapat dimuat." });
+    }
+  });
+
+  router.post("/raport/upk-nilai", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const mapelId = cleanText(req.body?.mapelId, 100);
+      const nilaiUpk = Number(req.body?.nilaiUpk);
+
+      if (!siswaId || !mapelId || !Number.isFinite(nilaiUpk) || nilaiUpk < 0 || nilaiUpk > 100) {
+        return res.status(400).json({ error: "Siswa, mata pelajaran, dan nilai UPK (0–100) wajib valid." });
+      }
+
+      const [siswa, mapel] = await Promise.all([
+        prisma.siswa.findFirst({ where: { id: siswaId, sekolahId }, select: { id: true, kelasId: true } }),
+        prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true } }),
+      ]);
+      if (!siswa || !mapel) {
+        return res.status(404).json({ error: "Siswa atau mata pelajaran tidak ditemukan." });
+      }
+
+      if (auth.session.peran === "GURU" && auth.session.guruId) {
+        const scope = await resolveTeacherScope(sekolahId, auth.session.guruId);
+        if (!scope.isWaliKelas && (!scope.assignedMapelIds.includes(mapelId) || !siswa.kelasId || !scope.assignedKelasIds.includes(siswa.kelasId))) {
+          return res.status(403).json({ error: "Anda hanya dapat menginput nilai UPK untuk kelas dan mapel yang Anda ampu." });
+        }
+      }
+
+      const rounded = round2(nilaiUpk);
+      const existing = await prisma.nilai.findFirst({
+        where: {
+          sekolahId,
+          siswaId,
+          mapelId,
+          tahunAjaranId: null,
+          catatanKompetensi: UPK_OVERRIDE_MARKER,
+        },
+        select: { id: true },
+      });
+
+      const saved = existing
+        ? await prisma.nilai.update({
+            where: { id: existing.id },
+            data: { nilaiMandiri: rounded, nilaiSimulasi: rounded, nilaiAkhir: rounded, tanggalSimulasi: new Date() },
+          })
+        : await prisma.nilai.create({
+            data: {
+              id: randomBytes(16).toString("hex"),
+              sekolahId,
+              siswaId,
+              mapelId,
+              tahunAjaranId: null,
+              nilaiMandiri: rounded,
+              nilaiSimulasi: rounded,
+              nilaiAkhir: rounded,
+              catatanKompetensi: UPK_OVERRIDE_MARKER,
+            },
+          });
+
+      return res.json({ nilai: saved, message: "Nilai UPK berhasil disimpan untuk perhitungan Transkrip Ijazah." });
+    } catch (error) {
+      console.error("Gagal menyimpan nilai UPK:", error);
+      return res.status(503).json({ error: "Nilai UPK belum dapat disimpan." });
+    }
+  });
+
+  // ==========================================
+  // 5. SINKRONISASI OTOMATIS NILAI TUGAS + CBT -> E-RAPORT
+  // ==========================================
+  router.post("/raport/sinkron-otomatis", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const kelasId = cleanText(req.body?.kelasId, 100);
+      const tahunAjaranId = cleanText(req.body?.tahunAjaranId, 100);
+      if (!kelasId || !tahunAjaranId) {
+        return res.status(400).json({ error: "Pilih kelas dan tahun ajaran terlebih dahulu." });
+      }
+
+      const [kelas, year] = await Promise.all([
+        prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true, nama: true } }),
+        prisma.tahunAjaran.findFirst({ where: { id: tahunAjaranId, sekolahId }, select: { id: true } }),
+      ]);
+      if (!kelas || !year) {
+        return res.status(404).json({ error: "Kelas atau tahun ajaran tidak ditemukan." });
+      }
+
+      let allowedMapelIds: Set<string> | null = null;
+      if (peran === "GURU" && guruId) {
+        const scope = await resolveTeacherScope(sekolahId, guruId);
+        if (!scope.isWaliKelas) {
+          if (!scope.assignedKelasIds.includes(kelasId)) {
+            return res.status(403).json({ error: "Anda tidak memiliki akses sinkronisasi nilai untuk kelas ini." });
+          }
+          allowedMapelIds = new Set(scope.assignedMapelIds);
+        }
+      }
+
+      const siswaList = await prisma.siswa.findMany({
+        where: { sekolahId, kelasId, status: "Aktif" },
+        select: { id: true },
+        take: 500,
+      });
+      const siswaIds = siswaList.map((s) => s.id);
+      if (siswaIds.length === 0) {
+        return res.json({ syncedCount: 0, studentsCount: 0, message: "Belum ada siswa aktif pada kelas ini." });
+      }
+
+      const [taskSubmissions, cbtAttempts, existingGrades] = await Promise.all([
+        prisma.pengumpulanTugas.findMany({
+          where: {
+            siswaId: { in: siswaIds },
+            nilai: { not: null },
+            tugas: { sekolahId, kelasId, tahunAjaranId },
+          },
+          select: {
+            siswaId: true,
+            nilai: true,
+            tugas: { select: { mapelId: true } },
+          },
+        }),
+        prisma.percobaanUjian.findMany({
+          where: {
+            siswaId: { in: siswaIds },
+            dikumpulkanPada: { not: null },
+            ujian: { sekolahId, kelasId, tahunAjaranId },
+          },
+          select: {
+            siswaId: true,
+            nilai: true,
+            nilaiOverride: true,
+            ujian: { select: { mapelId: true, kode: true, judul: true } },
+          },
+        }),
+        prisma.nilai.findMany({
+          where: {
+            sekolahId,
+            siswaId: { in: siswaIds },
+            tahunAjaranId,
+            NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
+          },
+          select: { id: true, siswaId: true, mapelId: true, nilaiMandiri: true, nilaiSimulasi: true },
+        }),
+      ]);
+
+      const taskMap = new Map<string, number[]>();
+      for (const sub of taskSubmissions) {
+        if (typeof sub.nilai !== "number" || !Number.isFinite(sub.nilai)) continue;
+        if (allowedMapelIds && !allowedMapelIds.has(sub.tugas.mapelId)) continue;
+        const key = `${sub.siswaId}::${sub.tugas.mapelId}`;
+        const list = taskMap.get(key) ?? [];
+        list.push(sub.nilai);
+        taskMap.set(key, list);
+      }
+
+      const cbtMap = new Map<string, number[]>();
+      for (const att of cbtAttempts) {
+        // Keep UPK exams exclusively for 40% Transkrip Ijazah, not regular semester CBT average
+        if (isUpkExam(att.ujian.kode, att.ujian.judul)) continue;
+        const score = att.nilaiOverride ?? att.nilai;
+        if (typeof score !== "number" || !Number.isFinite(score)) continue;
+        if (allowedMapelIds && !allowedMapelIds.has(att.ujian.mapelId)) continue;
+        const key = `${att.siswaId}::${att.ujian.mapelId}`;
+        const list = cbtMap.get(key) ?? [];
+        list.push(score);
+        cbtMap.set(key, list);
+      }
+
+      const existingMap = new Map(existingGrades.map((g) => [`${g.siswaId}::${g.mapelId}`, g]));
+      const allKeys = new Set<string>([...taskMap.keys(), ...cbtMap.keys()]);
+
+      let syncedCount = 0;
+      for (const key of allKeys) {
+        const [siswaId, mapelId] = key.split("::");
+        const taskScores = taskMap.get(key) ?? [];
+        const cbtScores = cbtMap.get(key) ?? [];
+        const existing = existingMap.get(key);
+
+        const avgTask = taskScores.length > 0
+          ? round2(taskScores.reduce((a, b) => a + b, 0) / taskScores.length)
+          : null;
+        const avgCbt = cbtScores.length > 0
+          ? round2(cbtScores.reduce((a, b) => a + b, 0) / cbtScores.length)
+          : null;
+
+        const nilaiMandiri = avgTask ?? existing?.nilaiMandiri ?? avgCbt ?? 0;
+        const nilaiSimulasi = avgCbt ?? existing?.nilaiSimulasi ?? avgTask ?? 0;
+        const nilaiAkhir = round2((nilaiMandiri + nilaiSimulasi) / 2);
+
+        if (existing) {
+          await prisma.nilai.update({
+            where: { id: existing.id },
+            data: { nilaiMandiri, nilaiSimulasi, nilaiAkhir, tanggalSimulasi: new Date() },
+          });
+        } else {
+          await prisma.nilai.create({
+            data: {
+              id: randomBytes(16).toString("hex"),
+              sekolahId,
+              siswaId,
+              mapelId,
+              tahunAjaranId,
+              nilaiMandiri,
+              nilaiSimulasi,
+              nilaiAkhir,
+            },
+          });
+        }
+        syncedCount += 1;
+      }
+
+      return res.json({
+        syncedCount,
+        studentsCount: siswaIds.length,
+        message:
+          syncedCount > 0
+            ? `Sinkronisasi berhasil: ${syncedCount} entri nilai E-Raport diperbarui otomatis dari Tugas & CBT kelas ${kelas.nama}.`
+            : `Belum ada nilai Tugas atau CBT yang dinilai pada kelas ${kelas.nama} untuk semester ini.`,
+      });
+    } catch (error) {
+      console.error("Gagal menyinkronkan nilai raport otomatis:", error);
+      return res.status(503).json({ error: "Sinkronisasi nilai otomatis belum dapat diproses." });
     }
   });
 

@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
+import { offloadDataUrlToSupabaseStorage } from "./storage-upload.js";
 import { validateDocumentAttachment } from "./upload-validation.js";
 
 export type VervalStatus = "BELUM_LENGKAP" | "SIAP_VERVAL" | "TERVERIFIKASI_PKBM";
@@ -1047,7 +1048,11 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
         } else if (typeof rawVal !== "string" || !isSafeDocumentUrl(rawVal)) {
           return res.status(400).json({ error: `${label} harus berupa tautan http/https atau file gambar/PDF yang valid (maks. 1.5 MB).` });
         } else {
-          updateData[fieldKey] = rawVal.trim();
+          updateData[fieldKey] = await offloadDataUrlToSupabaseStorage({
+            value: rawVal.trim(),
+            sekolahId: ctx.sekolahId,
+            category: "verval",
+          });
         }
       }
     }

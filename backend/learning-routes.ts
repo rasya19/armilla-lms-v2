@@ -3,6 +3,7 @@ import type { Request } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { parseGrade, parseLearningContent, parseLearningContentUpdate, parseSubmission } from "./learning-input.js";
+import { offloadDataUrlToSupabaseStorage } from "./storage-upload.js";
 
 type LearningSession = { sekolahId: string; peran: "ADMIN" | "SISWA" | "GURU"; siswaId: string | null; kelasId: string | null; guruId: string | null; wajibGantiPassword: boolean };
 type GetSession = (req: Request) => Promise<LearningSession | null>;
@@ -246,12 +247,21 @@ export function learningRoutes(getSession: GetSession, today: () => Date) {
     const data = parseSubmission(req.body);
     if (!data) return res.status(400).json({ error: "Isi minimal jawaban teks, tautan, atau unggah foto tugas" });
     try {
+      const storedPhotoUrl = data.attachmentPhotoUrl
+        ? await offloadDataUrlToSupabaseStorage({
+            value: data.attachmentPhotoUrl,
+            sekolahId: s.sekolahId,
+            category: "tugas",
+          })
+        : null;
       const saved = await prisma.$transaction(async (tx) => {
         const siswa = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Siswa" WHERE "id" = ${s.siswaId} AND "sekolahId" = ${s.sekolahId} AND "kelasId" = ${s.kelasId} AND "status" = 'Aktif' FOR UPDATE`;
         if (!siswa.length) return false;
         const task = await tx.tugas.findFirst({ where: { ...scope(s), id: req.params.id }, select: { id: true } });
         if (!task) return false;
-        await tx.pengumpulanTugas.create({ data: { ...data, tugasId: task.id, siswaId: s.siswaId ?? "" } });
+        await tx.pengumpulanTugas.create({
+          data: { ...data, attachmentPhotoUrl: storedPhotoUrl, tugasId: task.id, siswaId: s.siswaId ?? "" },
+        });
         return true;
       });
       if (!saved) return res.status(404).json({ error: "Tugas atau penempatan kelas tidak ditemukan." });

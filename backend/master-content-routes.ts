@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { Prisma } from "@prisma/client";
 import { GoogleGenAI, Type } from "@google/genai";
 import { prisma } from "./db.js";
+import { resolveGeminiModel } from "./ai-exam-generator.js";
 import {
   cleanInt,
   cleanText,
@@ -461,7 +462,7 @@ export function masterContentRoutes(requireMaster: MasterSessionChecker) {
         ].join("\n");
 
         const response = await ai.models.generateContent({
-          model: "gemini-4-hydrogen",
+          model: resolveGeminiModel(),
           contents: prompt,
           config: {
             maxOutputTokens: 4096,
@@ -516,7 +517,7 @@ export function masterContentRoutes(requireMaster: MasterSessionChecker) {
       ].join("\n");
 
       const response = await ai.models.generateContent({
-        model: "gemini-4-hydrogen",
+        model: resolveGeminiModel(),
         contents: prompt,
         config: {
           maxOutputTokens: 4096,

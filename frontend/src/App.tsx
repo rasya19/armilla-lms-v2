@@ -1,14 +1,6 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { BrandLogo } from "./components/BrandLogo";
-import { LandingPage } from "./components/LandingPage";
-import { PublicSchoolPortal } from "./components/PublicSchoolPortal";
-import { MasterDashboard } from "./components/MasterDashboard";
-import { SchoolRegistration } from "./components/SchoolRegistration";
-import { SchoolHome, SchoolLogin } from "./components/SchoolAccess";
-import { PublicPPDB } from "./components/SchoolForms";
-import { LmsHome, LmsLogin } from "./components/LmsAccess";
-import { DinasHome, DinasLogin } from "./components/DinasDashboard";
 import { PortalSpinner } from "./components/DashboardUI";
 import {
   clearAuthCache,
@@ -18,6 +10,18 @@ import {
 } from "./components/authSessionCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./components/fetchWithTimeout";
 import { formatEndDateId } from "./components/trialDates";
+
+const LandingPage = lazy(() => import("./components/LandingPage").then((m) => ({ default: m.LandingPage })));
+const PublicSchoolPortal = lazy(() => import("./components/PublicSchoolPortal").then((m) => ({ default: m.PublicSchoolPortal })));
+const MasterDashboard = lazy(() => import("./components/MasterDashboard").then((m) => ({ default: m.MasterDashboard })));
+const SchoolRegistration = lazy(() => import("./components/SchoolRegistration").then((m) => ({ default: m.SchoolRegistration })));
+const SchoolHome = lazy(() => import("./components/SchoolAccess").then((m) => ({ default: m.SchoolHome })));
+const SchoolLogin = lazy(() => import("./components/SchoolAccess").then((m) => ({ default: m.SchoolLogin })));
+const PublicPPDB = lazy(() => import("./components/SchoolForms").then((m) => ({ default: m.PublicPPDB })));
+const LmsHome = lazy(() => import("./components/LmsAccess").then((m) => ({ default: m.LmsHome })));
+const LmsLogin = lazy(() => import("./components/LmsAccess").then((m) => ({ default: m.LmsLogin })));
+const DinasHome = lazy(() => import("./components/DinasDashboard").then((m) => ({ default: m.DinasHome })));
+const DinasLogin = lazy(() => import("./components/DinasDashboard").then((m) => ({ default: m.DinasLogin })));
 
 function Unavailable({ schoolLogin = false }: { schoolLogin?: boolean }) {
   return <main className="min-h-screen bg-slate-950 px-6 py-24 text-white"><div className="mx-auto max-w-lg"><h1 className="text-3xl font-bold">{schoolLogin ? "Masuk melalui subdomain sekolah" : "Fitur belum tersedia"}</h1><p className="mt-4 leading-7 text-slate-300">{schoolLogin ? "Gunakan alamat login sekolah Anda. Hubungi admin sekolah jika belum mengetahui alamatnya." : "Layanan ini sedang disiapkan dan belum menerima data. Silakan kembali ke halaman utama."}</p><Link className="mt-8 inline-block text-amber-300 underline" to="/">Kembali ke beranda</Link></div></main>;
@@ -144,7 +148,11 @@ function MasterHome() {
 }
 
 function AppRoutes() {
-  return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  return (
+    <Suspense fallback={<PortalSpinner label="Memuat halaman" />}>
+      <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>
+    </Suspense>
+  );
 }
 
 export default function App() {
@@ -225,7 +233,13 @@ export default function App() {
       </main>
     );
   }
-  if (mainDomain) return <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>;
+  if (mainDomain) {
+    return (
+      <Suspense fallback={<PortalSpinner label="Memuat halaman" />}>
+        <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>
+      </Suspense>
+    );
+  }
   if (schoolDomain) {
     return (
       <>
@@ -235,19 +249,21 @@ export default function App() {
             <button type="button" onClick={() => setContextWarning("")} className="underline">Tutup</button>
           </div>
         )}
-        <Routes>
-          <Route path="/" element={<PublicSchoolPortal />} />
-          <Route path="/login" element={<SchoolLogin />} />
-          <Route path="/sekolah" element={<SchoolHome />} />
-          <Route path="/lms/login" element={<LmsLogin />} />
-          <Route path="/lms" element={<LmsHome />} />
-          <Route path="/ppdb/:slug" element={<PublicPPDB />} />
-          <Route path="/dinas/login" element={<DinasLogin />} />
-          <Route path="/dinas" element={<DinasHome />} />
-          <Route path="/dinas/berita-acara" element={<DinasHome />} />
-          <Route path="/dinas/arsip-berita-acara" element={<DinasHome />} />
-          <Route path="*" element={<Unavailable />} />
-        </Routes>
+        <Suspense fallback={<PortalSpinner label="Memuat portal sekolah" />}>
+          <Routes>
+            <Route path="/" element={<PublicSchoolPortal />} />
+            <Route path="/login" element={<SchoolLogin />} />
+            <Route path="/sekolah" element={<SchoolHome />} />
+            <Route path="/lms/login" element={<LmsLogin />} />
+            <Route path="/lms" element={<LmsHome />} />
+            <Route path="/ppdb/:slug" element={<PublicPPDB />} />
+            <Route path="/dinas/login" element={<DinasLogin />} />
+            <Route path="/dinas" element={<DinasHome />} />
+            <Route path="/dinas/berita-acara" element={<DinasHome />} />
+            <Route path="/dinas/arsip-berita-acara" element={<DinasHome />} />
+            <Route path="*" element={<Unavailable />} />
+          </Routes>
+        </Suspense>
       </>
     );
   }

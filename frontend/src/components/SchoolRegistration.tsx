@@ -241,7 +241,7 @@ export function SchoolRegistration() {
                   (14 hari).
                 </p>
                 <p className="text-sky-900/90">
-                  Portal admin &amp; LMS sekolah langsung aktif selama 14 hari. Setelah melewati tanggal berakhir (end date), akses portal dan seluruh login otomatis diblokir sampai langganan diaktifkan oleh pengelola.
+                  <strong>Semua fitur Paket PRO terbuka penuh selama 14 hari gratis</strong> — termasuk Ujian CBT + AI Generator Soal, E-Raport + Leger + Transkrip Ijazah (60% Raport + 40% UPK), Bank E-Modul Nasional, Keuangan &amp; SPP, Akreditasi 8 SNP, Sarpras, dan Asisten AI. Setelah melewati tanggal berakhir, akses otomatis dikunci sampai langganan diaktifkan.
                 </p>
               </div>
             </div>
@@ -301,9 +301,37 @@ export function SchoolRegistration() {
           <div role="status" className="mt-6 rounded-xl bg-[#f8f6ef] p-5 text-sm leading-6">{message}</div>
         ) : (
           <form onSubmit={submit} className="mt-6 space-y-5">
+            {mode === "trial" ? (
+              <div className="rounded-2xl border-2 border-indigo-500/80 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-3 py-0.5 text-[11px] font-extrabold text-white">
+                      <Sparkles size={12} aria-hidden="true" />
+                      GRATIS 14 HARI · FULL FITUR PRO
+                    </span>
+                    <h3 className="mt-2 text-base font-extrabold text-[#142137]">
+                      Semua Fitur Paket Pro Terbuka Otomatis
+                    </h3>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-black text-indigo-700">Rp 0</p>
+                    <p className="text-[11px] font-semibold text-slate-500">selama 14 hari pertama</p>
+                  </div>
+                </div>
+                <ul className="mt-3 grid gap-1.5 text-xs text-slate-700 sm:grid-cols-2">
+                  <li className="flex items-center gap-1.5"><Check size={14} className="shrink-0 text-emerald-600" /> Ujian Online CBT &amp; AI Generator Soal (UTS/UAS/UPK)</li>
+                  <li className="flex items-center gap-1.5"><Check size={14} className="shrink-0 text-emerald-600" /> E-Raport, Leger Raport &amp; Transkrip Nilai Ijazah (60/40)</li>
+                  <li className="flex items-center gap-1.5"><Check size={14} className="shrink-0 text-emerald-600" /> Bank E-Modul Nasional &amp; Tugas Foto Siswa</li>
+                  <li className="flex items-center gap-1.5"><Check size={14} className="shrink-0 text-emerald-600" /> Keuangan SPP, Akreditasi 8 SNP, Sarpras &amp; Asisten AI</li>
+                </ul>
+                <p className="mt-3 text-[11px] text-slate-600">
+                  Berlaku penuh hingga <span className="font-bold text-sky-800">{formatEndDateId(previewEnd)}</span>. Setelah masa uji coba selesai, Anda bebas memilih Paket Basic, Reguler, atau Pro.
+                </p>
+              </div>
+            ) : (
             <fieldset className="space-y-3">
               <legend className="text-sm font-semibold text-[#142137]">
-                {mode === "trial" ? "Pilih Paket untuk Uji Coba Gratis 14 Hari" : "Paket Langganan"}
+                Paket Langganan
               </legend>
               <div className="grid gap-3 sm:grid-cols-3">
                 {SUBSCRIPTION_PLANS.map((plan) => {
@@ -335,13 +363,13 @@ export function SchoolRegistration() {
                           )}
                         </div>
                         <p className="mt-2 text-base font-extrabold text-indigo-800">
-                          {mode === "trial" ? "Rp 0 / 14 Hari" : plan.annualPriceLabel}
+                          {plan.annualPriceLabel}
                         </p>
                         <p className="mt-1 text-xs font-medium text-slate-600">
-                          {mode === "trial" ? `Normal ${plan.price} ${plan.period}` : `${plan.price} ${plan.period}`}
+                          {plan.price} {plan.period}
                         </p>
                         <span className="mt-2 inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-900">
-                          {mode === "trial" ? "Trial 14 Hari" : plan.popular ? "Populer • Hemat 2 Bulan" : plan.badge}
+                          {plan.popular ? "Populer • Hemat 2 Bulan" : plan.badge}
                         </span>
                       </div>
                     </label>
@@ -349,18 +377,10 @@ export function SchoolRegistration() {
                 })}
               </div>
               <p className="text-xs text-slate-600">
-                {mode === "trial" ? (
-                  <>
-                    Terpilih: <span className="font-semibold text-[#142137]">{activePlan.name} (Uji Coba Gratis 14 Hari)</span> — berlaku hingga{" "}
-                    <span className="font-semibold text-sky-800">{formatEndDateId(previewEnd)}</span>.
-                  </>
-                ) : (
-                  <>
-                    Terpilih: <span className="font-semibold text-[#142137]">{activePlan.name} — {activePlan.annualPriceLabel}</span> ({activePlan.billingNote}).
-                  </>
-                )}
+                Terpilih: <span className="font-semibold text-[#142137]">{activePlan.name} — {activePlan.annualPriceLabel}</span> ({activePlan.billingNote}).
               </p>
             </fieldset>
+            )}
 
             <label className="block text-sm font-semibold">
               Nama sekolah / PKBM

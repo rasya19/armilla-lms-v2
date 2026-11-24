@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import {
   Archive,
   BookOpen,
@@ -198,7 +197,8 @@ function visibilityBadge(visibility: string) {
   };
 }
 
-function downloadExcelTemplate() {
+async function downloadExcelTemplate() {
+  const XLSX = await import("xlsx");
   const rows = [
     {
       Paket: "Paket C",
@@ -524,6 +524,7 @@ export function ModuleBankView({ sandboxRole }: { sandboxRole?: "GURU" }) {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
+      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const firstSheet = wb.Sheets[wb.SheetNames[0]];

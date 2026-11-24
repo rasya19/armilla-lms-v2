@@ -22,6 +22,7 @@ import { examRoutes } from "./exam-routes.js";
 import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
 import { createActionRateLimiter, extractRequestIp } from "./action-rate-limit.js";
+import { paymentWebhookRoutes, sendWhatsAppNotification, subscriptionBillingRoutes, trialReminderCronRoute } from "./notification-payment.js";
 import { Prisma } from "@prisma/client";
 import { internalProvisionRoutes } from "./internal-provision.js";
 import { forwardRegistrationToMaster } from "./master-admin-registration.js";
@@ -74,6 +75,8 @@ const dummyHash = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 app.disable("x-powered-by");
 const production = process.env.NODE_ENV === "production";
 app.use("/api/internal", internalProvisionRoutes(prisma));
+app.use("/api/internal/cron", trialReminderCronRoute());
+app.use("/api/webhooks/payment", express.json({ limit: "64kb" }), paymentWebhookRoutes());
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/verval", express.json({ limit: "20mb" }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "2mb" }));
@@ -171,6 +174,7 @@ app.post("/api/auth/lms/ganti-password", actionRateLimitMiddleware("pw-change-lm
 app.post("/api/sekolah/ai-assistant", actionRateLimitMiddleware("ai-assistant", 15, 900, "Batas penggunaan Asisten AI sementara tercapai. Tunggu beberapa menit sebelum mencoba lagi."));
 app.post("/api/school/ai-assistant", actionRateLimitMiddleware("ai-assistant", 15, 900, "Batas penggunaan Asisten AI sementara tercapai. Tunggu beberapa menit sebelum mencoba lagi."));
 app.post("/api/master/pustaka-konten/generate-ai", actionRateLimitMiddleware("master-ai-gen", 20, 900, "Batas pembuatan draf AI sementara tercapai. Tunggu beberapa menit."));
+app.post("/api/sekolah/cbt/generate-ai", actionRateLimitMiddleware("cbt-ai-gen", 15, 900, "Batas pembuatan soal AI sementara tercapai. Tunggu beberapa menit sebelum mencoba lagi."));
 app.post("/api/lms/ujian/:ujianId/mulai", actionRateLimitMiddleware("exam-start", 15, 900, "Terlalu banyak percobaan memulai ujian atau memasukkan token. Tunggu beberapa menit."));
 app.post("/api/lms/ujian/:ujianId/kumpulkan", actionRateLimitMiddleware("exam-submit", 10, 900, "Terlalu banyak permintaan pengumpulan ujian. Periksa status ujian Anda."));
 app.post("/api/lms/pembelajaran/tugas/:id/pengumpulan", actionRateLimitMiddleware("assignment-upload", 20, 900, "Terlalu banyak permintaan pengumpulan tugas. Tunggu sebentar."));
@@ -454,8 +458,15 @@ app.post("/api/pendaftaran-sekolah/coba-gratis", async (req, res) => {
       // Audit log in PendaftaranSekolah is best-effort
     }
 
+    if (teleponKontak) {
+      void sendWhatsAppNotification(
+        teleponKontak,
+        `Selamat datang ${namaKontak}! Uji coba gratis ${TRIAL_DURATION_DAYS} hari (akses penuh semua fitur Paket Pro) untuk ${createdSchool.nama} sudah aktif.\n\nPortal: https://${createdSchool.slug}.pkbm.siput.id\nEmail Admin: ${emailKontak}\nBerakhir: ${formatIndonesianDateTime(endDateIso)}`,
+      );
+    }
+
     return res.status(201).json({
-      message: `Uji coba gratis ${TRIAL_DURATION_DAYS} hari untuk ${createdSchool.nama} aktif hingga ${formatIndonesianDateTime(endDateIso)}.`,
+      message: `Uji coba gratis ${TRIAL_DURATION_DAYS} hari (akses penuh semua fitur Paket Pro) untuk ${createdSchool.nama} aktif hingga ${formatIndonesianDateTime(endDateIso)}.`,
       trialDays: TRIAL_DURATION_DAYS,
       startDate: startDate.toISOString(),
       endDate: endDateIso,
@@ -2967,6 +2978,11 @@ const resolveCollabSchoolSession = async (req: express.Request): Promise<SchoolS
 };
 
 app.use("/api/sekolah", schoolManagementRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
+app.use("/api/sekolah/langganan", subscriptionBillingRoutes(async (req) => {
+  const session = await getSession(req, "ADMIN");
+  if (!session?.akun.sekolahId) return null;
+  return { sekolahId: session.akun.sekolahId, adminNama: session.akun.nama, adminEmail: session.akun.email ?? null };
+}));
 app.use("/api/sekolah", schoolTierRoutes(async (req) => (await getSession(req, "ADMIN"))?.akun.sekolahId ?? null));
 app.use("/api/sekolah", tahap2AcademicRoutes(resolveAcademicSchoolSession));
 app.use("/api/sekolah", tahap2CbtRoutes(resolveAdminOrTeacherSession));
@@ -4065,9 +4081,9 @@ app.post("/api/master/sekolah", async (req, res) => {
     const adminName = typeof body.adminName === "string" ? body.adminName.trim() : "";
     const adminEmail = typeof body.adminEmail === "string" ? body.adminEmail.trim().toLowerCase() : "";
     const adminPassword = typeof body.adminPassword === "string" ? body.adminPassword : "";
-    const plan = toCleanPlanCode(body.plan ?? body.paket) ?? "reguler";
-    const isiKontenSiapPakai = body.isiKontenSiapPakai === true || body.seedMasterContent === true;
     const trial14Hari = body.trial14Hari === true;
+    const plan = trial14Hari ? "pro" : (toCleanPlanCode(body.plan ?? body.paket) ?? "reguler");
+    const isiKontenSiapPakai = body.isiKontenSiapPakai === true || body.seedMasterContent === true;
     let resolvedExpiresAt: Date | null = null;
     if (trial14Hari) {
       resolvedExpiresAt = calculateTrialEndDate(new Date(), TRIAL_DURATION_DAYS);
@@ -4180,7 +4196,7 @@ app.patch("/api/master/sekolah/:id/masa-aktif", async (req, res) => {
     if (mode === "trial14") {
       nextStatus = "ACTIVE";
       nextExpiresAt = calculateTrialEndDate(now, TRIAL_DURATION_DAYS);
-      successMessage = `Uji coba 14 hari untuk ${existing.nama} diaktifkan hingga ${formatIndonesianDateTime(nextExpiresAt)}.`;
+      successMessage = `Uji coba 14 hari (fitur penuh Paket Pro) untuk ${existing.nama} diaktifkan hingga ${formatIndonesianDateTime(nextExpiresAt)}.`;
     } else if (mode === "extend14") {
       const anchor = existing.expiresAt && existing.expiresAt > now ? existing.expiresAt : now;
       nextStatus = "ACTIVE";
@@ -4221,8 +4237,12 @@ app.patch("/api/master/sekolah/:id/masa-aktif", async (req, res) => {
 
     const updated = await prisma.sekolah.update({
       where: { id: existing.id },
-      data: { status: nextStatus, expiresAt: nextExpiresAt },
-      select: { id: true, nama: true, status: true, expiresAt: true },
+      data: {
+        status: nextStatus,
+        expiresAt: nextExpiresAt,
+        ...(mode === "trial14" ? { plan: "pro" } : {}),
+      },
+      select: { id: true, nama: true, status: true, plan: true, expiresAt: true },
     });
 
     return res.json({

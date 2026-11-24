@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
@@ -1666,44 +1666,26 @@ function StudentCbtRunner({
   const [remainingMs, setRemainingMs] = useState(() => Math.max(0, new Date(exam.deadline).getTime() - Date.now()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const autoSubmittedRef = useRef(false);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setRemainingMs(Math.max(0, new Date(exam.deadline).getTime() - Date.now()));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [exam.deadline]);
-
-  function selectOption(questionId: string, kode: CbtChoice) {
-    const next = { ...answers, [questionId]: kode };
-    setAnswers(next);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {
-      // Ignore quota errors
-    }
-  }
-
-  async function handleSubmit() {
-    const unanswered = exam.soal.length - Object.keys(answers).length;
-    const confirmed = await confirm(
-      unanswered > 0
-        ? `Kumpulkan ujian sekarang? Masih ada ${unanswered} soal yang belum dijawab.`
-        : "Semua soal sudah terjawab. Kumpulkan ujian sekarang?",
-    );
-    if (!confirmed) return;
-
+  const submitExamPayload = useCallback(async (isAutoSubmit: boolean) => {
     setBusy(true);
     setError("");
     try {
-      const res = await fetchWithTimeout(`/api/lms/ujian/${encodeURIComponent(exam.id)}/kumpulkan`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+      const res = await fetchWithTimeout(
+        `/api/lms/ujian/${encodeURIComponent(exam.id)}/kumpulkan`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+          },
+          body: JSON.stringify({ jawaban: answersRef.current, autoSubmit: isAutoSubmit }),
         },
-        body: JSON.stringify({ jawaban: answers }),
-      });
+        30_000,
+      );
       const body = (await res.json().catch(() => null)) as { success?: boolean; nilai?: number | null; error?: string } | null;
       if (!res.ok) throw new Error(body?.error || "Ujian belum dapat dikumpulkan.");
       try {
@@ -1717,6 +1699,50 @@ function StudentCbtRunner({
     } finally {
       setBusy(false);
     }
+  }, [exam.id, onSubmitted, sandboxRole, storageKey]);
+
+  useEffect(() => {
+    const deadlineMs = new Date(exam.deadline).getTime();
+    if (deadlineMs <= Date.now()) {
+      setRemainingMs(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const next = Math.max(0, deadlineMs - Date.now());
+      setRemainingMs(next);
+      if (next <= 0) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [exam.deadline]);
+
+  useEffect(() => {
+    if (remainingMs === 0 && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      void submitExamPayload(true);
+    }
+  }, [remainingMs, submitExamPayload]);
+
+  function selectOption(questionId: string, kode: CbtChoice) {
+    const next = { ...answers, [questionId]: kode };
+    setAnswers(next);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      // Ignore quota errors
+    }
+  }
+
+  async function handleSubmit() {
+    if (busy) return;
+    const unanswered = exam.soal.length - Object.keys(answers).length;
+    const confirmed = await confirm(
+      unanswered > 0
+        ? `Kumpulkan ujian sekarang? Masih ada ${unanswered} soal yang belum dijawab.`
+        : "Semua soal sudah terjawab. Kumpulkan ujian sekarang?",
+    );
+    if (!confirmed) return;
+    autoSubmittedRef.current = true;
+    await submitExamPayload(false);
   }
 
   const question = exam.soal[index];

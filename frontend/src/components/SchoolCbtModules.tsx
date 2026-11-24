@@ -17,11 +17,13 @@ import {
   Save,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
+import { CbtAiGeneratorPanel } from "./CbtAiGeneratorPanel";
 import { CbtImportPanel } from "./CbtImportPanel";
 import {
   CBT_CATEGORIES,
@@ -743,11 +745,11 @@ export function CbtBankSoalView({
 }: {
   onOpenSettings?: () => void;
   sandboxRole?: "GURU" | "SISWA";
-  initialSubTab?: "sekolah" | "publik";
+  initialSubTab?: "sekolah" | "publik" | "ai";
 } = {}) {
   const isDark = useTenantTheme() === "dark";
   const { ujianList, kelasList, mapelList, guruList, loading, error, setError, reload } = useCbtOverview(sandboxRole);
-  const [bankSubTab, setBankSubTab] = useState<"sekolah" | "publik">(initialSubTab);
+  const [bankSubTab, setBankSubTab] = useState<"sekolah" | "publik" | "ai">(initialSubTab);
   const [selectedUjianId, setSelectedUjianId] = useState("");
   const [soalList, setSoalList] = useState<SoalItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -1001,9 +1003,43 @@ export function CbtBankSoalView({
           <Globe size={14} aria-hidden="true" />
           Bank Soal Umum
         </button>
+        <button
+          type="button"
+          aria-pressed={bankSubTab === "ai"}
+          onClick={() => setBankSubTab("ai")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${
+            bankSubTab === "ai"
+              ? isDark
+                ? "bg-violet-400 text-slate-950"
+                : "bg-violet-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800"
+                : "text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <Sparkles size={14} aria-hidden="true" />
+          Generate Soal AI (UTS/UAS/UPK)
+        </button>
       </div>
 
-      {bankSubTab === "publik" ? (
+      {bankSubTab === "ai" ? (
+        <CbtAiGeneratorPanel
+          kelasList={kelasList}
+          mapelList={mapelList}
+          guruList={guruList}
+          sandboxRole={sandboxRole}
+          onSaved={(createdId) => {
+            void reload().then(() => {
+              if (createdId) {
+                setSelectedUjianId(createdId);
+                void loadQuestions(createdId);
+              }
+              setBankSubTab("sekolah");
+              setNotice("Paket soal AI berhasil disimpan ke Bank Soal Sekolah Anda.");
+            });
+          }}
+        />
+      ) : bankSubTab === "publik" ? (
         <CbtPublicBanksPanel
           kelasList={kelasList}
           sandboxRole={sandboxRole}

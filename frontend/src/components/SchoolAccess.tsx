@@ -108,6 +108,7 @@ import {
 } from "./SchoolTierViews";
 import { VervalDapodikView } from "./VervalDapodikView";
 import { ModuleBankView } from "./ModuleBankView";
+import { SchoolOnboardingChecklist } from "./SchoolOnboardingChecklist";
 
 const DEVELOPER_EMAIL = "ismantoj88@gmail.com";
 
@@ -1755,6 +1756,19 @@ function SchoolOverview({
               );
             })}
           </div>
+
+          <SchoolOnboardingChecklist
+            slug={slug}
+            hasStudents={summary.siswa > 0}
+            hasTeachers={summary.guru > 0}
+            hasClasses={summary.kelas > 0}
+            onNavigate={(target) => {
+              if (target === "pengaturan-profil") onOpenView("tema-identitas");
+              else if (target === "siswa") onSelect("siswa");
+              else if (target === "bank-modul") onOpenView("bank-modul");
+              else if (target === "cbt-bank-soal") onOpenView("cbt-bank-soal", "reguler", "Bank Soal CBT");
+            }}
+          />
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="dashboard-glass flex flex-col justify-between rounded-2xl p-6 lg:col-span-8">

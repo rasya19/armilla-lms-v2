@@ -195,6 +195,7 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
         if (s.peran !== "SISWA" || !s.siswaId || !s.kelasId) return res.status(403).json({ error: "Hanya siswa dapat mengumpulkan ujian." });
         const answers = answersInput(req.body?.jawaban);
         if (!answers) return res.status(400).json({ error: "Jawaban tidak valid." });
+        const graceMs = req.body?.autoSubmit === true ? 60_000 : 0;
         try {
           const result = await prisma.$transaction(async (tx) => {
             const students = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Siswa" WHERE "id" = ${s.siswaId} AND "sekolahId" = ${s.sekolahId} AND "kelasId" = ${s.kelasId} AND "status" = 'Aktif' FOR UPDATE`;
@@ -204,7 +205,8 @@ export function examRoutes(getSession: (req: Request) => Promise<Session | null>
             const attempt = await tx.percobaanUjian.findUnique({ where: { ujianId_siswaId: { ujianId: exam.id, siswaId: students[0].id } } });
             if (!attempt || isAttemptFinalized(attempt)) return { kind: "submitted" as const };
             const now = new Date();
-            if (now < exam.mulai || now.getTime() > Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000)) return { kind: "expired" as const };
+            const deadlineMs = Math.min(exam.selesai.getTime(), attempt.dimulaiPada.getTime() + exam.durasiMenit * 60000);
+            if (now < exam.mulai || now.getTime() > deadlineMs + graceMs) return { kind: "expired" as const };
             if (Object.keys(answers).some((id) => !exam.soal.some((question) => question.id === id))) return { kind: "invalid" as const };
             const values = exam.soal.map((question) => {
               const option = answers[question.id] ? question.opsi.find((item) => item.kode === answers[question.id]) : null;

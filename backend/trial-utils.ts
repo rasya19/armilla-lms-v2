@@ -116,14 +116,13 @@ export function parseTrialSignup(
     return { ok: false, error: "Kata sandi login admin wajib 6–1024 karakter." };
   }
 
+  // Uji coba gratis 14 hari selalu membuka seluruh fitur Paket Pro untuk menarik calon klien berlangganan.
   const parsedPlan = parseRegistrationPlan(body.paket ?? body.plan ?? "Pro");
   if (parsedPlan === null) {
     return { ok: false, error: "Pilihan paket uji coba tidak valid." };
   }
-  const resolvedLabel = parsedPlan?.plan ?? "Pro";
-  const lower = resolvedLabel.toLowerCase();
-  const planSlug: "basic" | "reguler" | "pro" =
-    lower === "basic" ? "basic" : lower === "reguler" ? "reguler" : "pro";
+  const resolvedLabel: RegistrationPlan = "Pro";
+  const planSlug: "basic" | "reguler" | "pro" = "pro";
 
   return {
     ok: true,

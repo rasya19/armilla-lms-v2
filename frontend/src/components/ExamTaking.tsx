@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2 } from "lucide-react";
 import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
@@ -28,6 +28,33 @@ export function ExamTaking({ exam, base, onExit, onSubmitted }: { exam: StartedE
   const [remaining, setRemaining] = useState(() => Math.max(0, new Date(exam.deadline).getTime() - Date.now()));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const autoSubmittedRef = useRef(false);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+
+  const submitNow = useCallback(async (isAutoSubmit: boolean) => {
+    setBusy(true); setError("");
+    try {
+      const response = await fetchWithTimeout(
+        `${base}/${encodeURIComponent(exam.id)}/kumpulkan`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jawaban: answersRef.current, autoSubmit: isAutoSubmit }),
+        },
+        30_000,
+      );
+      const value: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(typeof value === "object" && value !== null && "error" in value && typeof value.error === "string" ? value.error : "Ujian belum dapat dikumpulkan.");
+      try { localStorage.removeItem(key); } catch { /* ignore storage cleanup error */ }
+      onSubmitted();
+    } catch (failure) {
+      console.error("Gagal mengumpulkan ujian:", failure);
+      setError(describeFetchError(failure, "Koneksi terputus atau timeout. Draf tetap tersimpan; klik Coba Kumpulkan Lagi atau hubungi guru."));
+    }
+    finally { setBusy(false); }
+  }, [base, exam.id, key, onSubmitted]);
+
   useEffect(() => {
     const deadlineMs = new Date(exam.deadline).getTime();
     if (deadlineMs <= Date.now()) {
@@ -41,6 +68,14 @@ export function ExamTaking({ exam, base, onExit, onSubmitted }: { exam: StartedE
     }, 1000);
     return () => window.clearInterval(timer);
   }, [exam.deadline]);
+
+  useEffect(() => {
+    if (remaining === 0 && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true;
+      void submitNow(true);
+    }
+  }, [remaining, submitNow]);
+
   function choose(id: string, value: Choice) {
     const next = { ...answers, [id]: value };
     setAnswers(next);
@@ -50,22 +85,8 @@ export function ExamTaking({ exam, base, onExit, onSubmitted }: { exam: StartedE
   async function submit() {
     if (busy) return;
     if (!await confirm(`Kumpulkan ujian? ${exam.soal.length - Object.keys(answers).length} soal belum dijawab.`)) return;
-    setBusy(true); setError("");
-    try {
-      const response = await fetchWithTimeout(
-        `${base}/${encodeURIComponent(exam.id)}/kumpulkan`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jawaban: answers }) },
-        30_000,
-      );
-      const value: unknown = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(typeof value === "object" && value !== null && "error" in value && typeof value.error === "string" ? value.error : "Ujian belum dapat dikumpulkan.");
-      try { localStorage.removeItem(key); } catch { /* ignore storage cleanup error */ }
-      onSubmitted();
-    } catch (failure) {
-      console.error("Gagal mengumpulkan ujian:", failure);
-      setError(describeFetchError(failure, "Koneksi terputus atau timeout. Draf tetap tersimpan; periksa status ujian sebelum mencoba lagi."));
-    }
-    finally { setBusy(false); }
+    autoSubmittedRef.current = true;
+    await submitNow(false);
   }
   const question = exam.soal[index];
   const seconds = Math.ceil(remaining / 1000);

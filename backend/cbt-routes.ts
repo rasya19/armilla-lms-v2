@@ -10,6 +10,12 @@ import {
   type SchoolContextResolver,
 } from "./school-modules-shared.js";
 import {
+  aiCategoryCodePrefix,
+  generateExamDraftWithAi,
+  normalizeAiExamCategory,
+  normalizeGeneratedQuestions,
+} from "./ai-exam-generator.js";
+import {
   cbtCategoryPrefix,
   cbtCategoryTag,
   normalizeCbtCategory,
@@ -1800,6 +1806,202 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menyimpan pengaturan CBT:", error);
       return res.status(503).json({ error: "Pengaturan CBT belum dapat disimpan." });
+    }
+  });
+
+  // ==========================================
+  // GENERATE SOAL AI (UTS / UAS / UJIAN AKHIR KELAS AKHIR)
+  // ==========================================
+  router.post("/cbt/generate-ai", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const kelasId = cleanText(req.body?.kelasId, 100);
+      const mapelId = cleanText(req.body?.mapelId, 100);
+      const topik = cleanText(req.body?.topik, 300);
+      const kategori = normalizeAiExamCategory(req.body?.kategori);
+      const jumlahSoal = cleanInt(req.body?.jumlahSoal, 3, 20, 5);
+
+      if (!kelasId || !mapelId) {
+        return res.status(400).json({ error: "Pilih kelas dan mata pelajaran terlebih dahulu." });
+      }
+
+      if (peran === "GURU" && sessionGuruId) {
+        const scope = await resolveTeacherScope(sekolahId, sessionGuruId);
+        if (!scope.isWaliKelas && scope.assignedKelasIds.length > 0 && !scope.assignedKelasIds.includes(kelasId)) {
+          return res.status(403).json({ error: "Anda hanya dapat membuat soal AI untuk kelas yang Anda ampu." });
+        }
+      }
+
+      const [school, kelas, mapel] = await Promise.all([
+        prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { nama: true } }),
+        prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true, nama: true } }),
+        prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true, nama: true } }),
+      ]);
+
+      if (!kelas || !mapel) {
+        return res.status(404).json({ error: "Kelas atau mata pelajaran tidak ditemukan di sekolah ini." });
+      }
+
+      const generated = await generateExamDraftWithAi({
+        kategori,
+        kelasNama: kelas.nama,
+        mapelNama: mapel.nama,
+        topik,
+        jumlahSoal,
+        schoolName: school?.nama ?? undefined,
+      });
+
+      if (generated.ok === false) {
+        return res.status(generated.status).json({ error: generated.error });
+      }
+
+      return res.json({
+        provider: generated.provider,
+        kategori,
+        kelas,
+        mapel,
+        draft: generated.draft,
+      });
+    } catch (error) {
+      console.error("Gagal menghasilkan soal CBT AI:", error);
+      return res.status(503).json({ error: "Layanan generator soal AI belum tersedia." });
+    }
+  });
+
+  router.post("/cbt/save-ai-draft", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const kelasId = cleanText(req.body?.kelasId, 100);
+      const mapelId = cleanText(req.body?.mapelId, 100);
+      let guruId = cleanText(req.body?.guruId, 100);
+      const judul = cleanText(req.body?.judul, 180);
+      const kategori = normalizeAiExamCategory(req.body?.kategori);
+      const durasiMenit = cleanInt(req.body?.durasiMenit, 5, 360, kategori === "UJIAN_AKHIR" ? 90 : 60);
+      const kkm = Math.max(0, Math.min(100, Number(req.body?.kkm ?? 75)));
+      const dipublikasikan = typeof req.body?.dipublikasikan === "boolean" ? req.body.dipublikasikan : false;
+      const requestedVis = parseBankVisibilityStrict(req.body?.visibility);
+      const visibility: BankVisibility = requestedVis === "PUBLIC" ? "PUBLIC" : "PRIVATE";
+      const butirSoal = normalizeGeneratedQuestions(req.body?.butirSoal);
+
+      if (!kelasId || !mapelId || !judul || butirSoal.length === 0) {
+        return res.status(400).json({ error: "Judul, kelas, mata pelajaran, dan minimal 1 butir soal valid wajib diisi." });
+      }
+
+      if (peran === "GURU" && sessionGuruId) {
+        guruId = sessionGuruId;
+        const scope = await resolveTeacherScope(sekolahId, sessionGuruId);
+        if (!scope.isWaliKelas && scope.assignedKelasIds.length > 0 && !scope.assignedKelasIds.includes(kelasId)) {
+          return res.status(403).json({ error: "Anda hanya dapat menyimpan ujian untuk kelas yang Anda ampu." });
+        }
+      }
+
+      if (!guruId) {
+        const firstGuru = await prisma.guru.findFirst({ where: { sekolahId, status: "Aktif" }, select: { id: true } });
+        if (!firstGuru) return res.status(400).json({ error: "Tambahkan minimal satu guru aktif terlebih dahulu." });
+        guruId = firstGuru.id;
+      }
+
+      let tahunAjaran = await prisma.tahunAjaran.findFirst({ where: { sekolahId }, orderBy: { mulai: "desc" }, select: { id: true } });
+      if (!tahunAjaran) {
+        const yearNow = new Date().getUTCFullYear();
+        tahunAjaran = await prisma.tahunAjaran.create({
+          data: {
+            sekolahId,
+            nama: `${yearNow}/${yearNow + 1}`,
+            semester: "Ganjil",
+            mulai: new Date(`${yearNow}-07-01T00:00:00.000Z`),
+            selesai: new Date(`${yearNow + 1}-06-30T00:00:00.000Z`),
+          },
+          select: { id: true },
+        });
+      }
+
+      const [school, kelas, mapel, guru, settings] = await Promise.all([
+        prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { nama: true } }),
+        prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true } }),
+        prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true } }),
+        prisma.guru.findFirst({ where: { id: guruId, sekolahId }, select: { id: true } }),
+        prisma.cbtPengaturan.findUnique({ where: { sekolahId } }).catch(() => null),
+      ]);
+
+      if (!kelas || !mapel || !guru) {
+        return res.status(400).json({ error: "Referensi kelas, mata pelajaran, atau guru tidak ditemukan." });
+      }
+
+      const now = new Date();
+      const mulaiRaw = cleanText(req.body?.mulai, 60);
+      const selesaiRaw = cleanText(req.body?.selesai, 60);
+      const mulai = mulaiRaw ? new Date(mulaiRaw) : now;
+      const selesai = selesaiRaw ? new Date(selesaiRaw) : new Date(mulai.getTime() + 7 * 24 * 60 * 60 * 1000);
+      if (Number.isNaN(mulai.getTime()) || Number.isNaN(selesai.getTime()) || selesai <= mulai) {
+        return res.status(400).json({ error: "Rentang waktu mulai & selesai ujian tidak valid." });
+      }
+
+      const tokenKode = generateExamToken();
+      const tokenHash = createHash("sha256").update(tokenKode).digest("hex");
+      const prefix = aiCategoryCodePrefix(kategori);
+      const kode = `${prefix}-${randomBytes(3).toString("hex").toUpperCase()}`;
+
+      const created = await prisma.ujian.create({
+        data: {
+          sekolahId,
+          tahunAjaranId: tahunAjaran.id,
+          kelasId: kelas.id,
+          mapelId: mapel.id,
+          guruId: guru.id,
+          kode,
+          judul,
+          durasiMenit,
+          mulai,
+          selesai,
+          kkm: Number.isFinite(kkm) ? kkm : (settings?.kkmDefault ?? 75),
+          tokenKode,
+          tokenHash,
+          acakSoal: settings?.acakUrutanSoal ?? true,
+          acakOpsi: settings?.acakOpsiJawaban ?? true,
+          tampilNilai: settings?.tampilkanNilaiLangsung ?? true,
+          toleransiKeluarTab: settings?.batasToleransiKeluarTab ?? 3,
+          dipublikasikan,
+          visibility,
+          originSchoolName: school?.nama ?? null,
+          soal: {
+            create: butirSoal.map((q, idx) => {
+              const options: Array<{ kode: string; teks: string; benar: boolean }> = [
+                { kode: "A", teks: q.opsiA, benar: q.kunciJawaban === "A" },
+                { kode: "B", teks: q.opsiB, benar: q.kunciJawaban === "B" },
+                { kode: "C", teks: q.opsiC, benar: q.kunciJawaban === "C" },
+                { kode: "D", teks: q.opsiD, benar: q.kunciJawaban === "D" },
+              ];
+              if (q.opsiE) {
+                options.push({ kode: "E", teks: q.opsiE, benar: q.kunciJawaban === "E" });
+              }
+              return {
+                urutan: idx + 1,
+                teks: q.teks,
+                pembahasan: q.pembahasan || null,
+                bobot: q.bobot,
+                opsi: { create: options },
+              };
+            }),
+          },
+        },
+        select: { id: true, kode: true, judul: true },
+      });
+
+      return res.status(201).json({
+        ujian: created,
+        jumlahSoal: butirSoal.length,
+        message: `Paket ujian "${created.judul}" (${butirSoal.length} soal) berhasil disimpan ke Bank Soal CBT.`,
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan draf soal AI ke CBT:", error);
+      return res.status(503).json({ error: "Draf soal AI belum dapat disimpan ke CBT." });
     }
   });
 

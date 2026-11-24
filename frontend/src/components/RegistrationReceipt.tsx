@@ -28,7 +28,9 @@ export function RegistrationReceipt({ profile, applicant }: { profile: SchoolPro
   return <div className="print-area rounded-2xl bg-white p-5 text-slate-900 sm:p-8">
     <KopSurat profile={profile} />
     <h2 className="my-5 text-center text-lg font-bold uppercase">Bukti Pendaftaran PPDB</h2>
-    <table className="w-full text-left text-sm"><tbody>{fields.map(([label, value]) => <tr key={label}><th className="w-40 py-1 pr-3 align-top font-semibold">{label}</th><td className="break-words py-1">: {value}</td></tr>)}</tbody></table>
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm"><tbody>{fields.map(([label, value]) => <tr key={label}><th className="w-32 py-1 pr-3 align-top font-semibold sm:w-40">{label}</th><td className="break-words py-1">: {value}</td></tr>)}</tbody></table>
+    </div>
     <p className="mt-4 text-xs">Pendaftaran menunggu pemeriksaan lembaga dan belum membuat akun siswa.</p>
     <div className="mt-10 grid grid-cols-2 gap-4 text-center text-sm"><div>Calon warga belajar<div className="mt-20 border-t border-slate-800 pt-1">{applicant.nama}</div></div><div>Ketua PKBM<div className="mt-20 border-t border-slate-800 pt-1">{profile.namaKetuaPkbm || "...................................."}</div></div></div>
   </div>;

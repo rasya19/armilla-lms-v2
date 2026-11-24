@@ -12,6 +12,8 @@ import {
   Upload,
 } from "lucide-react";
 import { CardGridSkeleton } from "./DashboardUI";
+import { sanitizeHttpUrl } from "../utils/safeUrl";
+import { DocumentPreviewFrame } from "./DocumentPreviewFrame";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 export type VervalStatus = "BELUM_LENGKAP" | "SIAP_VERVAL" | "TERVERIFIKASI_PKBM";
@@ -100,41 +102,44 @@ export async function compressOrEncodeDocument(file: File): Promise<string> {
       reader.readAsDataURL(file);
     });
   }
-  if (!file.type.startsWith("image/")) {
+  const allowedImages = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+  if (!allowedImages.has(file.type.toLowerCase())) {
     throw new Error("Format berkas harus berupa gambar (JPG/PNG/WebP) atau PDF.");
   }
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Gagal membaca file gambar."));
-    reader.readAsDataURL(file);
-  });
-  if (file.size <= 350_000) return dataUrl;
-
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const encodeAt = (maxDim: number, quality: number) => {
-        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return dataUrl;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL("image/jpeg", quality);
-      };
-      let compressed = encodeAt(1280, 0.78);
-      if (compressed.length > 1_600_000) {
-        compressed = encodeAt(1080, 0.64);
-      }
-      resolve(compressed);
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error("Ukuran file gambar maksimal 15 MB sebelum kompresi.");
+  }
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Gambar tidak dapat dibaca. Coba pilih file lain."));
+      el.src = objectUrl;
+    });
+    const encodeAt = (maxDim: number, quality: number) => {
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+      canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Browser tidak mendukung kompresi gambar.");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", quality);
     };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
+    let compressed = encodeAt(1280, 0.76);
+    if (compressed.length > 1_500_000) {
+      compressed = encodeAt(1024, 0.62);
+    }
+    if (compressed.length > 2_000_000) {
+      throw new Error("Ukuran gambar setelah kompresi masih terlalu besar. Pilih gambar resolusi lebih kecil.");
+    }
+    return compressed;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 type FormState = {
@@ -223,21 +228,28 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
   }, [sandboxRole]);
 
   async function save(ajukanVerifikasi: boolean) {
-    if (!student || !form) return;
+    if (busy || !student || !form) return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
+      const baseline = toFormState(student);
+      const diffPayload: Record<string, unknown> = {};
+      (Object.keys(form) as Array<keyof FormState>).forEach((key) => {
+        if (form[key] !== baseline[key]) {
+          diffPayload[key] = form[key];
+        }
+      });
+      if (ajukanVerifikasi) {
+        diffPayload.ajukanVerifikasi = true;
+      }
       const response = await fetchWithTimeout(`/api/verval/siswa/${encodeURIComponent(student.id)}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           ...(sandboxRole ? { "x-dev-sandbox-role": sandboxRole } : {}),
         },
-        body: JSON.stringify({
-          ...form,
-          ...(ajukanVerifikasi ? { ajukanVerifikasi: true } : {}),
-        }),
+        body: JSON.stringify(diffPayload),
       });
       const body = (await response.json().catch(() => null)) as { error?: string; siswa?: StudentVervalRecord } | null;
       if (!response.ok || !body?.siswa) {
@@ -663,16 +675,19 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
               <h4 className="font-bold">{previewDoc.title}</h4>
               <div className="flex items-center gap-3">
-                {previewDoc.url.startsWith("http") && (
-                  <a
-                    href={previewDoc.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:underline"
-                  >
-                    Buka Tautan <ExternalLink size={13} />
-                  </a>
-                )}
+                {(() => {
+                  const safeLink = sanitizeHttpUrl(previewDoc.url);
+                  return safeLink ? (
+                    <a
+                      href={safeLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:underline"
+                    >
+                      Buka Tautan <ExternalLink size={13} />
+                    </a>
+                  ) : null;
+                })()}
                 <button
                   type="button"
                   onClick={() => setPreviewDoc(null)}
@@ -683,16 +698,7 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
               </div>
             </div>
             <div className="flex-1 overflow-auto bg-slate-100 p-4 text-center">
-              {previewDoc.url.startsWith("data:application/pdf") || previewDoc.url.toLowerCase().endsWith(".pdf") ? (
-                <iframe src={previewDoc.url} title={previewDoc.title} className="h-[70vh] w-full rounded-xl bg-white" />
-              ) : previewDoc.url.startsWith("data:image/") || /\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(previewDoc.url) ? (
-                <img src={previewDoc.url} alt={previewDoc.title} className="mx-auto max-h-[70vh] rounded-xl object-contain" />
-              ) : (
-                <div className="rounded-xl bg-white p-6 text-sm text-slate-700">
-                  <p className="font-semibold">Tautan berkas eksternal:</p>
-                  <p className="mt-2 break-all font-mono text-xs text-indigo-700">{previewDoc.url}</p>
-                </div>
-              )}
+              <DocumentPreviewFrame url={previewDoc.url} title={previewDoc.title} heightClass="h-[70vh]" />
             </div>
           </div>
         </div>

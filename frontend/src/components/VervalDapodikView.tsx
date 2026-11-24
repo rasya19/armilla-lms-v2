@@ -24,6 +24,7 @@ import {
 import { DashboardHero, EmptyState, TableSkeleton } from "./DashboardUI";
 import { SchoolModal } from "./SchoolModal";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
+import { DocumentPreviewFrame } from "./DocumentPreviewFrame";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import {
   compressOrEncodeDocument,
@@ -1667,27 +1668,7 @@ export function VervalDapodikView() {
                         </button>
                       )}
                     </div>
-                    {!currentUrl.trim() ? (
-                      <p className="py-5 text-center text-xs text-slate-500">Berkas belum dilampirkan.</p>
-                    ) : currentUrl.startsWith("data:application/pdf") || currentUrl.toLowerCase().endsWith(".pdf") ? (
-                      <iframe src={currentUrl} title="Pratinjau PDF" className="h-64 w-full rounded-xl bg-white" />
-                    ) : currentUrl.startsWith("data:image/") || /\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(currentUrl) ? (
-                      <img src={currentUrl} alt="Pratinjau Dokumen" className="mx-auto max-h-64 rounded-xl object-contain" />
-                    ) : (
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white p-3 text-xs">
-                        <span className="break-all font-mono text-slate-700">{currentUrl}</span>
-                        {currentUrl.startsWith("http") && (
-                          <a
-                            href={currentUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 font-bold text-indigo-700 hover:underline"
-                          >
-                            Buka <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </div>
-                    )}
+                    <DocumentPreviewFrame url={currentUrl} title="Pratinjau Dokumen" heightClass="h-64" />
                   </div>
                 );
               })()}

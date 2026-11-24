@@ -18,6 +18,7 @@ import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { QrCodeSvg } from "./QrCodeSvg";
 import { SchoolModal } from "./SchoolModal";
 import { useTenantTheme } from "./TenantThemeProvider";
+import { sanitizeHttpUrl } from "../utils/safeUrl";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 function panelClass(isDark: boolean) {
@@ -410,17 +411,20 @@ export function AkreditasiSnpView() {
                             onChange={(e) => setDraftUrls((prev) => ({ ...prev, [item.id]: e.target.value }))}
                             className={inputClass(isDark)}
                           />
-                          {item.tautanBukti && (
-                            <a
-                              href={item.tautanBukti}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Buka dokumen bukti"
-                              className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
-                            >
-                              <ExternalLink size={15} />
-                            </a>
-                          )}
+                          {(() => {
+                            const safeHref = sanitizeHttpUrl(item.tautanBukti);
+                            return safeHref ? (
+                              <a
+                                href={safeHref}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Buka dokumen bukti"
+                                className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                              >
+                                <ExternalLink size={15} />
+                              </a>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
                       <div className="md:col-span-3">

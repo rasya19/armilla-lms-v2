@@ -452,6 +452,9 @@ async function seedSandboxTenantInternal(prisma: PrismaClient): Promise<Resolved
 }
 
 export async function ensureSandboxTenant(prisma: PrismaClient): Promise<ResolvedTenantSchool | null> {
+  if (process.env.NODE_ENV === "production" && process.env.ENABLE_PUBLIC_SANDBOX !== "true") {
+    return null;
+  }
   const remembered = getRememberedSandboxSchool(prisma);
   if (remembered) return remembered;
   if (!inFlightSandboxSeed) {

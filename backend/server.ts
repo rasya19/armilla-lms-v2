@@ -21,6 +21,7 @@ import { classroomRoutes } from "./classroom-routes.js";
 import { examRoutes } from "./exam-routes.js";
 import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
+import { createActionRateLimiter, extractRequestIp } from "./action-rate-limit.js";
 import { Prisma } from "@prisma/client";
 import { internalProvisionRoutes } from "./internal-provision.js";
 import { forwardRegistrationToMaster } from "./master-admin-registration.js";
@@ -94,7 +95,7 @@ app.get("/api/tenant/context", (req, res) => res.json({
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;
   if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
-  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval|module-bank)(?:\/|$)/.test(req.path)) {
+  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval|module-bank|cbt|modules)(?:\/|$)/.test(req.path)) {
     if (/^\/auth\/(?:sekolah|lms)\/login$/.test(req.path)) return res.status(401).json({ error: "Akun tidak terdaftar pada instansi ini. Gunakan subdomain sekolah Anda." });
     return res.status(404).json({ error: "Fitur ini tersedia melalui subdomain sekolah." });
   }
@@ -141,6 +142,38 @@ app.use("/api", createSecurityGuardMiddleware(async (req): Promise<VerifiedActor
 const limitSecret = production ? rateLimitSecret(process.env.LOGIN_RATE_LIMIT_SECRET) : randomBytes(32).toString("hex");
 const limitLogin = loginRateLimit(loginPool, limitSecret);
 const limitProductionPpdb = registrationRateLimit(loginPool, limitSecret, false, "ppdb");
+const checkActionLimit = createActionRateLimiter(loginPool, limitSecret);
+
+function actionRateLimitMiddleware(
+  namespace: string,
+  maxRequests: number,
+  windowSeconds: number,
+  errorMessage = "Terlalu banyak permintaan. Coba lagi beberapa saat lagi.",
+): express.RequestHandler {
+  return async (req, res, next) => {
+    const decision = await checkActionLimit({
+      namespace,
+      subject: `${req.tenant?.kind === "school" ? req.tenant.slug : "main"}:${extractRequestIp(req)}`,
+      maxRequests,
+      windowSeconds,
+    });
+    if ("retryAfter" in decision) {
+      res.setHeader("Retry-After", String(decision.retryAfter));
+      return res.status(429).json({ error: errorMessage });
+    }
+    return next();
+  };
+}
+
+// Protect sensitive mutation, AI, exam, and upload endpoints against bots, brute-force, and billing spikes
+app.post("/api/auth/sekolah/ganti-password", actionRateLimitMiddleware("pw-change-school", 10, 900, "Terlalu banyak percobaan ganti password. Coba lagi nanti."));
+app.post("/api/auth/lms/ganti-password", actionRateLimitMiddleware("pw-change-lms", 10, 900, "Terlalu banyak percobaan ganti password. Coba lagi nanti."));
+app.post("/api/sekolah/ai-assistant", actionRateLimitMiddleware("ai-assistant", 15, 900, "Batas penggunaan Asisten AI sementara tercapai. Tunggu beberapa menit sebelum mencoba lagi."));
+app.post("/api/school/ai-assistant", actionRateLimitMiddleware("ai-assistant", 15, 900, "Batas penggunaan Asisten AI sementara tercapai. Tunggu beberapa menit sebelum mencoba lagi."));
+app.post("/api/master/pustaka-konten/generate-ai", actionRateLimitMiddleware("master-ai-gen", 20, 900, "Batas pembuatan draf AI sementara tercapai. Tunggu beberapa menit."));
+app.post("/api/lms/ujian/:ujianId/mulai", actionRateLimitMiddleware("exam-start", 15, 900, "Terlalu banyak percobaan memulai ujian atau memasukkan token. Tunggu beberapa menit."));
+app.post("/api/lms/ujian/:ujianId/kumpulkan", actionRateLimitMiddleware("exam-submit", 10, 900, "Terlalu banyak permintaan pengumpulan ujian. Periksa status ujian Anda."));
+app.post("/api/lms/pembelajaran/tugas/:id/pengumpulan", actionRateLimitMiddleware("assignment-upload", 20, 900, "Terlalu banyak permintaan pengumpulan tugas. Tunggu sebentar."));
 
 function loginIp(req: express.Request): string {
   if (production && process.env.VERCEL) {
@@ -227,7 +260,7 @@ app.get("/api/public/stats", async (_req, res) => {
   return res.json({ totalVisitors, totalSchools });
 });
 
-app.post("/api/public/stats", async (_req, res) => {
+app.post("/api/public/stats", actionRateLimitMiddleware("public-stats", 30, 900), async (_req, res) => {
   const [totalVisitors, totalSchools] = await Promise.all([readOrIncrementVisitors(true), readTotalSchools()]);
   return res.json({ totalVisitors, totalSchools });
 });
@@ -507,11 +540,16 @@ app.post("/api/auth/master/login", async (req, res) => {
   }
 });
 
-const DEVELOPER_EMAILS = new Set(["ismantoj88@gmail.com"]);
+const SUPERADMIN_EMAILS = new Set(
+  (process.env.SUPERADMIN_EMAILS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 function isDeveloperAccount(email: string | null | undefined): boolean {
-  if (typeof email !== "string") return false;
-  return DEVELOPER_EMAILS.has(email.trim().toLowerCase());
+  if (typeof email !== "string" || SUPERADMIN_EMAILS.size === 0) return false;
+  return SUPERADMIN_EMAILS.has(email.trim().toLowerCase());
 }
 
 async function getSession(req: express.Request, role: "MASTER_ADMIN" | "ADMIN" = "MASTER_ADMIN") {
@@ -583,7 +621,7 @@ app.post("/api/auth/dinas/login", async (req, res) => {
       isSuperAdmin: boolean;
     }>(clientIp, email, async () => {
       const normalizedEmail = email.trim().toLowerCase();
-      if (normalizedEmail === SANDBOX_DINAS_EMAIL) {
+      if (normalizedEmail === SANDBOX_DINAS_EMAIL && (!production || process.env.ENABLE_PUBLIC_SANDBOX === "true")) {
         await ensureSandboxTenant(prisma);
         await ensureSandboxDinasAccount(prisma);
       }

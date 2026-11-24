@@ -338,8 +338,8 @@ export function ModuleBankView({ sandboxRole }: { sandboxRole?: "GURU" }) {
           throw new Error(body?.error || "Bank Modul Belajar belum dapat dimuat.");
         }
         setData(body);
-        if (!assignClassId && body.classes.length > 0) {
-          setAssignClassId(body.classes[0].id);
+        if (body.classes.length > 0) {
+          setAssignClassId((prev) => prev || body.classes[0].id);
         }
       } catch (failure) {
         if (!isCallerAborted(failure, signal)) {
@@ -349,7 +349,7 @@ export function ModuleBankView({ sandboxRole }: { sandboxRole?: "GURU" }) {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [sandboxRole, assignClassId],
+    [sandboxRole],
   );
 
   useEffect(() => {

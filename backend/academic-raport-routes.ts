@@ -513,12 +513,15 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         return res.status(400).json({ error: "Siswa, mata pelajaran, dan nilai (0-100) wajib valid." });
       }
 
-      const [siswa, mapel] = await Promise.all([
+      const [siswa, mapel, tahunAjaran] = await Promise.all([
         prisma.siswa.findFirst({ where: { id: siswaId, sekolahId }, select: { id: true, kelasId: true } }),
         prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true } }),
+        tahunAjaranId
+          ? prisma.tahunAjaran.findFirst({ where: { id: tahunAjaranId, sekolahId }, select: { id: true } })
+          : Promise.resolve({ id: "" }),
       ]);
-      if (!siswa || !mapel) {
-        return res.status(404).json({ error: "Siswa atau mata pelajaran tidak ditemukan." });
+      if (!siswa || !mapel || (tahunAjaranId && !tahunAjaran)) {
+        return res.status(404).json({ error: "Siswa, mata pelajaran, atau tahun ajaran tidak ditemukan." });
       }
       if (auth.session.peran === "GURU" && auth.session.guruId) {
         const scope = await resolveTeacherScope(sekolahId, auth.session.guruId);

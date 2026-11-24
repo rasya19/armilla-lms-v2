@@ -464,6 +464,7 @@ export function masterContentRoutes(requireMaster: MasterSessionChecker) {
           model: "gemini-4-hydrogen",
           contents: prompt,
           config: {
+            maxOutputTokens: 4096,
             systemInstruction:
               "Anda adalah penyusun kurikulum Pendidikan Kesetaraan PKBM Indonesia (Paket A, B, C). Keluarkan JSON valid sesuai skema.",
             responseMimeType: "application/json",
@@ -518,6 +519,7 @@ export function masterContentRoutes(requireMaster: MasterSessionChecker) {
         model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
+          maxOutputTokens: 4096,
           systemInstruction:
             "Anda adalah penulis soal profesional Pendidikan Kesetaraan PKBM Indonesia (Paket A, B, C). Pastikan kunci jawaban benar secara akademis dan bahasa Indonesia baku.",
           responseMimeType: "application/json",
@@ -593,7 +595,7 @@ export function masterContentRoutes(requireMaster: MasterSessionChecker) {
         });
       }
       console.error("Gagal menghasilkan draf AI Pustaka Pusat:", error);
-      return res.status(502).json({ error: `Gagal menghasilkan draf AI: ${msg}` });
+      return res.status(502).json({ error: "Gagal menghasilkan draf AI. Silakan coba beberapa saat lagi." });
     }
   });
 

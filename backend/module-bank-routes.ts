@@ -838,7 +838,7 @@ export function moduleBankRoutes(getSchoolSession: SchoolContextResolver) {
               sekolahId: session.sekolahId,
               nama: "Tutor Pustaka Modul",
               mapelUtama: mod.subject,
-              email: `tutor.modul.${session.sekolahId.slice(0, 8)}@siput.local`,
+              email: `tutor.modul.${session.sekolahId.slice(0, 8)}@lms.local`,
               telepon: "-",
               status: "Aktif",
             },

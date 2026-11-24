@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2 } from "lucide-react";
+import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 import { useGlassConfirm } from "./GlassConfirm";
 import { useTenantTheme } from "./TenantThemeProvider";
 
@@ -28,7 +29,16 @@ export function ExamTaking({ exam, base, onExit, onSubmitted }: { exam: StartedE
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    const timer = window.setInterval(() => setRemaining(Math.max(0, new Date(exam.deadline).getTime() - Date.now())), 1000);
+    const deadlineMs = new Date(exam.deadline).getTime();
+    if (deadlineMs <= Date.now()) {
+      setRemaining(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const next = Math.max(0, deadlineMs - Date.now());
+      setRemaining(next);
+      if (next <= 0) window.clearInterval(timer);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [exam.deadline]);
   function choose(id: string, value: Choice) {
@@ -38,14 +48,23 @@ export function ExamTaking({ exam, base, onExit, onSubmitted }: { exam: StartedE
     catch (failure) { console.error("Draf ujian tidak dapat disimpan:", failure); setStorageError("Draf tidak dapat disimpan di perangkat ini. Jangan tutup halaman sebelum mengumpulkan."); }
   }
   async function submit() {
-    if (busy || !await confirm(`Kumpulkan ujian? ${exam.soal.length - Object.keys(answers).length} soal belum dijawab.`)) return;
+    if (busy) return;
+    if (!await confirm(`Kumpulkan ujian? ${exam.soal.length - Object.keys(answers).length} soal belum dijawab.`)) return;
     setBusy(true); setError("");
     try {
-      const response = await fetch(`${base}/${encodeURIComponent(exam.id)}/kumpulkan`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jawaban: answers }) });
-      const value: unknown = await response.json();
+      const response = await fetchWithTimeout(
+        `${base}/${encodeURIComponent(exam.id)}/kumpulkan`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jawaban: answers }) },
+        30_000,
+      );
+      const value: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof value === "object" && value !== null && "error" in value && typeof value.error === "string" ? value.error : "Ujian belum dapat dikumpulkan.");
+      try { localStorage.removeItem(key); } catch { /* ignore storage cleanup error */ }
       onSubmitted();
-    } catch (failure) { console.error("Gagal mengumpulkan ujian:", failure); setError(failure instanceof TypeError ? "Koneksi terputus. Draf tetap tersimpan; periksa status ujian sebelum mencoba lagi." : failure instanceof Error ? failure.message : "Ujian belum dapat dikumpulkan."); }
+    } catch (failure) {
+      console.error("Gagal mengumpulkan ujian:", failure);
+      setError(describeFetchError(failure, "Koneksi terputus atau timeout. Draf tetap tersimpan; periksa status ujian sebelum mencoba lagi."));
+    }
     finally { setBusy(false); }
   }
   const question = exam.soal[index];

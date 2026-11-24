@@ -16,7 +16,8 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
+import { useDebouncedValue } from "../utils/safeUrl";
+import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { ModulePdfPreview } from "./ModulePdfPreview";
 import {
   JENJANG_OPTIONS,
@@ -154,7 +155,9 @@ export function MasterContentLibrary() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const reload = useCallback(async () => {
+  const debouncedSearch = useDebouncedValue(search, 320);
+
+  const reload = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError("");
     try {
@@ -162,23 +165,27 @@ export function MasterContentLibrary() {
       if (filterJenjang) params.set("jenjang", filterJenjang);
       if (filterKategori) params.set("kategori", filterKategori);
       if (filterMapel) params.set("mapel", filterMapel);
-      if (search.trim()) params.set("q", search.trim());
+      if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
       const url = `/api/master/pustaka-konten${params.toString() ? `?${params.toString()}` : ""}`;
-      const res = await fetchWithTimeout(url);
+      const res = await fetchWithTimeout(url, { signal });
       const body = (await res.json().catch(() => null)) as (LibraryPayload & { error?: string }) | null;
       if (!res.ok || !body) {
         throw new Error(body?.error || "Pustaka Konten Pusat belum dapat dimuat.");
       }
       setData(body);
     } catch (failure: unknown) {
-      setError(describeFetchError(failure, "Pustaka Konten Pusat belum dapat dimuat."));
+      if (!isCallerAborted(failure, signal)) {
+        setError(describeFetchError(failure, "Pustaka Konten Pusat belum dapat dimuat."));
+      }
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }, [filterJenjang, filterKategori, filterMapel, search]);
+  }, [filterJenjang, filterKategori, filterMapel, debouncedSearch]);
 
   useEffect(() => {
-    void reload();
+    const controller = new AbortController();
+    void reload(controller.signal);
+    return () => controller.abort();
   }, [reload]);
 
   async function openBankDetail(id: string) {

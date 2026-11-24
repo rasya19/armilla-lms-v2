@@ -118,6 +118,7 @@ async function callExternalAiProvider(prompt: string): Promise<string | null> {
             { role: "user", content: prompt },
           ],
           temperature: 0.5,
+          max_tokens: 1024,
         }),
         signal: AbortSignal.timeout(20000),
       });
@@ -149,6 +150,10 @@ async function callExternalAiProvider(prompt: string): Promise<string | null> {
                 ],
               },
             ],
+            generationConfig: {
+              maxOutputTokens: 1024,
+              temperature: 0.5,
+            },
           }),
           signal: AbortSignal.timeout(20000),
         },

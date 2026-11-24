@@ -97,11 +97,12 @@ export function isSafeSubmissionPhotoSrc(value: string | null | undefined): valu
 }
 
 export async function compressAssignmentImage(file: File): Promise<{ dataUrl: string; sizeKb: number }> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Pilih file gambar (JPG, PNG, atau WebP).");
+  const allowedTypes = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+  if (!allowedTypes.has(file.type.toLowerCase())) {
+    throw new Error("Pilih file gambar JPG, PNG, atau WebP.");
   }
-  if (file.size > 20 * 1024 * 1024) {
-    throw new Error("Ukuran file foto asli maksimal 20 MB.");
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error("Ukuran file foto asli maksimal 15 MB.");
   }
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -112,27 +113,35 @@ export async function compressAssignmentImage(file: File): Promise<{ dataUrl: st
       el.src = objectUrl;
     });
 
-    const maxWidth = 1280;
-    const scale = img.naturalWidth > maxWidth ? maxWidth / img.naturalWidth : 1;
-    const targetWidth = Math.max(1, Math.round(img.naturalWidth * scale));
-    const targetHeight = Math.max(1, Math.round(img.naturalHeight * scale));
+    const encodeAt = (maxWidth: number, quality: number) => {
+      const scale = img.naturalWidth > maxWidth ? maxWidth / img.naturalWidth : 1;
+      const targetWidth = Math.max(1, Math.round(img.naturalWidth * scale));
+      const targetHeight = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Browser tidak mendukung kompresi gambar.");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      return canvas.toDataURL("image/jpeg", quality);
+    };
 
-    const canvas = document.createElement("canvas");
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Browser tidak mendukung kompresi gambar.");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, targetWidth, targetHeight);
-    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
-    const base64Bytes = Math.round(((dataUrl.split(",")[1]?.length ?? 0) * 3) / 4);
-    if (dataUrl.length > 2_500_000) {
-      const fallbackUrl = canvas.toDataURL("image/jpeg", 0.55);
-      const fallbackBytes = Math.round(((fallbackUrl.split(",")[1]?.length ?? 0) * 3) / 4);
-      return { dataUrl: fallbackUrl, sizeKb: Math.max(1, Math.round(fallbackBytes / 1024)) };
+    const attempts: Array<[number, number]> = [
+      [1280, 0.72],
+      [1024, 0.6],
+      [800, 0.5],
+    ];
+    let dataUrl = "";
+    for (const [maxW, q] of attempts) {
+      dataUrl = encodeAt(maxW, q);
+      if (dataUrl.length <= 1_800_000) break;
     }
+    if (!dataUrl || dataUrl.length > 2_500_000) {
+      throw new Error("Ukuran foto setelah kompresi masih terlalu besar. Gunakan foto dengan resolusi lebih kecil.");
+    }
+    const base64Bytes = Math.round(((dataUrl.split(",")[1]?.length ?? 0) * 3) / 4);
     return { dataUrl, sizeKb: Math.max(1, Math.round(base64Bytes / 1024)) };
   } finally {
     URL.revokeObjectURL(objectUrl);
@@ -311,7 +320,7 @@ export function LmsLearning({
       }
     }).catch((failure: unknown) => { if (!isCallerAborted(failure, controller.signal)) { setAssignmentError(failureMessage(failure)); } });
     return () => controller.abort();
-  }, [role, version, sandboxRole]);
+  }, [role, sandboxRole]);
   useEffect(() => {
     if (!selected || role === "SISWA") return;
     const controller = new AbortController();
@@ -331,6 +340,7 @@ export function LmsLearning({
   }
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     let batasWaktu = "";
     if (kind === "tugas" && form.batasWaktu) {
       const parsed = new Date(`${form.batasWaktu}:00+07:00`);
@@ -367,7 +377,7 @@ export function LmsLearning({
   }
   async function submitAnswer(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected) return;
+    if (busy || !selected) return;
     if (!answerText.trim() && !answerLink.trim() && !answerPhoto) {
       setError("Isi minimal jawaban teks, tautan, atau unggah foto tugas");
       return;
@@ -401,7 +411,7 @@ export function LmsLearning({
   }
   async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!editing) return;
+    if (busy || !editing) return;
     let batasWaktu = "";
     if (kind === "tugas" && editForm.batasWaktu) {
       const parsed = new Date(`${editForm.batasWaktu}:00+07:00`);

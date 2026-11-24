@@ -37,6 +37,7 @@ import {
   saveAuthCache,
   type DinasAuthCache,
 } from "./authSessionCache";
+import { DocumentPreviewFrame } from "./DocumentPreviewFrame";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import type { VervalDinasStatus, VervalStatus } from "./StudentVervalForm";
 
@@ -2923,21 +2924,14 @@ export function DinasHome() {
                         : docTab === "ijazah"
                           ? inspectStudent.urlIjazah
                           : inspectStudent.urlSuratPindah;
-                  if (!u) return <p className="py-6 text-center font-medium text-slate-500">Berkas belum diunggah.</p>;
-                  if (u.startsWith("data:application/pdf") || u.toLowerCase().endsWith(".pdf")) {
-                    return <iframe src={u} title="Pratinjau PDF" className="mt-3 h-64 w-full rounded-xl border border-slate-200 bg-white" />;
-                  }
-                  if (u.startsWith("data:image/") || /\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(u)) {
-                    return <img src={u} alt="Pratinjau Berkas" className="mx-auto mt-3 max-h-64 rounded-xl object-contain" />;
-                  }
                   return (
-                    <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3">
-                      <span className="break-all font-mono text-slate-800">{u}</span>
-                      {u.startsWith("http") && (
-                        <a href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-blue-700 underline hover:text-blue-900">
-                          Buka <ExternalLink size={12} />
-                        </a>
-                      )}
+                    <div className="mt-3">
+                      <DocumentPreviewFrame
+                        url={u}
+                        title="Pratinjau Berkas"
+                        heightClass="h-64"
+                        emptyText="Berkas belum diunggah."
+                      />
                     </div>
                   );
                 })()}

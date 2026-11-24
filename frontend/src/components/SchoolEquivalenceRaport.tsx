@@ -1055,7 +1055,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
       {activeSiswa && data && (
         <div className="rounded-2xl border border-slate-300 bg-white p-6 text-slate-900 shadow-sm sm:p-8">
-          <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-900 pb-4">
             <div className="flex items-center gap-4">
               {data.sekolah.logoUrl ? (
                 <img src={data.sekolah.logoUrl} alt={data.sekolah.nama} className="h-14 w-14 rounded-lg object-contain" referrerPolicy="no-referrer" />
@@ -1085,7 +1085,8 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             <div><span className="text-slate-500">Status Akhir:</span> <strong className="ml-1 text-emerald-700">{STATUS_KENAIKAN_LABELS[statusKenaikan] ?? statusKenaikan}</strong></div>
           </div>
 
-          <table className="mt-4 w-full border-collapse border border-slate-300 text-left text-xs">
+          <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[600px] border-collapse border border-slate-300 text-left text-xs">
             <thead>
               <tr className="bg-slate-100 font-bold text-slate-800">
                 <th className="border border-slate-300 px-3 py-2 text-center">No</th>
@@ -1117,6 +1118,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               ))}
             </tbody>
           </table>
+          </div>
 
           <div className="mt-4 rounded-xl border border-slate-300 p-3 text-xs">
             <p className="font-bold">Catatan Wali Kelas / Tutor:</p>

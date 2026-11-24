@@ -30,6 +30,7 @@ import {
   type CbtCategory,
 } from "./cbtImportData";
 import { useTenantTheme } from "./TenantThemeProvider";
+import { useDebouncedValue } from "../utils/safeUrl";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
 type BankVisibility = "PRIVATE" | "PUBLIC" | "ARCHIVED";
@@ -295,6 +296,7 @@ function CbtPublicBanksPanel({
   const [mapelFilter, setMapelFilter] = useState("");
   const [kategoriFilter, setKategoriFilter] = useState<PublicBankKategori>("ALL");
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 320);
   const [targetKelasId, setTargetKelasId] = useState("");
 
   const loadPublicBanks = useCallback(async (signal?: AbortSignal) => {
@@ -305,7 +307,7 @@ function CbtPublicBanksPanel({
       if (jenjangFilter !== "ALL") params.set("jenjang", jenjangFilter);
       if (mapelFilter) params.set("mapel", mapelFilter);
       if (kategoriFilter !== "ALL") params.set("kategori", kategoriFilter);
-      if (search.trim()) params.set("q", search.trim());
+      if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
       const query = params.toString();
       const headers = sandboxHeaders(sandboxRole);
       const res = await fetchWithTimeout(`/api/cbt/public-banks${query ? `?${query}` : ""}`, {
@@ -327,7 +329,7 @@ function CbtPublicBanksPanel({
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [jenjangFilter, mapelFilter, kategoriFilter, search, sandboxRole]);
+  }, [jenjangFilter, mapelFilter, kategoriFilter, debouncedSearch, sandboxRole]);
 
   useEffect(() => {
     const controller = new AbortController();

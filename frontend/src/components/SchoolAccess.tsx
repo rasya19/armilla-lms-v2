@@ -2043,7 +2043,11 @@ function SchoolOverview({
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Subdomain Portal</dt>
-                    <dd className={`truncate font-mono font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{slug}.pkbm.siput.id</dd>
+                    <dd className={`truncate font-mono font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                      {typeof window !== "undefined" && window.location.hostname && window.location.hostname !== "localhost"
+                        ? window.location.hostname
+                        : `${slug}.portal`}
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <dt className={isDark ? "text-slate-400" : "text-slate-600"}>Kapasitas Guru &amp; Kelas</dt>

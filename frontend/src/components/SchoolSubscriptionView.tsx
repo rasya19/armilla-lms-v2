@@ -18,6 +18,7 @@ import { CardGridSkeleton, DashboardHero, TableSkeleton } from "./DashboardUI";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { SUBSCRIPTION_PLANS, getPlanBySlug, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
+import { sanitizeHttpUrl } from "../utils/safeUrl";
 
 type SubscriptionHistoryItem = {
   id: string;
@@ -88,8 +89,10 @@ function statusBadgeMeta(status: string, isDark: boolean): { label: string; clas
           : "border-emerald-200 bg-emerald-50 text-emerald-800",
       };
     case "PENDING":
+    case "MENUNGGU BAYAR":
+    case "MENUNGGU_BAYAR":
       return {
-        label: "MENUNGGU",
+        label: "MENUNGGU BAYAR",
         className: isDark
           ? "border-amber-400/35 bg-amber-500/20 text-amber-200"
           : "border-amber-200 bg-amber-50 text-amber-800",
@@ -201,8 +204,9 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
         mode: body.mode || "duitku",
         message: body.message || "Tagihan berhasil dibuat.",
       });
-      if (body.paymentUrl) {
-        window.open(body.paymentUrl, "_blank", "noopener,noreferrer");
+      const safePaymentUrl = sanitizeHttpUrl(body.paymentUrl);
+      if (safePaymentUrl) {
+        window.open(safePaymentUrl, "_blank", "noopener,noreferrer");
       }
       await loadStatus();
     } catch (failure) {
@@ -473,9 +477,9 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
               {checkoutResult.reference ? ` · Ref Duitku: ${checkoutResult.reference}` : ""}
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              {checkoutResult.paymentUrl && (
+              {sanitizeHttpUrl(checkoutResult.paymentUrl) && (
                 <a
-                  href={checkoutResult.paymentUrl}
+                  href={sanitizeHttpUrl(checkoutResult.paymentUrl)!}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 font-bold text-white hover:bg-emerald-500"
@@ -573,6 +577,12 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
               <tbody className={`divide-y ${isDark ? "divide-white/10 text-slate-200" : "divide-slate-200 text-slate-800"}`}>
                 {data.riwayatPembayaran.map((item) => {
                   const badge = statusBadgeMeta(item.status, isDark);
+                  const normalizedItemStatus = item.status.trim().toUpperCase();
+                  const isPending =
+                    normalizedItemStatus === "PENDING" ||
+                    normalizedItemStatus === "MENUNGGU BAYAR" ||
+                    normalizedItemStatus === "MENUNGGU_BAYAR";
+                  const safeItemPaymentUrl = sanitizeHttpUrl(item.paymentUrl);
                   return (
                     <tr key={item.id}>
                       <td className="py-3 pr-4">
@@ -604,9 +614,9 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
                       </td>
                       <td className="py-3 text-right">
                         <div className="flex flex-wrap justify-end gap-1.5">
-                          {item.status === "PENDING" && item.paymentUrl && (
+                          {isPending && safeItemPaymentUrl && (
                             <a
-                              href={item.paymentUrl}
+                              href={safeItemPaymentUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-500"
@@ -614,9 +624,15 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
                               Bayar <ExternalLink size={12} />
                             </a>
                           )}
-                          {item.status === "PENDING" &&
+                          {isPending &&
                             (confirmCancelOrderId === item.merchantOrderId ? (
-                              <span className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] text-rose-900">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${
+                                  isDark
+                                    ? "border-rose-400/40 bg-rose-500/20 text-rose-100"
+                                    : "border-rose-300 bg-rose-50 text-rose-900"
+                                }`}
+                              >
                                 <span className="font-semibold">Batalkan?</span>
                                 <button
                                   type="button"
@@ -630,7 +646,11 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
                                   type="button"
                                   disabled={cancelingOrderId === item.merchantOrderId}
                                   onClick={() => setConfirmCancelOrderId(null)}
-                                  className="rounded border border-slate-300 bg-white px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50"
+                                  className={`rounded border px-2 py-0.5 font-semibold ${
+                                    isDark
+                                      ? "border-white/20 bg-white/10 text-slate-100 hover:bg-white/20"
+                                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                  }`}
                                 >
                                   Tidak
                                 </button>

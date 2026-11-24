@@ -583,10 +583,14 @@ export async function cancelPendingSubscriptionInvoice(
   }
 
   const normalizedStatus = invoice.status.trim().toUpperCase();
-  if (normalizedStatus === "PAID") {
+  if (normalizedStatus === "PAID" || normalizedStatus === "LUNAS" || normalizedStatus === "SUCCESS") {
     return { ok: false, httpStatus: 409, error: "Tagihan yang sudah lunas tidak dapat dibatalkan atau dihapus." };
   }
-  if (normalizedStatus !== "PENDING") {
+  const isPendingStatus =
+    normalizedStatus === "PENDING" ||
+    normalizedStatus === "MENUNGGU BAYAR" ||
+    normalizedStatus === "MENUNGGU_BAYAR";
+  if (!isPendingStatus) {
     return { ok: false, httpStatus: 409, error: "Hanya tagihan berstatus menunggu pembayaran yang dapat dibatalkan." };
   }
 
@@ -594,7 +598,7 @@ export async function cancelPendingSubscriptionInvoice(
     where: {
       id: invoice.id,
       sekolahId,
-      status: "PENDING",
+      status: invoice.status,
     },
   });
 
@@ -614,6 +618,7 @@ export async function cancelPendingSubscriptionInvoice(
  */
 export function tenantPaymentInvoiceRoutes(
   getAdminSchoolId: (req: Request) => Promise<{ sekolahId: string } | null>,
+  db: CancelInvoiceDb = prisma,
 ) {
   const router = Router();
 
@@ -625,10 +630,13 @@ export function tenantPaymentInvoiceRoutes(
       const orderId = cleanText(req.params.orderId, 80);
       if (!orderId) return res.status(400).json({ error: "Order ID tidak valid." });
 
-      const outcome = await cancelPendingSubscriptionInvoice({
-        sekolahId: ctx.sekolahId,
-        orderId,
-      });
+      const outcome = await cancelPendingSubscriptionInvoice(
+        {
+          sekolahId: ctx.sekolahId,
+          orderId,
+        },
+        db,
+      );
 
       if (outcome.ok === false) {
         return res.status(outcome.httpStatus).json({ error: outcome.error });

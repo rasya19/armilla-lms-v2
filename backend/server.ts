@@ -114,7 +114,7 @@ app.get("/api/tenant/context", (req, res) => res.json({
 app.use("/api", (req, res, next) => {
   const tenant = req.tenant;
   if (!tenant) return res.status(503).json({ error: "Konteks sekolah tidak tersedia." });
-  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval|module-bank|cbt|modules)(?:\/|$)/.test(req.path)) {
+  if (tenant.kind === "main" && /^\/(?:auth\/(?:sekolah|lms)|sekolah|school|lms|ppdb|verval|module-bank|cbt|modules|payment\/invoices)(?:\/|$)/.test(req.path)) {
     if (/^\/auth\/(?:sekolah|lms)\/login$/.test(req.path)) return res.status(401).json({ error: "Akun tidak terdaftar pada instansi ini. Gunakan subdomain sekolah Anda." });
     return res.status(404).json({ error: "Fitur ini tersedia melalui subdomain sekolah." });
   }

@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { test } from "node:test";
+import express from "express";
 import {
   buildSubscriptionOrderId,
   cancelPendingSubscriptionInvoice,
@@ -12,6 +14,7 @@ import {
   getDuitkuConfig,
   normalizeDuitkuEnv,
   resolveTenantReturnUrl,
+  tenantPaymentInvoiceRoutes,
   verifyDuitkuCallbackSignature,
   type CancelInvoiceDb,
 } from "./duitku-payment.js";
@@ -268,4 +271,96 @@ test("cancelPendingSubscriptionInvoice enforces tenant ownership and only delete
   );
   assert.deepEqual(success, { ok: true, deletedOrderId: "SUB-pkbm-a-pro-1111aaaa" });
   assert.equal(rows.some((r) => r.id === "inv-pending"), false);
+});
+
+test("DELETE /api/payment/invoices/:orderId enforces auth, tenant ownership, and pending-only deletion over HTTP", async () => {
+  const rows = [
+    { id: "inv-1", sekolahId: "tenant-a", merchantOrderId: "SUB-pkbm-a-pro-aaaa1111", status: "PENDING" },
+    { id: "inv-2", sekolahId: "tenant-a", merchantOrderId: "SUB-pkbm-a-pro-bbbb2222", status: "PAID" },
+    { id: "inv-3", sekolahId: "tenant-b", merchantOrderId: "SUB-pkbm-b-reguler-cccc3333", status: "PENDING" },
+    { id: "inv-4", sekolahId: "tenant-a", merchantOrderId: "SUB-pkbm-a-basic-dddd4444", status: "EXPIRED" },
+  ];
+
+  const mockDb: CancelInvoiceDb = {
+    pembayaranLangganan: {
+      findFirst: async ({ where }) => {
+        const keys = where.OR.map((item) => ("merchantOrderId" in item ? item.merchantOrderId : item.id));
+        return rows.find((r) => keys.includes(r.merchantOrderId) || keys.includes(r.id)) ?? null;
+      },
+      deleteMany: async ({ where }) => {
+        const idx = rows.findIndex(
+          (r) => r.id === where.id && r.sekolahId === where.sekolahId && r.status === where.status,
+        );
+        if (idx === -1) return { count: 0 };
+        rows.splice(idx, 1);
+        return { count: 1 };
+      },
+    },
+  };
+
+  const app = express();
+  app.use(
+    "/api/payment",
+    tenantPaymentInvoiceRoutes(async (req) => {
+      const tenant = req.get("x-test-tenant");
+      return tenant ? { sekolahId: tenant } : null;
+    }, mockDb),
+  );
+
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const addr = server.address();
+  assert.ok(addr && typeof addr !== "string");
+  const baseUrl = `http://127.0.0.1:${addr.port}/api/payment/invoices`;
+
+  try {
+    // 1. Unauthenticated -> 401
+    const unauth = await fetch(`${baseUrl}/SUB-pkbm-a-pro-aaaa1111`, { method: "DELETE" });
+    assert.equal(unauth.status, 401);
+
+    // 2. Cross-tenant -> 403 and invoice remains intact
+    const crossTenant = await fetch(`${baseUrl}/SUB-pkbm-b-reguler-cccc3333`, {
+      method: "DELETE",
+      headers: { "x-test-tenant": "tenant-a" },
+    });
+    assert.equal(crossTenant.status, 403);
+    assert.equal(rows.some((r) => r.id === "inv-3"), true);
+
+    // 3. Paid invoice -> 409 and invoice remains intact
+    const paidRes = await fetch(`${baseUrl}/SUB-pkbm-a-pro-bbbb2222`, {
+      method: "DELETE",
+      headers: { "x-test-tenant": "tenant-a" },
+    });
+    assert.equal(paidRes.status, 409);
+    assert.equal(rows.some((r) => r.id === "inv-2"), true);
+
+    // 4. Expired invoice -> 409 and invoice remains intact
+    const expiredRes = await fetch(`${baseUrl}/SUB-pkbm-a-basic-dddd4444`, {
+      method: "DELETE",
+      headers: { "x-test-tenant": "tenant-a" },
+    });
+    assert.equal(expiredRes.status, 409);
+    assert.equal(rows.some((r) => r.id === "inv-4"), true);
+
+    // 5. Missing order -> 404
+    const missingRes = await fetch(`${baseUrl}/SUB-unknown-9999`, {
+      method: "DELETE",
+      headers: { "x-test-tenant": "tenant-a" },
+    });
+    assert.equal(missingRes.status, 404);
+
+    // 6. Owned PENDING invoice -> 200 and deleted from store
+    const okRes = await fetch(`${baseUrl}/SUB-pkbm-a-pro-aaaa1111`, {
+      method: "DELETE",
+      headers: { "x-test-tenant": "tenant-a" },
+    });
+    assert.equal(okRes.status, 200);
+    const okBody = (await okRes.json()) as { deleted: boolean; orderId: string; message: string };
+    assert.equal(okBody.deleted, true);
+    assert.equal(okBody.orderId, "SUB-pkbm-a-pro-aaaa1111");
+    assert.equal(rows.some((r) => r.id === "inv-1"), false);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
 });

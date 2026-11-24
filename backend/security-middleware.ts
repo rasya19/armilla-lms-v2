@@ -123,7 +123,7 @@ export function createSecurityGuardMiddleware(resolveActor: VerifiedActorResolve
 
       // 3. Student RBAC lock on admin & teacher endpoints
       if (actor.role === "SISWA") {
-        if (matchesAnyPrefix(path, ADMIN_OR_TEACHER_PREFIXES)) {
+        if (matchesAnyPrefix(path, ADMIN_OR_TEACHER_PREFIXES) || matchesAnyPrefix(path, ["/payment/invoices"])) {
           return res.status(403).json({
             error: "Akses ditolak. Fitur ini tidak tersedia untuk akun siswa.",
           });
@@ -141,8 +141,9 @@ export function createSecurityGuardMiddleware(resolveActor: VerifiedActorResolve
       // 4. Teacher RBAC lock on strictly Admin-only school endpoints
       if (actor.role === "GURU") {
         if (
-          (path === "/sekolah" || path.startsWith("/sekolah/") || path === "/school" || path.startsWith("/school/")) &&
-          !matchesAnyPrefix(path, TEACHER_ALLOWED_SEKOLAH_PREFIXES)
+          matchesAnyPrefix(path, ["/payment/invoices"]) ||
+          ((path === "/sekolah" || path.startsWith("/sekolah/") || path === "/school" || path.startsWith("/school/")) &&
+            !matchesAnyPrefix(path, TEACHER_ALLOWED_SEKOLAH_PREFIXES))
         ) {
           return res.status(403).json({
             error: "Akses ditolak. Endpoint ini hanya tersedia untuk Admin Sekolah.",

@@ -24,6 +24,157 @@ export const NATIONAL_ORIGIN_NAME = "Katalog Nasional Kemendikdasmen";
 
 export const NATIONAL_MODULE_CATALOG: NationalModuleSeed[] = [
   // =========================================================================
+  // PAKET A (SETARA SD · FASE C · KHUSUS KELAS 5 & 6 — 9 MAPEL × 2 KELAS = 18 MODUL)
+  // =========================================================================
+  // --- Paket A · Kelas 5 ---
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Pendidikan Agama dan Budi Pekerti",
+    title: "Modul 5 Paket A (Kls 5): Hidup Rukun, Jujur, dan Berakhlak Mulia",
+    summary: "Penguatan karakter keimanan dan budi pekerti warga belajar Paket A Fase C.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PAI-5/A-PAI-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Pendidikan Pancasila",
+    title: "Modul 5 Paket A (Kls 5): Nilai Pancasila, Gotong Royong & Musyawarah",
+    summary: "Penerapan nilai Pancasila dalam kehidupan keluarga dan masyarakat sekitar.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PPKn-5/A-PPKn-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Bahasa Indonesia",
+    title: "Modul 5 Paket A (Kls 5): Membaca Kritis Teks Informasi & Menulis Cerita Pengalaman",
+    summary: "Pengembangan literasi membaca pemahaman dan menulis kreatif Fase C Paket A.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-BInd-5/A-BInd-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Matematika",
+    title: "Modul 5 Paket A (Kls 5): Pecahan, Desimal, dan Pengukuran Bangun Datar",
+    summary: "Latihan pemecahan masalah pecahan dan luas bangun datar kontekstual.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-Mat-5/A-Mat-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "IPAS",
+    title: "Modul 5 Paket A (Kls 5): Ekosistem, Cahaya, Bunyi & Kondisi Geografis Indonesia",
+    summary: "Integrasi Ilmu Pengetahuan Alam dan Sosial Fase C Paket A Setara SD.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-IPA-5/A-IPA-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Bahasa Inggris",
+    title: "Modul 5 Paket A (Kls 5): Daily Vocabulary, Numbers & Simple Expressions",
+    summary: "Pengenalan kosakata dasar dan ungkapan sederhana bahasa Inggris sehari-hari.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-BIng-5/A-BIng-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "PJOK",
+    title: "Modul 5 Paket A (Kls 5): Gerak Dasar, Kebugaran & Kebersihan Diri",
+    summary: "Aktivitas jasmani sederhana dan pembiasaan hidup bersih serta sehat.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PJOK-5/A-PJOK-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Seni dan Budaya",
+    title: "Modul 5 Paket A (Kls 5): Menggambar Ekspresif, Lagu Daerah & Kerajinan Tangan",
+    summary: "Apresiasi seni rupa, musik daerah, dan keterampilan kreatif tingkat dasar.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-SBD-5/A-SBD-5.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 5",
+    subject: "Pemberdayaan & Keterampilan",
+    title: "Modul 5 Paket A (Kls 5): Kemandirian Belajar, Kerapian & Prakarya Sederhana",
+    summary: "Modul khas kesetaraan untuk melatih kemandirian dan keterampilan fungsional.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PK-5/A-PK-5.pdf",
+  },
+
+  // --- Paket A · Kelas 6 ---
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Pendidikan Agama dan Budi Pekerti",
+    title: "Modul 6 Paket A (Kls 6): Tanggung Jawab, Toleransi & Persiapan Lulus Paket A",
+    summary: "Pemantapan nilai keimanan, empati, dan akhlak mulia kelas akhir Paket A.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PAI-6/A-PAI-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Pendidikan Pancasila",
+    title: "Modul 6 Paket A (Kls 6): Persatuan dalam Keberagaman & Hak Kewajiban Anak",
+    summary: "Pemahaman kebinekaan, persatuan bangsa, dan aturan hidup bermasyarakat.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PPKn-6/A-PPKn-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Bahasa Indonesia",
+    title: "Modul 6 Paket A (Kls 6): Teks Eksplanasi, Pidato Singkat & Ringkasan Bacaan",
+    summary: "Keterampilan literasi akhir Fase C Paket A sebelum melanjutkan ke Paket B.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-BInd-6/A-BInd-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Matematika",
+    title: "Modul 6 Paket A (Kls 6): Bilangan Bulat, Bangun Ruang & Pengolahan Data Dasar",
+    summary: "Penguatan numerasi akhir Fase C dan persiapan evaluasi kelulusan Paket A.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-Mat-6/A-Mat-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "IPAS",
+    title: "Modul 6 Paket A (Kls 6): Sistem Tata Surya, Peta Indonesia, dan Ekonomi Lokal",
+    summary: "Persiapan ketuntasan belajar Fase C Paket A Setara SD sebelum lanjut ke Paket B.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-IPS-6/A-IPS-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Bahasa Inggris",
+    title: "Modul 6 Paket A (Kls 6): Simple Sentences, Telling Time & Daily Activities",
+    summary: "Pemantapan kosakata dan kalimat sederhana bahasa Inggris Fase C.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-BIng-6/A-BIng-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "PJOK",
+    title: "Modul 6 Paket A (Kls 6): Kebugaran Jasmani, Kesehatan Lingkungan & Gizi Seimbang",
+    summary: "Pembiasaan pola hidup sehat dan aktivitas olahraga teratur.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PJOK-6/A-PJOK-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Seni dan Budaya",
+    title: "Modul 6 Paket A (Kls 6): Karya Seni Terapan, Tari Daerah & Pameran Kelas",
+    summary: "Eksplorasi karya seni Nusantara dan penyajian karya kreatif sederhana.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-SBD-6/A-SBD-6.pdf",
+  },
+  {
+    paket: "Paket A",
+    gradeLevel: "Kelas 6",
+    subject: "Pemberdayaan & Keterampilan",
+    title: "Modul 6 Paket A (Kls 6): Proyek Kemandirian Diri dan Kerajinan Lingkungan",
+    summary: "Modul khas Pendidikan Kesetaraan bermuatan SKK pemberdayaan dan kecakapan hidup.",
+    fileUrl: "https://emodul.kemdikbud.go.id/A-PK-6/A-PK-6.pdf",
+  },
+
+  // =========================================================================
   // PAKET B (SETARA SMP · FASE D · KELAS 7, 8, 9 — 12 MAPEL × 3 KELAS = 36 MODUL)
   // =========================================================================
   // --- Paket B · Kelas 7 ---
@@ -1083,13 +1234,14 @@ export function moduleBankRoutes(getSchoolSession: SchoolContextResolver) {
   // POST /api/module-bank/seed-national
   router.post("/seed-national", async (_req, res) => {
     try {
-      // Remove legacy Paket A entries from national catalog (focus on Paket B & Paket C only)
+      // Remove legacy Paket A Kelas 1-4 entries from national catalog (keep Paket A Kls 5-6, Paket B, and Paket C)
       await prisma.learningModuleBank
         .deleteMany({
           where: {
             schoolId: null,
             originSchoolName: NATIONAL_ORIGIN_NAME,
             paket: "Paket A",
+            gradeLevel: { in: ["Kelas 1", "Kelas 2", "Kelas 3", "Kelas 4"] },
           },
         })
         .catch(() => null);

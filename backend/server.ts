@@ -23,6 +23,7 @@ import { createLoginSession } from "./login-session.js";
 import { loginClientIp, loginRateLimit, rateLimitSecret } from "./login-rate-limit.js";
 import { createActionRateLimiter, extractRequestIp } from "./action-rate-limit.js";
 import { paymentWebhookRoutes, sendWhatsAppNotification, subscriptionBillingRoutes, trialReminderCronRoute } from "./notification-payment.js";
+import { duitkuCallbackRoutes, masterPaymentRoutes } from "./duitku-payment.js";
 import { Prisma } from "@prisma/client";
 import { internalProvisionRoutes } from "./internal-provision.js";
 import { forwardRegistrationToMaster } from "./master-admin-registration.js";
@@ -76,6 +77,21 @@ app.disable("x-powered-by");
 const production = process.env.NODE_ENV === "production";
 app.use("/api/internal", internalProvisionRoutes(prisma));
 app.use("/api/internal/cron", trialReminderCronRoute());
+app.use(
+  "/api/payment",
+  express.urlencoded({ extended: false, limit: "64kb" }),
+  express.json({ limit: "64kb" }),
+  duitkuCallbackRoutes({
+    onActivated: ({ schoolName, adminPhone, plan, nextExpiry }) => {
+      if (adminPhone) {
+        void sendWhatsAppNotification(
+          adminPhone,
+          `Pembayaran diterima via Duitku! Paket ${plan.toUpperCase()} untuk ${schoolName} kini aktif hingga ${nextExpiry.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" })}. Terima kasih!`,
+        );
+      }
+    },
+  }),
+);
 app.use("/api/webhooks/payment", express.json({ limit: "64kb" }), paymentWebhookRoutes());
 app.use("/api", httpSecurity({ production, origin: production ? productionOrigin(process.env.APP_ORIGIN) : undefined }));
 app.use("/api/verval", express.json({ limit: "20mb" }));
@@ -2997,6 +3013,26 @@ app.use("/api/master/pustaka-konten", masterContentRoutes(async (req) => {
   if (!masterSession) return null;
   return { akunId: masterSession.akun.id, nama: masterSession.akun.nama };
 }));
+app.use(
+  "/api/master/pembayaran",
+  masterPaymentRoutes(
+    async (req) => {
+      const masterSession = await getSession(req, "MASTER_ADMIN");
+      if (!masterSession) return null;
+      return { akunId: masterSession.akun.id, nama: masterSession.akun.nama };
+    },
+    {
+      onActivated: ({ schoolName, adminPhone, plan, nextExpiry }) => {
+        if (adminPhone) {
+          void sendWhatsAppNotification(
+            adminPhone,
+            `Pembayaran diterima via Duitku! Paket ${plan.toUpperCase()} untuk ${schoolName} kini aktif hingga ${nextExpiry.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" })}. Terima kasih!`,
+          );
+        }
+      },
+    },
+  ),
+);
 app.use(
   "/api/modules",
   express.json({ limit: "2mb" }),

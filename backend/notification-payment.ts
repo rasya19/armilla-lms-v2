@@ -1,8 +1,15 @@
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import { Router, type Request } from "express";
 import { prisma } from "./db.js";
 import { cleanText } from "./school-modules-shared.js";
 import { normalizeTenantPlan, type TenantPlan } from "./plan-utils.js";
+import {
+  buildSubscriptionOrderId,
+  createDuitkuInvoice,
+  getDuitkuConfig,
+  resolveTenantReturnUrl,
+  settleSubscriptionPayment,
+} from "./duitku-payment.js";
 
 export const ANNUAL_PLAN_PRICES: Record<TenantPlan, { label: string; amount: number; days: number }> = {
   basic: { label: "Paket Basic (12 Bulan)", amount: 1_500_000, days: 365 },
@@ -86,16 +93,42 @@ export function subscriptionBillingRoutes(
       const ctx = await getAdminSchoolId(req);
       if (!ctx) return res.status(401).json({ error: "Sesi admin sekolah tidak valid." });
 
-      const school = await prisma.sekolah.findUnique({
-        where: { id: ctx.sekolahId },
-        select: { id: true, nama: true, slug: true, plan: true, status: true, expiresAt: true, adminPhone: true },
-      });
+      const [school, recentPayments] = await Promise.all([
+        prisma.sekolah.findUnique({
+          where: { id: ctx.sekolahId },
+          select: { id: true, nama: true, slug: true, plan: true, status: true, expiresAt: true, adminPhone: true },
+        }),
+        prisma.pembayaranLangganan.findMany({
+          where: { sekolahId: ctx.sekolahId },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          select: {
+            id: true,
+            merchantOrderId: true,
+            reference: true,
+            provider: true,
+            environment: true,
+            plan: true,
+            planLabel: true,
+            amount: true,
+            paymentMethod: true,
+            paymentUrl: true,
+            status: true,
+            paidAt: true,
+            createdAt: true,
+          },
+        }),
+      ]);
       if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
 
       const now = Date.now();
       const daysRemaining = school.expiresAt
         ? Math.max(0, Math.ceil((school.expiresAt.getTime() - now) / (24 * 60 * 60 * 1000)))
         : null;
+
+      const duitku = getDuitkuConfig();
+      const midtransReady = Boolean(process.env.MIDTRANS_SERVER_KEY?.trim());
+      const paymentProvider = duitku.configured ? "duitku" : midtransReady ? "midtrans" : "manual";
 
       return res.json({
         sekolah: {
@@ -104,9 +137,17 @@ export function subscriptionBillingRoutes(
           expiresAt: school.expiresAt ? school.expiresAt.toISOString() : null,
           daysRemaining,
         },
-        paymentGatewayReady: Boolean(process.env.MIDTRANS_SERVER_KEY?.trim()),
+        paymentGatewayReady: duitku.configured || midtransReady,
+        paymentProvider,
+        duitkuEnv: duitku.configured ? duitku.environment : null,
         whatsappReady: Boolean(process.env.WA_GATEWAY_URL?.trim() && process.env.WA_GATEWAY_TOKEN?.trim()),
         plans: ANNUAL_PLAN_PRICES,
+        riwayatPembayaran: recentPayments.map((item) => ({
+          ...item,
+          plan: normalizeTenantPlan(item.plan),
+          paidAt: item.paidAt ? item.paidAt.toISOString() : null,
+          createdAt: item.createdAt.toISOString(),
+        })),
       });
     } catch (error) {
       console.error("Gagal memuat status langganan:", error);
@@ -127,14 +168,54 @@ export function subscriptionBillingRoutes(
       });
       if (!school) return res.status(404).json({ error: "Sekolah tidak ditemukan." });
 
-      const orderId = `SUB-${school.slug}-${requestedPlan}-${randomBytes(4).toString("hex")}`;
+      const orderId = buildSubscriptionOrderId(school.slug, requestedPlan);
+      const duitku = getDuitkuConfig();
       const midtransKey = process.env.MIDTRANS_SERVER_KEY?.trim();
       const isProdMidtrans = process.env.MIDTRANS_IS_PRODUCTION === "true";
 
+      const returnUrl = resolveTenantReturnUrl({
+        slug: school.slug,
+        orderId,
+        requestOrigin: req.get("origin"),
+        requestHost: req.get("host"),
+        siteUrl: duitku.siteUrl,
+      });
+      const normalizedPhone = normalizeIndonesianPhone(school.adminPhone);
+      const customerEmail = ctx.adminEmail || `admin@${school.slug}.pkbm.siput.id`;
+
       let paymentUrl: string | null = null;
       let snapToken: string | null = null;
+      let reference: string | null = null;
+      let provider: "DUITKU" | "MIDTRANS" | "MANUAL" = "MANUAL";
+      let environment: "sandbox" | "production" = duitku.environment;
+      let mode: "duitku" | "midtrans" | "manual-whatsapp" = "manual-whatsapp";
+      let gatewayError: string | null = null;
 
-      if (midtransKey) {
+      if (duitku.configured) {
+        const invoiceRes = await createDuitkuInvoice({
+          config: duitku,
+          merchantOrderId: orderId,
+          paymentAmount: pricing.amount,
+          productDetails: `${pricing.label} - ${school.nama}`,
+          customerVaName: ctx.adminNama || school.nama,
+          email: customerEmail,
+          phoneNumber: normalizedPhone,
+          additionalParam: school.slug,
+          merchantUserInfo: school.slug,
+          returnUrl,
+          expiryPeriodMinutes: 1440,
+        });
+        if (invoiceRes.ok && invoiceRes.paymentUrl) {
+          paymentUrl = invoiceRes.paymentUrl;
+          reference = invoiceRes.reference;
+          provider = "DUITKU";
+          environment = duitku.environment;
+          mode = "duitku";
+        } else {
+          gatewayError = invoiceRes.error ?? "Gagal membuat invoice Duitku.";
+          console.warn("Gagal membuat transaksi Duitku:", gatewayError);
+        }
+      } else if (midtransKey) {
         const snapBase = isProdMidtrans
           ? "https://app.midtrans.com/snap/v1/transactions"
           : "https://app.sandbox.midtrans.com/snap/v1/transactions";
@@ -163,7 +244,7 @@ export function subscriptionBillingRoutes(
               customer_details: {
                 first_name: ctx.adminNama.slice(0, 50),
                 email: ctx.adminEmail || undefined,
-                phone: normalizeIndonesianPhone(school.adminPhone) || undefined,
+                phone: normalizedPhone || undefined,
               },
             }),
             signal: AbortSignal.timeout(15_000),
@@ -172,11 +253,39 @@ export function subscriptionBillingRoutes(
             const snapJson = (await snapRes.json()) as { token?: string; redirect_url?: string };
             snapToken = snapJson.token ?? null;
             paymentUrl = snapJson.redirect_url ?? null;
+            if (paymentUrl) {
+              provider = "MIDTRANS";
+              environment = isProdMidtrans ? "production" : "sandbox";
+              mode = "midtrans";
+            }
           }
         } catch (err) {
           console.warn("Gagal membuat transaksi Midtrans Snap:", err instanceof Error ? err.message : "UnknownError");
         }
       }
+
+      const invoiceExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await prisma.pembayaranLangganan.create({
+        data: {
+          sekolahId: school.id,
+          merchantOrderId: orderId,
+          reference,
+          provider,
+          environment,
+          plan: requestedPlan,
+          planLabel: pricing.label,
+          durationDays: pricing.days,
+          amount: pricing.amount,
+          paymentUrl,
+          status: "PENDING",
+          customerName: ctx.adminNama,
+          customerEmail,
+          customerPhone: normalizedPhone,
+          returnUrl,
+          callbackUrl: provider === "DUITKU" ? duitku.callbackUrl : null,
+          expiresAt: invoiceExpiresAt,
+        },
+      });
 
       if (school.adminPhone) {
         void sendWhatsAppNotification(
@@ -187,14 +296,20 @@ export function subscriptionBillingRoutes(
 
       return res.status(201).json({
         orderId,
+        reference,
         plan: requestedPlan,
         planLabel: pricing.label,
         amount: pricing.amount,
         paymentUrl,
         snapToken,
-        mode: paymentUrl ? "midtrans" : "manual-whatsapp",
+        provider,
+        environment,
+        mode,
+        ...(gatewayError ? { gatewayNote: gatewayError } : {}),
         message: paymentUrl
-          ? "Tautan pembayaran QRIS / Virtual Account berhasil dibuat."
+          ? mode === "duitku"
+            ? "Tautan pembayaran Duitku (QRIS / Virtual Account / E-Wallet) berhasil dibuat."
+            : "Tautan pembayaran QRIS / Virtual Account berhasil dibuat."
           : "Invoice dibuat. Lanjutkan konfirmasi cepat melalui WhatsApp untuk aktivasi instan.",
       });
     } catch (error) {
@@ -236,6 +351,32 @@ export function paymentWebhookRoutes() {
     }
 
     try {
+      const existingPayment = await prisma.pembayaranLangganan.findUnique({
+        where: { merchantOrderId: orderId },
+        select: { id: true },
+      });
+      if (existingPayment) {
+        const outcome = await settleSubscriptionPayment({
+          merchantOrderId: orderId,
+          resultCode: "00",
+          amount: Number(grossAmount),
+          paymentCode: typeof req.body?.payment_type === "string" ? req.body.payment_type : null,
+          callbackPayload: { source: "midtrans-webhook", transaction_status: txStatus, fraud_status: fraudStatus },
+          onActivated: ({ schoolName, adminPhone, plan, nextExpiry }) => {
+            if (adminPhone) {
+              void sendWhatsAppNotification(
+                adminPhone,
+                `Pembayaran diterima! Paket ${plan.toUpperCase()} untuk ${schoolName} kini aktif hingga ${nextExpiry.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}. Terima kasih!`,
+              );
+            }
+          },
+        });
+        if (outcome.ok === false) {
+          return res.status(outcome.httpStatus).json({ error: outcome.error });
+        }
+        return res.json({ activated: outcome.status === "PAID", ...outcome });
+      }
+
       const school = await prisma.sekolah.findUnique({
         where: { slug: parsedOrder.slug },
         select: { id: true, nama: true, expiresAt: true, adminPhone: true },

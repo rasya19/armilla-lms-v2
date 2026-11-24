@@ -256,8 +256,9 @@ model Sekolah {
   alumniTracer       AlumniTracer[]
   asetSarpras        AsetSarpras[]
   topikDiskusi       TopikDiskusi[]
-  learningModules    LearningModuleBank[]
-  pendaftaranLembaga PendaftaranSekolah?
+  learningModules     LearningModuleBank[]
+  pembayaranLangganan PembayaranLangganan[]
+  pendaftaranLembaga  PendaftaranSekolah?
 
   @@index([kabupatenKota, izinVervalDinas])
 }
@@ -848,6 +849,40 @@ model LearningModuleBank {
 
   @@index([schoolId, visibility])
   @@index([visibility, paket, gradeLevel])
+}
+
+model PembayaranLangganan {
+  id               String    @id @default(uuid())
+  sekolahId        String
+  sekolah          Sekolah   @relation(fields: [sekolahId], references: [id], onDelete: Cascade)
+  merchantOrderId  String    @unique
+  reference        String?
+  publisherOrderId String?
+  provider         String    @default("DUITKU") // "DUITKU" | "MIDTRANS" | "MANUAL"
+  environment      String    @default("sandbox") // "sandbox" | "production"
+  plan             String    // "basic" | "reguler" | "pro"
+  planLabel        String
+  durationDays     Int       @default(365)
+  amount           Int
+  paymentMethod    String?
+  paymentUrl       String?
+  status           String    @default("PENDING") // "PENDING" | "PAID" | "FAILED" | "EXPIRED"
+  resultCode       String?
+  customerName     String?
+  customerEmail    String?
+  customerPhone    String?
+  returnUrl        String?
+  callbackUrl      String?
+  settlementDate   String?
+  paidAt           DateTime?
+  expiresAt        DateTime?
+  callbackPayload  Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([sekolahId, createdAt])
+  @@index([status, createdAt])
+  @@index([reference])
 }
 
 

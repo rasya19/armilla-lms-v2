@@ -6,9 +6,12 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Copy,
+  CreditCard,
+  ExternalLink,
   FileSpreadsheet,
   Globe,
   KeyRound,
+  Loader2,
   Lock,
   Palette,
   RefreshCw,
@@ -44,12 +47,71 @@ export function UpgradePlanModal({
   onRefreshPlan?: () => void;
   onClose: () => void;
 }) {
-  const target = getPlanBySlug(requiredPlan);
+  const [selectedPlan, setSelectedPlan] = useState<PlanSlug>(requiredPlan);
+  const [busy, setBusy] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [checkoutInfo, setCheckoutInfo] = useState<{
+    orderId: string;
+    reference: string | null;
+    planLabel: string;
+    amount: number;
+    paymentUrl: string | null;
+    mode: string;
+    message: string;
+  } | null>(null);
+
+  const target = getPlanBySlug(selectedPlan);
   const current = getPlanBySlug(currentPlan);
+
+  async function handleDuitkuCheckout() {
+    if (busy) return;
+    setBusy(true);
+    setCheckoutError("");
+    try {
+      const res = await fetchWithTimeout(
+        "/api/sekolah/langganan/checkout",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plan: selectedPlan }),
+        },
+        20_000,
+      );
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        orderId?: string;
+        reference?: string | null;
+        planLabel?: string;
+        amount?: number;
+        paymentUrl?: string | null;
+        mode?: string;
+        message?: string;
+      } | null;
+      if (!res.ok || !body?.orderId) {
+        throw new Error(body?.error || "Tagihan pembayaran belum dapat dibuat saat ini.");
+      }
+      setCheckoutInfo({
+        orderId: body.orderId,
+        reference: body.reference ?? null,
+        planLabel: body.planLabel || target.name,
+        amount: body.amount ?? target.annualPrice,
+        paymentUrl: body.paymentUrl ?? null,
+        mode: body.mode || "manual-whatsapp",
+        message: body.message || "Tagihan pembayaran berhasil dibuat.",
+      });
+      if (body.paymentUrl) {
+        window.open(body.paymentUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (failure) {
+      setCheckoutError(describeFetchError(failure, "Checkout otomatis belum tersedia saat ini."));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <SchoolModal
-      title={`Fitur ${target.name}`}
+      title={`Aktivasi / Upgrade ${target.name}`}
       titleIcon={
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
           <Lock size={20} aria-hidden="true" />
@@ -60,11 +122,40 @@ export function UpgradePlanModal({
       <div className="mt-4 space-y-4 text-sm text-slate-700">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
           <p className="font-bold">
-            Menu &ldquo;{featureName}&rdquo; tersedia mulai {target.name}.
+            Menu &ldquo;{featureName}&rdquo; tersedia mulai {getPlanBySlug(requiredPlan).name}.
           </p>
           <p className="mt-1 text-xs leading-5 text-amber-900">
-            Paket aktif lembaga Anda saat ini adalah <strong>{current.name}</strong>. Upgrade paket untuk membuka fitur ini beserta seluruh fitur tingkat di bawahnya.
+            Paket aktif lembaga Anda saat ini adalah <strong>{current.name}</strong>. Lakukan pembayaran online via Duitku (QRIS, Virtual Account, atau E-Wallet) untuk aktivasi otomatis.
           </p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          {SUBSCRIPTION_PLANS.map((plan) => {
+            const active = selectedPlan === plan.slug;
+            return (
+              <button
+                key={plan.slug}
+                type="button"
+                onClick={() => {
+                  setSelectedPlan(plan.slug);
+                  setCheckoutInfo(null);
+                  setCheckoutError("");
+                }}
+                className={`rounded-xl border p-3 text-left transition ${
+                  active
+                    ? "border-indigo-600 bg-indigo-50 ring-2 ring-indigo-500/20"
+                    : "border-slate-200 bg-white hover:border-indigo-300"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-extrabold text-slate-900">{plan.name}</span>
+                  {active && <Check size={14} className="text-indigo-600" />}
+                </div>
+                <p className="mt-1 text-xs font-black text-indigo-800">{plan.annualPriceLabel}</p>
+                <p className="text-[11px] text-slate-500">{plan.price} {plan.period}</p>
+              </button>
+            );
+          })}
         </div>
 
         <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
@@ -80,7 +171,7 @@ export function UpgradePlanModal({
             </span>
           </div>
           <p className="mt-1 text-xs font-medium text-slate-600">{target.billingNote}</p>
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-3 space-y-1.5">
             {target.features.map((item) => (
               <li key={item} className="flex items-start gap-2 text-xs text-slate-800">
                 <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden="true" />
@@ -90,14 +181,47 @@ export function UpgradePlanModal({
           </ul>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs leading-5 text-slate-700">
-          <p className="font-bold text-slate-900">Cara Aktivasi Upgrade:</p>
-          <p className="mt-1">
-            Hubungi tim pengelola <strong>Rasyatech Admin</strong> dengan menyebutkan nama PKBM atau NPSN lembaga Anda untuk aktivasi langsung ke {target.name}.
+        {checkoutError && (
+          <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+            {checkoutError}
           </p>
-        </div>
+        )}
+
+        {checkoutInfo && (
+          <div role="status" className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-950">
+            <p className="font-bold">{checkoutInfo.message}</p>
+            <p className="font-mono text-[11px]">
+              Order ID: <strong>{checkoutInfo.orderId}</strong> · Rp {checkoutInfo.amount.toLocaleString("id-ID")}
+              {checkoutInfo.reference ? ` · Ref: ${checkoutInfo.reference}` : ""}
+            </p>
+            {checkoutInfo.paymentUrl && (
+              <div className="pt-1">
+                <a
+                  href={checkoutInfo.paymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-500"
+                >
+                  Buka Halaman Pembayaran Duitku <ExternalLink size={13} />
+                </a>
+              </div>
+            )}
+            <p className="text-[11px] text-emerald-800">
+              Setelah pembayaran selesai, paket lembaga akan aktif otomatis. Klik &ldquo;Cek Status Paket&rdquo; untuk menyegarkan sesi Anda.
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void handleDuitkuCheckout()}
+            className="master-primary inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-extrabold disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
+            {busy ? "Membuat Tagihan..." : "Bayar Online (QRIS / VA)"}
+          </button>
           {onRefreshPlan && (
             <button
               type="button"
@@ -112,9 +236,9 @@ export function UpgradePlanModal({
           <button
             type="button"
             onClick={onClose}
-            className="master-primary px-5 py-2.5"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
           >
-            Mengerti
+            Tutup
           </button>
         </div>
       </div>

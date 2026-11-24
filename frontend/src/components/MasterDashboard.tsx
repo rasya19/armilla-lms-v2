@@ -8,6 +8,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 import { MasterDinasPanel, MasterGlobalThemePanel, MasterSchools } from "./MasterSchools";
+import { MasterPayments } from "./MasterPayments";
 import { MasterSchoolRegistrations } from "./MasterSchoolRegistrations";
 import { CardGridSkeleton, TableSkeleton } from "./DashboardUI";
 import { getCached, setCached } from "./schoolCache";
@@ -158,6 +159,7 @@ export function MasterDashboard({ name, error, onLogout }: MasterDashboardProps)
         {activeId === "dashboard" || activeId === "linimasa" ? <OverviewPanel search={search} selectMenu={selectMenu} showBoard={activeId === "dashboard"} /> :
           activeId === "tenant" ? <MasterSchools /> :
           activeId === "dinas" ? <MasterDinasPanel /> :
+          activeId === "pembayaran" ? <MasterPayments /> :
           activeId === "pengaturan" ? <MasterGlobalThemePanel /> :
           activeId === "verifikasi" || activeId === "pendaftar" ? <MasterSchoolRegistrations /> :
           <section className="master-section"><h2 className="text-lg font-bold text-white">Fitur belum tersedia</h2><p className="mt-2 text-sm leading-6 text-slate-400">Menu ini masih dalam pengembangan dan belum terhubung ke data. Tidak ada perubahan data yang dilakukan.</p><button type="button" onClick={() => selectMenu("dashboard")} className="mt-5 text-sm font-semibold text-indigo-300 hover:text-white">Kembali ke ringkasan →</button></section>}

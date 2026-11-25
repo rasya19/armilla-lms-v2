@@ -3053,6 +3053,16 @@ app.use(
 );
 app.use("/api/module-bank", moduleBankRoutes(resolveAdminOrTeacherSession));
 app.use("/api/verval", vervalRoutes(async (req) => {
+  const sandbox = await getDevSandboxLmsContext(req);
+  if (sandbox && sandbox.peran === "SISWA" && sandbox.siswaId) {
+    return { sekolahId: sandbox.sekolahId, role: "SISWA", siswaId: sandbox.siswaId };
+  }
+  if (req.path === "/me") {
+    const lmsSession = await getLmsSession(req);
+    if (lmsSession?.akun.sekolahId && lmsSession.akun.peran === "SISWA" && lmsSession.akun.siswaId && !lmsSession.akun.wajibGantiPassword) {
+      return { sekolahId: lmsSession.akun.sekolahId, role: "SISWA", siswaId: lmsSession.akun.siswaId };
+    }
+  }
   const adminSession = await getSession(req, "ADMIN");
   if (adminSession?.akun.sekolahId) {
     return { sekolahId: adminSession.akun.sekolahId, role: "ADMIN" };
@@ -3060,10 +3070,6 @@ app.use("/api/verval", vervalRoutes(async (req) => {
   const lmsSession = await getLmsSession(req);
   if (lmsSession?.akun.sekolahId && lmsSession.akun.peran === "SISWA" && lmsSession.akun.siswaId && !lmsSession.akun.wajibGantiPassword) {
     return { sekolahId: lmsSession.akun.sekolahId, role: "SISWA", siswaId: lmsSession.akun.siswaId };
-  }
-  const sandbox = await getDevSandboxLmsContext(req);
-  if (sandbox && sandbox.peran === "SISWA" && sandbox.siswaId) {
-    return { sekolahId: sandbox.sekolahId, role: "SISWA", siswaId: sandbox.siswaId };
   }
   return null;
 }));

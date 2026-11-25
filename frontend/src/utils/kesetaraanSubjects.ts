@@ -100,3 +100,132 @@ export function predikatFromScore(score: number | null): string {
   if (score >= 70) return "C";
   return "D";
 }
+
+export type TranscriptSubjectGroup<T> = {
+  key: "UMUM" | "PEMINATAN" | "KHUSUS";
+  title: string;
+  items: T[];
+};
+
+const KELOMPOK_KHUSUS_REGEX =
+  /\b(pemberdayaan|keterampilan|prakarya|kewirausahaan|vokasi|tata boga|tata busana|komputer|tik|teknologi informasi|informatika|p5|projek|proyek|kerajinan|pertanian|budidaya|fungsional|terstruktur|tersertifikasi)\b/i;
+
+const IPA_PEMINATAN_GROUP_REGEX =
+  /\b(fisika|kimia|biologi|matematika\s*(?:tingkat\s*)?(?:lanjut|peminatan)|ipa\s*peminatan)\b/i;
+
+const IPS_PEMINATAN_GROUP_REGEX =
+  /\b(geografi|sosiologi|ekonomi|antropologi|ips\s*peminatan|sejarah\s*peminatan)\b/i;
+
+function getSubjectOrderWeight(name: string, group: "UMUM" | "PEMINATAN" | "KHUSUS"): number {
+  const n = name.toLowerCase();
+  if (group === "UMUM") {
+    if (/agama/.test(n)) return 1;
+    if (/pancasila|kewarganegaraan|ppkn/.test(n)) return 2;
+    if (/bahasa indonesia|b\.?\s*indonesia/.test(n)) return 3;
+    if (/matematika/.test(n)) return 4;
+    if (/sejarah/.test(n)) return 5;
+    if (/bahasa inggris|b\.?\s*inggris/.test(n)) return 6;
+    if (/ipas|ilmu pengetahuan alam dan sosial/.test(n)) return 7;
+    if (/^ipa\b|ilmu pengetahuan alam/.test(n)) return 8;
+    if (/^ips\b|ilmu pengetahuan sosial/.test(n)) return 9;
+    if (/seni|budaya/.test(n)) return 10;
+    if (/jasmani|pjok|olahraga/.test(n)) return 11;
+    return 50;
+  }
+  if (group === "PEMINATAN") {
+    // IPS order: Geografi, Sejarah, Sosiologi, Ekonomi
+    if (/geografi/.test(n)) return 1;
+    if (/sejarah/.test(n)) return 2;
+    if (/sosiologi/.test(n)) return 3;
+    if (/ekonomi/.test(n)) return 4;
+    // IPA order: Matematika Peminatan, Biologi, Fisika, Kimia
+    if (/matematika/.test(n)) return 1;
+    if (/biologi/.test(n)) return 2;
+    if (/fisika/.test(n)) return 3;
+    if (/kimia/.test(n)) return 4;
+    return 50;
+  }
+  // KHUSUS order: Pemberdayaan, Keterampilan Wajib, Keterampilan Pilihan, lainnya
+  if (/pemberdayaan/.test(n)) return 1;
+  if (/keterampilan\s*wajib/.test(n)) return 2;
+  if (/keterampilan\s*pilihan/.test(n)) return 3;
+  if (/keterampilan/.test(n)) return 4;
+  if (/prakarya|kewirausahaan/.test(n)) return 5;
+  return 50;
+}
+
+export function groupTranscriptSubjects<T>(
+  items: T[],
+  getMapelNama: (item: T) => string,
+  kelasName: string,
+  paketCTrack: PaketCTrack,
+  jenjang?: string | null,
+): TranscriptSubjectGroup<T>[] {
+  const program = detectKesetaraanProgram(kelasName, jenjang);
+  const umum: T[] = [];
+  const peminatan: T[] = [];
+  const khusus: T[] = [];
+
+  for (const item of items) {
+    const name = getMapelNama(item).trim();
+    if (KELOMPOK_KHUSUS_REGEX.test(name)) {
+      khusus.push(item);
+      continue;
+    }
+
+    if (program === "PAKET_C") {
+      if (paketCTrack === "IPA" && IPA_PEMINATAN_GROUP_REGEX.test(name)) {
+        peminatan.push(item);
+        continue;
+      }
+      if (paketCTrack === "IPS") {
+        const isSejarahPeminatan =
+          /\bsejarah\b/i.test(name) && !/\bsejarah\s+indonesia\b/i.test(name);
+        if (IPS_PEMINATAN_GROUP_REGEX.test(name) || isSejarahPeminatan) {
+          peminatan.push(item);
+          continue;
+        }
+      }
+    }
+
+    umum.push(item);
+  }
+
+  umum.sort((a, b) => {
+    const diff = getSubjectOrderWeight(getMapelNama(a), "UMUM") - getSubjectOrderWeight(getMapelNama(b), "UMUM");
+    return diff !== 0 ? diff : getMapelNama(a).localeCompare(getMapelNama(b), "id");
+  });
+  peminatan.sort((a, b) => {
+    const diff = getSubjectOrderWeight(getMapelNama(a), "PEMINATAN") - getSubjectOrderWeight(getMapelNama(b), "PEMINATAN");
+    return diff !== 0 ? diff : getMapelNama(a).localeCompare(getMapelNama(b), "id");
+  });
+  khusus.sort((a, b) => {
+    const diff = getSubjectOrderWeight(getMapelNama(a), "KHUSUS") - getSubjectOrderWeight(getMapelNama(b), "KHUSUS");
+    return diff !== 0 ? diff : getMapelNama(a).localeCompare(getMapelNama(b), "id");
+  });
+
+  const groups: TranscriptSubjectGroup<T>[] = [
+    { key: "UMUM", title: "Kelompok Umum", items: umum },
+  ];
+
+  if (program === "PAKET_C") {
+    groups.push({
+      key: "PEMINATAN",
+      title:
+        paketCTrack === "IPA"
+          ? "Peminatan Matematika dan Ilmu Pengetahuan Alam"
+          : "Peminatan Ilmu-Ilmu Sosial",
+      items: peminatan,
+    });
+  }
+
+  if (khusus.length > 0 || program === "PAKET_C" || program === "PAKET_B" || program === "PAKET_A") {
+    groups.push({
+      key: "KHUSUS",
+      title: "Kelompok Khusus",
+      items: khusus,
+    });
+  }
+
+  return groups.filter((g) => g.items.length > 0);
+}

@@ -72,6 +72,7 @@ type CompletenessSource = {
   urlAktaKtp?: string | null;
   urlIjazah?: string | null;
   urlSuratPindah?: string | null;
+  urlFotoIjazah?: string | null;
 };
 
 const REQUIRED_VERVAL_FIELDS: Array<{ key: string; label: string; check: (s: CompletenessSource) => boolean }> = [
@@ -281,6 +282,7 @@ const SISWA_VERVAL_SELECT = {
   urlAktaKtp: true,
   urlIjazah: true,
   urlSuratPindah: true,
+  urlFotoIjazah: true,
   statusVerval: true,
   catatanVerval: true,
   statusVervalDinas: true,
@@ -328,6 +330,7 @@ function serializeVervalStudent(student: SelectedSiswaVerval, kelasNamaMap: Map<
     urlAktaKtp: student.urlAktaKtp ?? null,
     urlIjazah: student.urlIjazah ?? null,
     urlSuratPindah: student.urlSuratPindah ?? null,
+    urlFotoIjazah: student.urlFotoIjazah ?? null,
     statusVerval,
     catatanVerval: student.catatanVerval ?? null,
     statusVervalDinas,
@@ -1040,6 +1043,7 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
       ["urlAktaKtp", "Berkas Akta/KTP"],
       ["urlIjazah", "Berkas Ijazah"],
       ["urlSuratPindah", "Berkas Surat Pindah"],
+      ["urlFotoIjazah", "Pas Foto Ijazah 4x6"],
     ] as const) {
       if (Object.prototype.hasOwnProperty.call(payload, fieldKey)) {
         const rawVal = payload[fieldKey];

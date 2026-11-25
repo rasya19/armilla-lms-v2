@@ -1059,7 +1059,52 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   }
 
   const activeKelasName = data?.kelasList.find((k) => k.id === kelasId)?.nama ?? "-";
-  const activeTahunObj = data?.tahunList.find((t) => t.id === tahunId);
+  const activeTahunObj = data?.tahunList.find((t) => t.id === tahunId) ?? data?.tahunList[0];
+  const uniqueYearNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const t of data?.tahunList ?? []) names.add(t.nama);
+    return Array.from(names);
+  }, [data?.tahunList]);
+  const activeYearName = activeTahunObj?.nama ?? uniqueYearNames[0] ?? "";
+  const activeSemesterValue: "Ganjil" | "Genap" =
+    activeTahunObj?.semester?.toLowerCase() === "genap" ? "Genap" : "Ganjil";
+
+  async function selectYearAndSemester(targetNama: string, targetSemester: "Ganjil" | "Genap") {
+    if (!targetNama) return;
+    const match = data?.tahunList.find(
+      (t) => t.nama === targetNama && t.semester.toLowerCase() === targetSemester.toLowerCase(),
+    );
+    if (match) {
+      setTahunId(match.id);
+      return;
+    }
+    // Auto-create missing semester pair in database so selection always persists across logout
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/raport/tahun-ajaran", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({ nama: targetNama, semester: targetSemester, createPair: true }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        tahunAjaran?: { id: string };
+        error?: string;
+      } | null;
+      if (!res.ok || !body?.tahunAjaran?.id) {
+        throw new Error(body?.error || "Semester belum dapat disiapkan.");
+      }
+      setTahunId(body.tahunAjaran.id);
+      await loadRaport(kelasId, body.tahunAjaran.id);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal berpindah semester."));
+    } finally {
+      setBusy(false);
+    }
+  }
   const activeProgram = detectKesetaraanProgram(activeKelasName, activeSiswa?.jenjang);
 
   function handleSelectPaketCTrack(next: PaketCTrack) {
@@ -1196,10 +1241,10 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
         {raportSubTab !== "transkrip" && raportSubTab !== "leger-6sem" && (
         <div className={`space-y-3 rounded-2xl p-4 ${panelClass(isDark)}`}>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className={`grid gap-4 ${raportSubTab === "raport" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
             <div className="block text-xs font-bold">
               <div className="flex items-center justify-between gap-2">
-                <span>Tahun Ajaran &amp; Semester</span>
+                <span>Tahun Ajaran</span>
                 <button
                   type="button"
                   onClick={() => setAddYearOpen(true)}
@@ -1210,14 +1255,28 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                 </button>
               </div>
               <select
-                aria-label="Tahun Ajaran dan Semester"
-                value={tahunId}
-                onChange={(e) => setTahunId(e.target.value)}
+                aria-label="Tahun Ajaran"
+                value={activeYearName}
+                onChange={(e) => void selectYearAndSemester(e.target.value, activeSemesterValue)}
                 className={inputClass(isDark)}
               >
-                {data?.tahunList.map((t) => <option key={t.id} value={t.id}>{t.nama} — {t.semester}</option>)}
+                {uniqueYearNames.map((nama) => (
+                  <option key={nama} value={nama}>{nama}</option>
+                ))}
               </select>
             </div>
+            <label className="block text-xs font-bold">
+              Semester
+              <select
+                aria-label="Semester"
+                value={activeSemesterValue}
+                onChange={(e) => void selectYearAndSemester(activeYearName, e.target.value as "Ganjil" | "Genap")}
+                className={inputClass(isDark)}
+              >
+                <option value="Ganjil">Ganjil</option>
+                <option value="Genap">Genap</option>
+              </select>
+            </label>
             <label className="block text-xs font-bold">
               Kelas / Rombel
               <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={inputClass(isDark)}>

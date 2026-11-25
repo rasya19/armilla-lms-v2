@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Award, CheckCircle2, Download, FileSpreadsheet, GraduationCap, Lock, Printer, Save, Unlock } from "lucide-react";
 import { buildSandboxHeaders } from "../utils/safeUrl";
 import { CardGridSkeleton, EmptyState } from "./DashboardUI";
@@ -11,6 +11,7 @@ import {
   detectDefaultPaketCTrack,
   detectKesetaraanProgram,
   filterItemsByKesetaraanTrack,
+  groupTranscriptSubjects,
   predikatFromScore,
   savePaketCTrackPreference,
   type PaketCTrack,
@@ -678,6 +679,11 @@ export function RaportTranscriptPanel({
   const [upkMapelId, setUpkMapelId] = useState("");
   const [upkScore, setUpkScore] = useState("85");
 
+  // Optional official transcript metadata for print
+  const [nomorTranskrip, setNomorTranskrip] = useState("");
+  const [nomorIjazah, setNomorIjazah] = useState("");
+  const [tanggalKelulusan, setTanggalKelulusan] = useState("");
+
   const loadTranscript = useCallback(async (targetKelasId: string, signal?: AbortSignal) => {
     setLoading(true);
     setError("");
@@ -745,10 +751,41 @@ export function RaportTranscriptPanel({
     });
   }, [data, paketCTrack]);
   const activeRow = filteredRows.find((r) => r.siswa.id === selectedSiswaId) ?? filteredRows[0] ?? null;
-  const programClassLabel =
-    transcriptProgram === "PAKET_C"
-      ? `${data?.selectedKelasNama ?? ""} (Jurusan ${paketCTrack})`
-      : (data?.selectedKelasNama ?? "");
+  const groupedActiveSubjects = useMemo(
+    () =>
+      activeRow
+        ? groupTranscriptSubjects(
+            activeRow.subjects,
+            (s) => s.mapelNama,
+            data?.selectedKelasNama ?? "",
+            paketCTrack,
+            activeRow.siswa.jenjang,
+          )
+        : [],
+    [activeRow, data?.selectedKelasNama, paketCTrack],
+  );
+
+  function formatTtl(tempat?: string | null, tanggal?: string | null): string {
+    const cleanTempat = (tempat ?? "").trim();
+    let formattedDate = "";
+    if (tanggal) {
+      const parsed = new Date(tanggal);
+      if (!Number.isNaN(parsed.getTime())) {
+        formattedDate = parsed.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+      }
+    }
+    if (cleanTempat && formattedDate) return `${cleanTempat}, ${formattedDate}`;
+    return cleanTempat || formattedDate || "...........................................";
+  }
+
+  function formatTanggalKelulusan(raw: string): string {
+    if (!raw.trim()) return "...........................................";
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+    }
+    return raw.trim();
+  }
 
   async function handleSaveUpk(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -899,10 +936,44 @@ export function RaportTranscriptPanel({
                 </button>
               ))}
               <span className={isDark ? "text-slate-400" : "text-slate-500"}>
-                {paketCTrack === "IPA" ? "(Mapel IPS disembunyikan)" : "(Mapel IPA disembunyikan)"}
+                {paketCTrack === "IPA"
+                  ? "(Kelompok Peminatan MIPA · Mapel IPS disembunyikan)"
+                  : "(Kelompok Peminatan Ilmu-Ilmu Sosial · Mapel IPA disembunyikan)"}
               </span>
             </div>
           )}
+
+          <div className="mt-3 grid gap-3 border-t border-slate-200/60 pt-3 sm:grid-cols-3">
+            <label className="block text-xs font-bold">
+              Nomor Transkrip (Opsional)
+              <input
+                type="text"
+                value={nomorTranskrip}
+                onChange={(e) => setNomorTranskrip(e.target.value)}
+                placeholder="Contoh: 421/012/PKBM/2026"
+                className={fieldCls}
+              />
+            </label>
+            <label className="block text-xs font-bold">
+              Nomor Ijazah (Opsional)
+              <input
+                type="text"
+                value={nomorIjazah}
+                onChange={(e) => setNomorIjazah(e.target.value)}
+                placeholder="Contoh: DN-02/PC/K13/26/0001234"
+                className={fieldCls}
+              />
+            </label>
+            <label className="block text-xs font-bold">
+              Tanggal Kelulusan (Opsional)
+              <input
+                type="date"
+                value={tanggalKelulusan}
+                onChange={(e) => setTanggalKelulusan(e.target.value)}
+                className={fieldCls}
+              />
+            </label>
+          </div>
         </div>
 
         {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</p>}
@@ -1005,103 +1076,130 @@ export function RaportTranscriptPanel({
             </div>
           </div>
 
-          {/* Dokumen Resmi Transkrip Nilai Pendamping Ijazah */}
+          {/* Dokumen Resmi Transkrip Nilai (1 Lembar A4) */}
           {activeRow && (
-            <article className="print-sheet rounded-2xl border border-slate-300 bg-white p-5 text-slate-900 shadow-sm sm:p-8">
+            <article className="print-sheet transcript-print-sheet rounded-2xl border border-slate-300 bg-white p-4 text-slate-900 shadow-sm sm:p-6">
               <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
 
-              <div className="mt-4 text-center">
-                <h3 className="text-sm font-black uppercase tracking-wide text-slate-950 sm:text-base">
-                  Transkrip Nilai Pendamping Ijazah
+              <div className="mt-2.5 text-center">
+                <h3 className="text-sm font-black uppercase tracking-wide text-slate-950">
+                  TRANSKRIP NILAI
                 </h3>
-                <p className="text-xs font-semibold text-slate-700">
-                  Pendidikan Kesetaraan · {programClassLabel}
+                <p className="mt-0.5 text-[11px] font-medium text-slate-800">
+                  Nomor: {nomorTranskrip.trim() || "................................................."}
                 </p>
               </div>
 
-              <div className="mt-4 grid gap-x-6 gap-y-1.5 rounded-xl border border-slate-300 bg-slate-50/80 px-4 py-3 text-xs sm:grid-cols-2">
-                <div className="flex gap-2">
-                  <span className="w-36 shrink-0 text-slate-600">Nama Lengkap</span>
-                  <strong className="text-slate-950">: {activeRow.siswa.nama}</strong>
+              <div className="mt-2.5 text-[11px] leading-snug text-slate-900">
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Satuan Pendidikan</span>
+                  <span className="mr-2">:</span>
+                  <span className="font-semibold text-slate-950">{data.sekolah.nama}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
-                  <strong className="font-mono text-slate-950">: {activeRow.siswa.nisn}</strong>
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Nomor Pokok Sekolah Nasional</span>
+                  <span className="mr-2">:</span>
+                  <span className="font-mono font-semibold text-slate-950">{data.sekolah.npsn || "-"}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="w-36 shrink-0 text-slate-600">Program / Kelas Akhir</span>
-                  <strong className="text-slate-950">: {programClassLabel}</strong>
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Nama Lengkap</span>
+                  <span className="mr-2">:</span>
+                  <span className="font-bold text-slate-950">{activeRow.siswa.nama}</span>
                 </div>
-                <div className="flex gap-2">
-                  <span className="w-36 shrink-0 text-slate-600">Rata-rata Nilai Akhir</span>
-                  <strong className="text-slate-950">
-                    :{" "}
-                    {activeRow.rataTranskrip !== null
-                      ? `${activeRow.rataTranskrip} (${activeRow.predikatKeseluruhan})`
-                      : "-"}
-                  </strong>
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Tempat, Tanggal Lahir</span>
+                  <span className="mr-2">:</span>
+                  <span className="text-slate-950">
+                    {formatTtl(activeRow.siswa.tempatLahir, activeRow.siswa.tanggalLahir)}
+                  </span>
+                </div>
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Nomor Induk Siswa Nasional</span>
+                  <span className="mr-2">:</span>
+                  <span className="font-mono font-semibold text-slate-950">{activeRow.siswa.nisn}</span>
+                </div>
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Nomor Ijazah</span>
+                  <span className="mr-2">:</span>
+                  <span className="font-mono text-slate-950">
+                    {nomorIjazah.trim() || "..........................................."}
+                  </span>
+                </div>
+                <div className="transcript-meta-row flex py-0.5">
+                  <span className="w-52 shrink-0">Tanggal Kelulusan</span>
+                  <span className="mr-2">:</span>
+                  <span className="text-slate-950">{formatTanggalKelulusan(tanggalKelulusan)}</span>
                 </div>
               </div>
 
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full border-collapse border border-slate-400 text-left text-xs">
+              <div className="mt-2.5 overflow-x-auto">
+                <table className="transcript-table w-full border-collapse border border-slate-800 text-left text-[11px] leading-tight">
                   <thead>
-                    <tr className="bg-slate-100 font-extrabold text-slate-900">
-                      <th className="w-12 border border-slate-400 px-3 py-2 text-center">No</th>
-                      <th className="border border-slate-400 px-3 py-2">Mata Pelajaran</th>
-                      <th className="w-32 border border-slate-400 px-3 py-2 text-center">Nilai Akhir</th>
-                      <th className="w-28 border border-slate-400 px-3 py-2 text-center">Predikat</th>
+                    <tr className="bg-slate-100 font-bold text-slate-950">
+                      <th className="w-10 border border-slate-800 px-2 py-1 text-center">No.</th>
+                      <th className="border border-slate-800 px-2.5 py-1 text-center">Mata Pelajaran</th>
+                      <th className="w-24 border border-slate-800 px-2 py-1 text-center">Nilai</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {activeRow.subjects.map((sub, idx) => (
-                      <tr key={sub.mapelId}>
-                        <td className="border border-slate-400 px-3 py-2 text-center tabular-nums">{idx + 1}</td>
-                        <td className="border border-slate-400 px-3 py-2 font-semibold text-slate-900">{sub.mapelNama}</td>
-                        <td className="border border-slate-400 px-3 py-2 text-center text-sm font-extrabold tabular-nums text-slate-950">
-                          {sub.nilaiTranskrip ?? "-"}
-                        </td>
-                        <td className="border border-slate-400 px-3 py-2 text-center font-bold text-slate-800">
-                          {sub.nilaiTranskrip !== null ? sub.predikat : "-"}
-                        </td>
-                      </tr>
+                    {groupedActiveSubjects.map((group) => (
+                      <Fragment key={group.key}>
+                        <tr className="bg-slate-50/90 font-semibold text-slate-950">
+                          <td colSpan={2} className="border border-slate-800 px-2 py-1">
+                            {group.title}
+                          </td>
+                          <td className="border border-slate-800 px-2 py-1" />
+                        </tr>
+                        {group.items.map((sub, idx) => (
+                          <tr key={sub.mapelId}>
+                            <td className="border border-slate-800 px-2 py-0.5 text-center tabular-nums">
+                              {idx + 1}.
+                            </td>
+                            <td className="border border-slate-800 px-2.5 py-0.5 text-slate-900">
+                              {sub.mapelNama}
+                            </td>
+                            <td className="border border-slate-800 px-2 py-0.5 text-center font-semibold tabular-nums text-slate-950">
+                              {sub.nilaiTranskrip !== null ? sub.nilaiTranskrip : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="bg-slate-100 font-extrabold text-slate-950">
-                      <td colSpan={2} className="border border-slate-400 px-3 py-2 text-right">
-                        Rata-rata Keseluruhan
+                    <tr className="bg-slate-100 font-bold text-slate-950">
+                      <td colSpan={2} className="border border-slate-800 px-2.5 py-1 text-center">
+                        Rata-rata
                       </td>
-                      <td className="border border-slate-400 px-3 py-2 text-center text-sm tabular-nums">
-                        {activeRow.rataTranskrip ?? "-"}
-                      </td>
-                      <td className="border border-slate-400 px-3 py-2 text-center">
-                        {activeRow.rataTranskrip !== null ? activeRow.predikatKeseluruhan : "-"}
+                      <td className="border border-slate-800 px-2 py-1 text-center tabular-nums">
+                        {activeRow.rataTranskrip !== null ? activeRow.rataTranskrip : "-"}
                       </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
 
-              <div className="print-avoid-break mt-8 flex flex-wrap items-end justify-between gap-6 text-center text-xs">
+              <div className="print-avoid-break mt-4 flex flex-wrap items-end justify-between gap-4 text-center text-[11px] leading-snug">
                 <div className="flex flex-col items-center">
                   <QrCodeSvg
                     value={`TRANSKRIP-IJAZAH|${data.sekolah.npsn || data.sekolah.nama}|${activeRow.siswa.nisn}|${activeRow.rataTranskrip ?? "N/A"}`}
-                    size={80}
-                    label="QR Verifikasi Transkrip Ijazah"
-                    className="rounded-lg border border-slate-300 p-1"
+                    size={62}
+                    label="QR Verifikasi Transkrip Nilai"
+                    className="rounded border border-slate-300 p-0.5"
                   />
-                  <p className="mt-1 text-[10px] font-semibold text-slate-500">QR Verifikasi Keaslian Transkrip</p>
+                  <p className="mt-0.5 text-[9px] font-medium text-slate-500">QR Verifikasi Keaslian</p>
                 </div>
-                <div className="w-64">
+                <div className="w-60">
                   <p>
                     {data.sekolah.kabupatenKota || "Setempat"},{" "}
-                    {new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                    {tanggalKelulusan
+                      ? formatTanggalKelulusan(tanggalKelulusan)
+                      : new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
                   </p>
                   <p className="font-bold">Kepala {data.sekolah.nama}</p>
-                  <div className="h-16" />
+                  <div className="h-12" />
                   <p className="font-bold underline">{data.sekolah.kepalaSekolah || "Kepala Lembaga"}</p>
-                  <p className="text-[11px] text-slate-500">NPSN: {data.sekolah.npsn || "-"}</p>
+                  <p className="text-[10px] text-slate-600">NPSN: {data.sekolah.npsn || "-"}</p>
                 </div>
               </div>
             </article>

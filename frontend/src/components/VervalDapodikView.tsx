@@ -28,6 +28,7 @@ import { DocumentPreviewFrame } from "./DocumentPreviewFrame";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import {
   compressOrEncodeDocument,
+  compressPasFoto4x6,
   type StudentVervalRecord,
   type VervalDinasStatus,
   type VervalStatus,
@@ -173,6 +174,7 @@ function listMissingDocsLabel(student: StudentVervalRecord): string[] {
   if (!student.urlKk) missing.push("Kartu Keluarga (KK)");
   if (!student.urlAktaKtp) missing.push("Akta Kelahiran / KTP");
   if (!student.urlIjazah) missing.push("Ijazah / Rapor Terakhir");
+  if (!student.urlFotoIjazah) missing.push("Pas Foto Ijazah 4x6");
   if (!student.nik) missing.push("NIK (16 digit)");
   if (!student.noKk) missing.push("Nomor KK (16 digit)");
   if (!student.namaIbuKandung) missing.push("Nama Ibu Kandung");
@@ -472,7 +474,7 @@ function statusDinasMeta(status: VervalDinasStatus): { label: string; cls: strin
   }
 }
 
-type DocTabKey = "kk" | "akta" | "ijazah" | "pindah";
+type DocTabKey = "kk" | "akta" | "ijazah" | "pindah" | "foto4x6";
 
 type ModalEditState = {
   nik: string;
@@ -493,6 +495,7 @@ type ModalEditState = {
   urlAktaKtp: string;
   urlIjazah: string;
   urlSuratPindah: string;
+  urlFotoIjazah: string;
   statusVerval: VervalStatus;
   catatanVerval: string;
 };
@@ -526,6 +529,7 @@ function toModalEditState(s: StudentVervalRecord): ModalEditState {
     urlAktaKtp: s.urlAktaKtp ?? "",
     urlIjazah: s.urlIjazah ?? "",
     urlSuratPindah: s.urlSuratPindah ?? "",
+    urlFotoIjazah: s.urlFotoIjazah ?? "",
     statusVerval: s.statusVerval,
     catatanVerval: s.catatanVerval ?? "",
   };
@@ -683,14 +687,15 @@ export function VervalDapodikView() {
 
   async function handleOperatorFileUpload(
     tab: DocTabKey,
-    fieldKey: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah",
+    fieldKey: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah" | "urlFotoIjazah",
     file: File | undefined,
   ) {
     if (!file || !editForm) return;
     setUploadingDoc(tab);
     setModalError("");
     try {
-      const encoded = await compressOrEncodeDocument(file);
+      const encoded =
+        fieldKey === "urlFotoIjazah" ? await compressPasFoto4x6(file) : await compressOrEncodeDocument(file);
       setEditForm((prev) => (prev ? { ...prev, [fieldKey]: encoded } : prev));
     } catch (failure: unknown) {
       setModalError(failure instanceof Error ? failure.message : "Gagal memproses berkas.");
@@ -1136,6 +1141,9 @@ export function VervalDapodikView() {
                             </span>
                             <span className={`rounded px-1.5 py-0.5 ${student.urlSuratPindah ? "bg-cyan-100 text-cyan-800" : "bg-slate-100 text-slate-500"}`}>
                               Surat Pindah
+                            </span>
+                            <span className={`rounded px-1.5 py-0.5 ${student.urlFotoIjazah ? "bg-indigo-100 text-indigo-800" : "bg-slate-100 text-slate-500"}`}>
+                              Foto 4×6
                             </span>
                           </div>
                         </td>
@@ -1598,7 +1606,7 @@ export function VervalDapodikView() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                 <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                  <FileText size={14} /> Unggah Langsung &amp; Pratinjau 4 Berkas Dokumen
+                  <FileText size={14} /> Unggah Langsung &amp; Pratinjau Berkas + Pas Foto Ijazah 4×6
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {([
@@ -1606,6 +1614,7 @@ export function VervalDapodikView() {
                     { id: "akta", label: "Akta / KTP", url: editForm.urlAktaKtp },
                     { id: "ijazah", label: "Ijazah", url: editForm.urlIjazah },
                     { id: "pindah", label: "Surat Pindah", url: editForm.urlSuratPindah },
+                    { id: "foto4x6", label: "Pas Foto 4×6", url: editForm.urlFotoIjazah },
                   ] as const).map((tab) => (
                     <button
                       key={tab.id}
@@ -1625,14 +1634,16 @@ export function VervalDapodikView() {
                 </div>
               </div>
               {(() => {
-                const fieldKey: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah" =
+                const fieldKey: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah" | "urlFotoIjazah" =
                   activeDocTab === "kk"
                     ? "urlKk"
                     : activeDocTab === "akta"
                       ? "urlAktaKtp"
                       : activeDocTab === "ijazah"
                         ? "urlIjazah"
-                        : "urlSuratPindah";
+                        : activeDocTab === "pindah"
+                          ? "urlSuratPindah"
+                          : "urlFotoIjazah";
                 const currentUrl = editForm[fieldKey];
                 return (
                   <div className="mt-3 space-y-3">
@@ -1641,15 +1652,25 @@ export function VervalDapodikView() {
                         type="text"
                         value={currentUrl.startsWith("data:") ? "[Berkas Terunggah]" : currentUrl}
                         onChange={(e) => setEditForm({ ...editForm, [fieldKey]: e.target.value })}
-                        placeholder="Tempel tautan URL dokumen (https://...) atau pilih file foto/PDF di samping"
+                        placeholder={
+                          activeDocTab === "foto4x6"
+                            ? "Pilih foto di samping (otomatis dipotong rasio 4×6 cm) atau tempel URL foto"
+                            : "Tempel tautan URL dokumen (https://...) atau pilih file foto/PDF di samping"
+                        }
                         className="glass-input min-w-[220px] flex-1 rounded-xl px-3 py-2 text-xs"
                       />
                       <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100">
                         <Upload size={13} aria-hidden="true" />
-                        {uploadingDoc === activeDocTab ? "Mengompres..." : "Upload File / Foto"}
+                        {uploadingDoc === activeDocTab
+                          ? activeDocTab === "foto4x6"
+                            ? "Memproses 4×6..."
+                            : "Mengompres..."
+                          : activeDocTab === "foto4x6"
+                            ? "Upload Foto 4×6"
+                            : "Upload File / Foto"}
                         <input
                           type="file"
-                          accept="image/*,application/pdf"
+                          accept={activeDocTab === "foto4x6" ? "image/jpeg,image/png,image/webp" : "image/*,application/pdf"}
                           disabled={modalBusy || uploadingDoc !== null}
                           onChange={(e) => {
                             void handleOperatorFileUpload(activeDocTab, fieldKey, e.target.files?.[0]);
@@ -1658,6 +1679,15 @@ export function VervalDapodikView() {
                           className="sr-only"
                         />
                       </label>
+                      {activeDocTab === "foto4x6" && currentUrl.trim() && (
+                        <a
+                          href={currentUrl}
+                          download={`PasFoto_4x6_${activeStudent.nisn}_${activeStudent.nama.replace(/[^a-zA-Z0-9]+/g, "_")}.jpg`}
+                          className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                        >
+                          <Download size={13} /> Unduh 4×6
+                        </a>
+                      )}
                       {currentUrl.trim() && (
                         <button
                           type="button"
@@ -1668,7 +1698,28 @@ export function VervalDapodikView() {
                         </button>
                       )}
                     </div>
-                    <DocumentPreviewFrame url={currentUrl} title="Pratinjau Dokumen" heightClass="h-64" />
+                    {activeDocTab === "foto4x6" && currentUrl.trim() ? (
+                      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row">
+                        <div className="h-48 w-32 overflow-hidden rounded-lg border-2 border-slate-300 bg-slate-50 shadow-xs">
+                          <img
+                            src={currentUrl}
+                            alt={`Pas Foto Ijazah 4x6 ${activeStudent.nama}`}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-center sm:text-left">
+                          <p className="text-xs font-extrabold text-slate-900">Pas Foto Ijazah 4×6 cm (Siap Cetak)</p>
+                          <p className="text-[11px] text-slate-600">
+                            Rasio 2:3 (480×720 px) · Warga Belajar: <strong>{activeStudent.nama}</strong> ({activeStudent.nisn})
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Klik <strong>Unduh 4×6</strong> di atas untuk menyimpan file foto resolusi cetak ijazah.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <DocumentPreviewFrame url={currentUrl} title="Pratinjau Dokumen" heightClass="h-64" />
+                    )}
                   </div>
                 );
               })()}
@@ -1966,6 +2017,7 @@ export function VervalDapodikView() {
                           row.urlAktaKtp ? "Akta" : null,
                           row.urlIjazah ? "Ijazah" : null,
                           row.urlSuratPindah ? "SKP" : null,
+                          row.urlFotoIjazah ? "Foto 4x6" : null,
                         ]
                           .filter(Boolean)
                           .join(", ") || "Kosong"}

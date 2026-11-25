@@ -44,6 +44,7 @@ model Siswa {
   urlAktaKtp           String?
   urlIjazah            String?
   urlSuratPindah       String?
+  urlFotoIjazah        String?
   sumberDapodik        Boolean            @default(false)
   statusVerval         String             @default("BELUM_LENGKAP")
   catatanVerval        String?

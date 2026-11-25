@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  Camera,
   CheckCircle2,
   Clock,
+  Download,
   ExternalLink,
   FileCheck2,
   FileText,
@@ -46,6 +49,7 @@ export type StudentVervalRecord = {
   urlAktaKtp: string | null;
   urlIjazah: string | null;
   urlSuratPindah: string | null;
+  urlFotoIjazah?: string | null;
   statusVerval: VervalStatus;
   catatanVerval: string | null;
   statusVervalDinas: VervalDinasStatus;
@@ -142,6 +146,60 @@ export async function compressOrEncodeDocument(file: File): Promise<string> {
   }
 }
 
+export async function compressPasFoto4x6(file: File): Promise<string> {
+  const allowedImages = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+  if (!allowedImages.has(file.type.toLowerCase())) {
+    throw new Error("Pas Foto Ijazah 4x6 harus berupa file gambar (JPG, PNG, atau WebP).");
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    throw new Error("Ukuran file foto maksimal 15 MB sebelum diproses.");
+  }
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Foto tidak dapat dibaca. Coba pilih file gambar lain."));
+      el.src = objectUrl;
+    });
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    const targetRatio = 4 / 6; // 2:3 portrait
+    const srcRatio = srcW / srcH;
+
+    let cropW = srcW;
+    let cropH = srcH;
+    let cropX = 0;
+    let cropY = 0;
+
+    if (srcRatio > targetRatio) {
+      cropW = Math.round(srcH * targetRatio);
+      cropX = Math.round((srcW - cropW) / 2);
+    } else if (srcRatio < targetRatio) {
+      cropH = Math.round(srcW / targetRatio);
+      // Slight upward bias (35%) so face/head stays centered on portrait photos
+      cropY = Math.round((srcH - cropH) * 0.35);
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 480; // 4 cm @ ~300 DPI
+    canvas.height = 720; // 6 cm @ ~300 DPI
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Browser tidak mendukung pemrosesan pas foto 4x6.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+    let encoded = canvas.toDataURL("image/jpeg", 0.88);
+    if (encoded.length > 1_200_000) {
+      encoded = canvas.toDataURL("image/jpeg", 0.72);
+    }
+    return encoded;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 type FormState = {
   nik: string;
   noKk: string;
@@ -160,6 +218,7 @@ type FormState = {
   urlAktaKtp: string;
   urlIjazah: string;
   urlSuratPindah: string;
+  urlFotoIjazah: string;
 };
 
 function toFormState(student: StudentVervalRecord): FormState {
@@ -181,6 +240,7 @@ function toFormState(student: StudentVervalRecord): FormState {
     urlAktaKtp: student.urlAktaKtp ?? "",
     urlIjazah: student.urlIjazah ?? "",
     urlSuratPindah: student.urlSuratPindah ?? "",
+    urlFotoIjazah: student.urlFotoIjazah ?? "",
   };
 }
 
@@ -270,14 +330,15 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
   }
 
   async function handleFileSelect(
-    field: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah",
+    field: "urlKk" | "urlAktaKtp" | "urlIjazah" | "urlSuratPindah" | "urlFotoIjazah",
     file: File | undefined,
   ) {
     if (!file || !form) return;
     setUploadingField(field);
     setError("");
     try {
-      const encoded = await compressOrEncodeDocument(file);
+      const encoded =
+        field === "urlFotoIjazah" ? await compressPasFoto4x6(file) : await compressOrEncodeDocument(file);
       setForm((prev) => (prev ? { ...prev, [field]: encoded } : prev));
     } catch (failure: unknown) {
       setError(failure instanceof Error ? failure.message : "Gagal memproses file.");
@@ -570,7 +631,92 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
 
       <div className="space-y-4 border-t border-slate-200/70 pt-5">
         <div>
-          <h3 className="text-sm font-extrabold text-slate-900">Unggah / Tautan Berkas Persyaratan</h3>
+          <h3 className="text-sm font-extrabold text-slate-900">Pas Foto Ijazah (Ukuran 4×6 cm)</h3>
+          <p className="mt-0.5 text-xs text-slate-600">
+            Unggah pas foto resmi berlatar polos (merah/biru) untuk keperluan pencetakan Ijazah. Sistem otomatis memotong foto ke proporsi presisi 4×6 portrait (480×720 px).
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-2xl border border-indigo-200/80 bg-indigo-50/40 p-4 sm:flex-row sm:items-center">
+          <div className="flex h-36 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-indigo-300 bg-white shadow-xs">
+            {form.urlFotoIjazah.trim() ? (
+              <img
+                src={form.urlFotoIjazah}
+                alt="Pas Foto Ijazah 4x6"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-1 px-2 text-center text-slate-400">
+                <Camera size={22} aria-hidden="true" />
+                <span className="text-[10px] font-bold leading-tight">Pas Foto 4×6</span>
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-extrabold text-slate-800">Pas Foto Ijazah 4×6 cm</span>
+              <span
+                className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                  form.urlFotoIjazah.trim() ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+                }`}
+              >
+                {form.urlFotoIjazah.trim() ? "Siap Cetak 4×6" : "Belum Diunggah"}
+              </span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-600">
+              Format JPG/PNG/WebP. Gunakan pakaian rapi/kemeja, wajah menghadap depan, pencahayaan terang. Jangan lupa klik <strong>Simpan Draft</strong> atau <strong>Simpan &amp; Ajukan Verifikasi</strong> setelah memilih foto.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-500">
+                <Camera size={13} aria-hidden="true" />
+                {uploadingField === "urlFotoIjazah" ? "Memproses 4×6..." : "Unggah Foto 4×6"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={busy || lockedByDapodik || uploadingField !== null}
+                  onChange={(e) => {
+                    void handleFileSelect("urlFotoIjazah", e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                  className="sr-only"
+                />
+              </label>
+              {form.urlFotoIjazah.trim() && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc({ title: "Pas Foto Ijazah 4×6", url: form.urlFotoIjazah })}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    <FileText size={13} aria-hidden="true" />
+                    Pratinjau
+                  </button>
+                  <a
+                    href={form.urlFotoIjazah}
+                    download={`PasFoto_4x6_${student.nisn}_${student.nama.replace(/[^a-zA-Z0-9]+/g, "_")}.jpg`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
+                  >
+                    <Download size={13} aria-hidden="true" />
+                    Unduh 4×6
+                  </a>
+                </>
+              )}
+              {form.urlFotoIjazah.trim() && !lockedByDapodik && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, urlFotoIjazah: "" })}
+                  className="text-xs font-semibold text-rose-600 hover:underline"
+                >
+                  Hapus
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-2">
+          <h3 className="text-sm font-extrabold text-slate-900">Unggah / Tautan Berkas Persyaratan Dapodik</h3>
           <p className="mt-0.5 text-xs text-slate-600">
             Unggah foto/PDF dokumen (otomatis dikompres) atau tempel tautan Google Drive / cloud yang dapat diakses.
           </p>
@@ -669,40 +815,42 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
         </div>
       )}
 
-      {previewDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-white text-slate-900 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
-              <h4 className="font-bold">{previewDoc.title}</h4>
-              <div className="flex items-center gap-3">
-                {(() => {
-                  const safeLink = sanitizeHttpUrl(previewDoc.url);
-                  return safeLink ? (
-                    <a
-                      href={safeLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:underline"
-                    >
-                      Buka Tautan <ExternalLink size={13} />
-                    </a>
-                  ) : null;
-                })()}
-                <button
-                  type="button"
-                  onClick={() => setPreviewDoc(null)}
-                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200"
-                >
-                  Tutup
-                </button>
+      {previewDoc &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+            <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-white text-slate-900 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+                <h4 className="font-bold">{previewDoc.title}</h4>
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const safeLink = sanitizeHttpUrl(previewDoc.url);
+                    return safeLink ? (
+                      <a
+                        href={safeLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:underline"
+                      >
+                        Buka Tautan <ExternalLink size={13} />
+                      </a>
+                    ) : null;
+                  })()}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc(null)}
+                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto bg-slate-100 p-4 text-center">
+                <DocumentPreviewFrame url={previewDoc.url} title={previewDoc.title} heightClass="h-[70vh]" />
               </div>
             </div>
-            <div className="flex-1 overflow-auto bg-slate-100 p-4 text-center">
-              <DocumentPreviewFrame url={previewDoc.url} title={previewDoc.title} heightClass="h-[70vh]" />
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </section>
   );
 }

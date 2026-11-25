@@ -524,49 +524,58 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
       const nama = cleanText(req.body?.nama, 40);
       const rawSem = cleanText(req.body?.semester, 20).toLowerCase();
-      const semester = rawSem === "genap" ? "Genap" : rawSem === "ganjil" ? "Ganjil" : "";
-      if (!nama || !semester) {
-        return res.status(400).json({ error: "Nama tahun ajaran (contoh: 2026/2027) dan semester (Ganjil/Genap) wajib diisi." });
-      }
-
-      const existing = await prisma.tahunAjaran.findFirst({
-        where: { sekolahId, nama, semester },
-        select: { id: true, nama: true, semester: true },
-      });
-      if (existing) {
-        return res.status(409).json({ error: `Tahun ajaran ${nama} (${semester}) sudah tersedia.` });
+      const semester = rawSem === "genap" ? "Genap" : "Ganjil";
+      const createPair = req.body?.createPair !== false;
+      if (!nama) {
+        return res.status(400).json({ error: "Nama tahun ajaran (contoh: 2026/2027) wajib diisi." });
       }
 
       const yearMatch = nama.match(/(20\d{2})/);
       const startYear = yearMatch ? Number(yearMatch[1]) : new Date().getUTCFullYear();
-      const defaultMulai =
-        semester === "Ganjil"
-          ? new Date(`${startYear}-07-01T00:00:00.000Z`)
-          : new Date(`${startYear + 1}-01-01T00:00:00.000Z`);
-      const defaultSelesai =
-        semester === "Ganjil"
-          ? new Date(`${startYear}-12-31T23:59:59.000Z`)
-          : new Date(`${startYear + 1}-06-30T23:59:59.000Z`);
+      const semestersToEnsure: Array<"Ganjil" | "Genap"> = createPair ? ["Ganjil", "Genap"] : [semester];
 
-      const mulaiRaw = cleanText(req.body?.mulai, 30);
-      const selesaiRaw = cleanText(req.body?.selesai, 30);
-      const mulai = mulaiRaw && !Number.isNaN(Date.parse(mulaiRaw)) ? new Date(mulaiRaw) : defaultMulai;
-      const selesai = selesaiRaw && !Number.isNaN(Date.parse(selesaiRaw)) ? new Date(selesaiRaw) : defaultSelesai;
+      let targetRow: { id: string; nama: string; semester: string } | null = null;
+      let createdCount = 0;
 
-      const created = await prisma.tahunAjaran.create({
-        data: {
-          sekolahId,
-          nama,
-          semester,
-          mulai,
-          selesai,
-        },
-        select: { id: true, nama: true, semester: true },
-      });
+      for (const sem of semestersToEnsure) {
+        const existing = await prisma.tahunAjaran.findFirst({
+          where: { sekolahId, nama, semester: sem },
+          select: { id: true, nama: true, semester: true },
+        });
+        if (existing) {
+          if (sem === semester) targetRow = existing;
+          continue;
+        }
+        const defaultMulai =
+          sem === "Ganjil"
+            ? new Date(`${startYear}-07-01T00:00:00.000Z`)
+            : new Date(`${startYear + 1}-01-01T00:00:00.000Z`);
+        const defaultSelesai =
+          sem === "Ganjil"
+            ? new Date(`${startYear}-12-31T23:59:59.000Z`)
+            : new Date(`${startYear + 1}-06-30T23:59:59.000Z`);
 
-      return res.status(201).json({
-        tahunAjaran: created,
-        message: `Tahun ajaran ${created.nama} (${created.semester}) berhasil ditambahkan.`,
+        const created = await prisma.tahunAjaran.create({
+          data: {
+            sekolahId,
+            nama,
+            semester: sem,
+            mulai: defaultMulai,
+            selesai: defaultSelesai,
+          },
+          select: { id: true, nama: true, semester: true },
+        });
+        createdCount += 1;
+        if (sem === semester) targetRow = created;
+      }
+
+      return res.status(createdCount > 0 ? 201 : 200).json({
+        tahunAjaran: targetRow,
+        createdCount,
+        message:
+          createdCount > 0
+            ? `Tahun ajaran ${nama} (Ganjil & Genap) tersimpan permanen di database.`
+            : `Tahun ajaran ${nama} (${semester}) sudah tersedia di database.`,
       });
     } catch (error) {
       console.error("Gagal menambah tahun ajaran:", error);

@@ -4,6 +4,9 @@ import { prisma } from "./db.js";
 import { readSchoolKopSurat } from "./kop-surat-helper.js";
 
 const TRANSFER_LEGER_MARKER = "__LEGER_PINDAHAN__";
+const NOT_UPK_MARKER_FILTER = {
+  OR: [{ catatanKompetensi: null }, { catatanKompetensi: { not: UPK_OVERRIDE_MARKER } }],
+};
 import {
   computeTranscriptScore,
   isUpkExam,
@@ -460,8 +463,10 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
               where: {
                 sekolahId,
                 siswaId: { in: siswaIds },
-                ...(activeTahun ? { OR: [{ tahunAjaranId: activeTahun.id }, { tahunAjaranId: null }] } : {}),
-                NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
+                AND: [
+                  ...(activeTahun ? [{ OR: [{ tahunAjaranId: activeTahun.id }, { tahunAjaranId: null }] }] : []),
+                  NOT_UPK_MARKER_FILTER,
+                ],
               },
               orderBy: { tanggalSimulasi: "desc" },
             }),
@@ -556,6 +561,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           siswaId,
           mapelId,
           ...(tahunAjaranId ? { tahunAjaranId } : {}),
+          AND: [NOT_UPK_MARKER_FILTER],
         },
         select: { id: true },
       });
@@ -1101,7 +1107,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
               siswaId,
               mapelId,
               tahunAjaranId,
-              NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
+              AND: [NOT_UPK_MARKER_FILTER],
             },
             select: { id: true, catatanKompetensi: true, nilaiAkhir: true },
           });
@@ -1381,7 +1387,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
             sekolahId,
             siswaId: { in: siswaIds },
             tahunAjaranId,
-            NOT: { catatanKompetensi: UPK_OVERRIDE_MARKER },
+            AND: [NOT_UPK_MARKER_FILTER],
           },
           select: { id: true, siswaId: true, mapelId: true, nilaiMandiri: true, nilaiSimulasi: true },
         }),

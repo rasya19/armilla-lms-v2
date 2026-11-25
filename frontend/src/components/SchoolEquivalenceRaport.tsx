@@ -862,6 +862,14 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   const [catatanWali, setCatatanWali] = useState("");
   const [statusKenaikan, setStatusKenaikan] = useState("NAIK_KELAS");
 
+  // Add Tahun Ajaran modal state
+  const [addYearOpen, setAddYearOpen] = useState(false);
+  const [newYearName, setNewYearName] = useState(() => {
+    const y = new Date().getFullYear();
+    return `${y}/${y + 1}`;
+  });
+  const [newYearSemester, setNewYearSemester] = useState<"Ganjil" | "Genap">("Ganjil");
+
   const loadRaport = useCallback(async (kId: string, tId: string, signal?: AbortSignal) => {
     setLoading(true);
     try {
@@ -926,6 +934,39 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       setCatatanKompetensi("");
     }
   }, [data, activeSiswa, editMapelId]);
+
+  async function handleCreateTahunAjaran(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy || !newYearName.trim()) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/raport/tahun-ajaran", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({ nama: newYearName.trim(), semester: newYearSemester }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        tahunAjaran?: { id: string; nama: string; semester: string };
+        message?: string;
+        error?: string;
+      } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menambahkan tahun ajaran.");
+      setAddYearOpen(false);
+      setNotice(body?.message || "Tahun ajaran berhasil ditambahkan.");
+      const nextYearId = body?.tahunAjaran?.id ?? tahunId;
+      setTahunId(nextYearId);
+      await loadRaport(kelasId, nextYearId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Tahun ajaran belum dapat ditambahkan."));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function saveScore(event: React.FormEvent) {
     event.preventDefault();
@@ -1156,12 +1197,27 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         {raportSubTab !== "transkrip" && raportSubTab !== "leger-6sem" && (
         <div className={`space-y-3 rounded-2xl p-4 ${panelClass(isDark)}`}>
           <div className="grid gap-4 sm:grid-cols-3">
-            <label className="block text-xs font-bold">
-              Tahun Ajaran &amp; Semester
-              <select value={tahunId} onChange={(e) => setTahunId(e.target.value)} className={inputClass(isDark)}>
+            <div className="block text-xs font-bold">
+              <div className="flex items-center justify-between gap-2">
+                <span>Tahun Ajaran &amp; Semester</span>
+                <button
+                  type="button"
+                  onClick={() => setAddYearOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-800 hover:bg-sky-100"
+                >
+                  <Plus size={11} />
+                  Tambah
+                </button>
+              </div>
+              <select
+                aria-label="Tahun Ajaran dan Semester"
+                value={tahunId}
+                onChange={(e) => setTahunId(e.target.value)}
+                className={inputClass(isDark)}
+              >
                 {data?.tahunList.map((t) => <option key={t.id} value={t.id}>{t.nama} — {t.semester}</option>)}
               </select>
-            </label>
+            </div>
             <label className="block text-xs font-bold">
               Kelas / Rombel
               <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={inputClass(isDark)}>
@@ -1496,6 +1552,52 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             </div>
           </div>
         </article>
+      )}
+
+      {addYearOpen && (
+        <SchoolModal
+          title="Tambah Tahun Ajaran & Semester"
+          titleIcon={<CalendarDays size={18} className="text-sky-700" />}
+          onClose={() => setAddYearOpen(false)}
+        >
+          <form onSubmit={handleCreateTahunAjaran} className="mt-4 space-y-3 text-sm">
+            <label className="block font-semibold">
+              Tahun Ajaran
+              <input
+                required
+                type="text"
+                maxLength={40}
+                value={newYearName}
+                onChange={(e) => setNewYearName(e.target.value)}
+                placeholder="Contoh: 2026/2027"
+                className={inputClass(false)}
+              />
+            </label>
+            <label className="block font-semibold">
+              Semester
+              <select
+                value={newYearSemester}
+                onChange={(e) => setNewYearSemester(e.target.value as "Ganjil" | "Genap")}
+                className={inputClass(false)}
+              >
+                <option value="Ganjil">Ganjil</option>
+                <option value="Genap">Genap</option>
+              </select>
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setAddYearOpen(false)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700"
+              >
+                Batal
+              </button>
+              <button type="submit" disabled={busy} className="master-primary px-5 py-2.5 text-xs disabled:opacity-50">
+                {busy ? "Menyimpan..." : "Simpan Tahun Ajaran"}
+              </button>
+            </div>
+          </form>
+        </SchoolModal>
       )}
     </section>
   );

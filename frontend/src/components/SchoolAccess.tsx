@@ -1447,14 +1447,9 @@ function SchoolPortalHeader({
           <PanelLeftOpen size={20} className="hidden lg:block" aria-hidden="true" />
         )}
       </button>
-      {isDark && (
-        <BrandLogo alt={`Logo ${school}`} className="hidden h-9 w-9 rounded-xl border border-white/15 sm:block" />
-      )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className={`inline-block max-w-full truncate rounded-lg text-sm font-extrabold ${isDark ? "px-0 py-0.5 text-white sm:text-base" : `px-3 py-1 ${palette.headerSchoolPill}`}`}>
-            {school}
-          </h1>
+          <h1 className="sr-only">{school}</h1>
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
               isDark
@@ -1477,8 +1472,8 @@ function SchoolPortalHeader({
               }`}
             >
               {countdown.expired
-                ? "Masa Uji Coba Berakhir"
-                : `Uji Coba · Sisa ${countdown.daysLeft} hari (s.d. ${countdown.formattedDate})`}
+                ? "Masa Aktif Berakhir"
+                : `Sisa ${countdown.daysLeft} hari (s.d. ${countdown.formattedDate})`}
             </span>
           )}
         </div>

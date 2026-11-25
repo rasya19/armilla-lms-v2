@@ -244,7 +244,13 @@ function toFormState(student: StudentVervalRecord): FormState {
   };
 }
 
-export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
+export function StudentVervalForm({
+  sandboxRole,
+  onFotoChanged,
+}: {
+  sandboxRole?: "SISWA";
+  onFotoChanged?: (url: string | null) => void;
+}) {
   const [schoolName, setSchoolName] = useState("PKBM");
   const [student, setStudent] = useState<StudentVervalRecord | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -275,6 +281,7 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
         if (data.sekolah?.nama) setSchoolName(data.sekolah.nama);
         setStudent(data.siswa);
         setForm(toFormState(data.siswa));
+        onFotoChanged?.(data.siswa.urlFotoIjazah ?? null);
       })
       .catch((failure: unknown) => {
         if (!isCallerAborted(failure, controller.signal)) {
@@ -317,6 +324,7 @@ export function StudentVervalForm({ sandboxRole }: { sandboxRole?: "SISWA" }) {
       }
       setStudent(body.siswa);
       setForm(toFormState(body.siswa));
+      onFotoChanged?.(body.siswa.urlFotoIjazah ?? null);
       setNotice(
         ajukanVerifikasi
           ? "Biodata & berkas berhasil diajukan untuk verifikasi admin PKBM."

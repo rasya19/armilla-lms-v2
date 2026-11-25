@@ -5,6 +5,7 @@ import { prisma } from "./db.js";
 import { hasPlanAccess, normalizeTenantPlan, type TenantPlan } from "./plan-utils.js";
 import { getGlobalTheme } from "./global-theme.js";
 import { readSchoolKopSurat, saveSchoolKopSurat } from "./kop-surat-helper.js";
+import { getSchoolAiQuotaSummary, saveSchoolFallbackGeminiKey } from "./ai-quota.js";
 
 import { MAX_IMAGE_BYTES, validateImageAttachment } from "./upload-validation.js";
 
@@ -247,6 +248,31 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
     } catch (error) {
       console.error("Gagal menyimpan kop surat lembaga:", error);
       return res.status(503).json({ error: "Kop surat lembaga belum dapat disimpan." });
+    }
+  });
+
+  // PUT /api/sekolah/ai-fallback-key — Simpan/hapus API Key Gemini mandiri lembaga (opsional, hanya fallback saat kuota vendor habis)
+  router.put("/ai-fallback-key", async (req, res) => {
+    try {
+      const gate = await requireSchoolSession(req);
+      if ("error" in gate) return res.status(gate.status).json({ error: gate.error });
+      const rawKey = typeof req.body?.geminiApiKey === "string" ? req.body.geminiApiKey : "";
+      const saved = await saveSchoolFallbackGeminiKey(gate.sekolahId, rawKey);
+      if (saved.ok === false) {
+        return res.status(saved.status).json({ error: saved.error });
+      }
+      const quota = await getSchoolAiQuotaSummary(gate.sekolahId, gate.plan);
+      return res.json({
+        hasFallbackKey: saved.hasFallbackKey,
+        maskedFallbackKey: saved.maskedFallbackKey,
+        quota,
+        message: saved.hasFallbackKey
+          ? "API Key Gemini mandiri lembaga disimpan. Hanya dipakai otomatis sebagai cadangan jika kuota bulanan vendor habis."
+          : "API Key Gemini mandiri lembaga telah dihapus.",
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan API Key Gemini fallback lembaga:", error);
+      return res.status(503).json({ error: "Pengaturan API Key Gemini lembaga belum dapat disimpan." });
     }
   });
 

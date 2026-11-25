@@ -54,6 +54,7 @@ export interface StudentPortalProps {
   kelasId?: string | null;
   kelasNama?: string | null;
   school?: string;
+  fotoUrl?: string | null;
   presensiHariIni?: StudentTodayAttendance | null;
   busy?: boolean;
   error?: string;
@@ -151,11 +152,14 @@ type StudentGradesPayload = {
     kelasId: string | null;
     kelasNama: string | null;
     jenjang: string | null;
+    tempatLahir?: string | null;
+    tanggalLahir?: string | null;
   };
   sekolah: {
     nama: string;
     npsn: string | null;
     alamat: string | null;
+    kabupatenKota?: string | null;
     kepalaSekolah: string | null;
     logoUrl: string | null;
   } | null;
@@ -180,6 +184,8 @@ type StudentGradesPayload = {
     nilai: number | null;
     catatanGuru: string | null;
   }>;
+  raportDiterbitkan?: boolean;
+  raportDiterbitkanPada?: string | null;
   raport: Array<{
     id: string;
     mapel: string;
@@ -190,6 +196,17 @@ type StudentGradesPayload = {
     catatanKompetensi: string | null;
     predikat: string;
   }>;
+  transkripDiterbitkan?: boolean;
+  transkrip?: {
+    diterbitkanPada: string | null;
+    rataTranskrip: number | null;
+    subjects: Array<{
+      mapelId: string;
+      mapelNama: string;
+      nilaiTranskrip: number | null;
+      predikat: string;
+    }>;
+  } | null;
   modulSkk: Array<{
     id: string;
     jenjang: string;
@@ -290,6 +307,7 @@ export function StudentPortal({
   kelasId,
   kelasNama,
   school,
+  fotoUrl,
   presensiHariIni,
   busy = false,
   error = "",
@@ -316,6 +334,11 @@ export function StudentPortal({
 
   const [resolvedKelasNama, setResolvedKelasNama] = useState<string | null>(kelasNama ?? null);
   const [resolvedKelasId, setResolvedKelasId] = useState<string | null>(kelasId ?? null);
+  const [studentFotoUrl, setStudentFotoUrl] = useState<string | null>(fotoUrl ?? null);
+
+  useEffect(() => {
+    if (fotoUrl !== undefined) setStudentFotoUrl(fotoUrl ?? null);
+  }, [fotoUrl]);
 
   useEffect(() => {
     if (kelasNama !== undefined) setResolvedKelasNama(kelasNama ?? null);
@@ -580,8 +603,12 @@ export function StudentPortal({
                   {nisn ? `NISN ${nisn}` : "Profil Siswa"}
                 </p>
               </div>
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black text-white shadow-sm ${palette.headerAvatar}`}>
-                {userInitials}
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-black text-white shadow-sm ${palette.headerAvatar}`}>
+                {studentFotoUrl ? (
+                  <img src={studentFotoUrl} alt={nama} className="h-full w-full object-cover" />
+                ) : (
+                  userInitials
+                )}
               </span>
             </button>
           </header>
@@ -764,7 +791,7 @@ export function StudentPortal({
 
           {activeTab === "profil" && (
             <div className="space-y-5">
-              <StudentVervalForm sandboxRole={sandboxRole} />
+              <StudentVervalForm sandboxRole={sandboxRole} onFotoChanged={(url) => setStudentFotoUrl(url)} />
               {!sandboxRole && onPasswordChanged && (
                 <section className="dashboard-glass rounded-3xl p-5 sm:p-6">
                   <div className="mb-3 flex items-center gap-2.5">
@@ -1978,12 +2005,16 @@ function StudentGradesTranscriptSection({
   const siswaNisn = data?.siswa.nisn || "—";
   const kelasDisplay = data?.siswa.kelasNama || fallbackKelas || "Belum ditempatkan";
   const sekolahNama = data?.sekolah?.nama || fallbackSchool;
+  const isRaportPublished = Boolean(data?.raportDiterbitkan);
+  const isTranskripPublished = Boolean(data?.transkripDiterbitkan && data?.transkrip);
 
   return (
     <section className="space-y-5">
       {/* Print-Only Formal Header */}
       <div className="hidden border-b-2 border-slate-900 pb-4 text-center print:block">
-        <p className="text-xs font-bold uppercase tracking-widest">TRANSKRIP NILAI SEMENTARA PENDIDIKAN KESETARAAN</p>
+        <p className="text-xs font-bold uppercase tracking-widest">
+          {isTranskripPublished ? "TRANSKRIP NILAI" : "LAPORAN HASIL BELAJAR (E-RAPORT DIGITAL)"}
+        </p>
         <h1 className="mt-1 text-xl font-black uppercase">{sekolahNama}</h1>
         {data?.sekolah?.npsn && <p className="text-xs">NPSN: {data.sekolah.npsn}</p>}
         {data?.sekolah?.alamat && <p className="text-xs">{data.sekolah.alamat}</p>}
@@ -2000,9 +2031,9 @@ function StudentGradesTranscriptSection({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600">CAPAIAN HASIL BELAJAR &amp; SKK</p>
-            <h2 className="mt-1 text-lg font-extrabold text-slate-900">Nilai &amp; Transkrip Sementara</h2>
+            <h2 className="mt-1 text-lg font-extrabold text-slate-900">Nilai, Raport Digital &amp; Transkrip</h2>
             <p className="mt-0.5 text-xs text-slate-600">
-              Rekap nilai tugas, hasil ujian CBT, nilai raport kesetaraan, serta capaian Satuan Kredit Kompetensi (SKK).
+              Raport Digital dan Transkrip Nilai hanya tampil setelah resmi diterbitkan oleh Admin / Wali Kelas PKBM.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -2014,14 +2045,16 @@ function StudentGradesTranscriptSection({
               <RefreshCw size={14} aria-hidden="true" />
               Muat Ulang
             </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="master-primary inline-flex items-center gap-1.5 text-xs"
-            >
-              <Printer size={14} aria-hidden="true" />
-              Cetak / Unduh Transkrip Sementara
-            </button>
+            {(isRaportPublished || isTranskripPublished) && (
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="master-primary inline-flex items-center gap-1.5 text-xs"
+              >
+                <Printer size={14} aria-hidden="true" />
+                Cetak Dokumen Terbit
+              </button>
+            )}
           </div>
         </div>
 
@@ -2035,8 +2068,12 @@ function StudentGradesTranscriptSection({
         <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Rata-rata Raport</p>
-            <p className="mt-1 text-2xl font-black text-indigo-950 tabular-nums">{data?.summary.rataRaport ?? "—"}</p>
-            <p className="mt-0.5 text-[11px] text-indigo-700/80">{data?.raport.length ?? 0} mapel tercatat</p>
+            <p className="mt-1 text-2xl font-black text-indigo-950 tabular-nums">
+              {isRaportPublished ? (data?.summary.rataRaport ?? "—") : "—"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-indigo-700/80">
+              {isRaportPublished ? `${data?.raport.length ?? 0} mapel diterbitkan` : "Menunggu penerbitan"}
+            </p>
           </div>
           <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-sky-700">Rata-rata Ujian CBT</p>
@@ -2056,16 +2093,78 @@ function StudentGradesTranscriptSection({
         </div>
       </div>
 
-      {/* Nilai Raport / Mapel */}
+      {/* Transkrip Nilai Resmi (Hanya tampil jika sudah diterbitkan Admin) */}
       <div className="dashboard-glass rounded-3xl p-5 print:border print:border-slate-300 print:shadow-none sm:p-6">
-        <div className="flex items-center gap-2">
-          <Award size={18} className="text-indigo-600 print:hidden" aria-hidden="true" />
-          <h3 className="text-base font-extrabold text-slate-900">Nilai Mata Pelajaran &amp; E-Raport</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <GraduationCap size={18} className="text-indigo-600 print:hidden" aria-hidden="true" />
+            <h3 className="text-base font-extrabold text-slate-900">Transkrip Nilai</h3>
+          </div>
+          {isTranskripPublished && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-800 print:hidden">
+              <CheckCircle2 size={12} /> Diterbitkan Resmi
+            </span>
+          )}
         </div>
-        {(data?.raport.length ?? 0) === 0 ? (
-          <p className="mt-3 text-xs text-slate-500">
-            Nilai raport resmi per mata pelajaran belum dipublikasikan oleh wali kelas/admin.
-          </p>
+        {!isTranskripPublished ? (
+          <div className="mt-3 flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-600">
+            <Lock size={15} className="shrink-0 text-slate-400" aria-hidden="true" />
+            <span>Transkrip Nilai belum diterbitkan oleh Admin PKBM. Dokumen akan tampil otomatis setelah resmi diterbitkan.</span>
+          </div>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full border-collapse border border-slate-300 text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100 font-bold text-slate-900">
+                  <th className="w-10 border border-slate-300 px-2.5 py-1.5 text-center">No.</th>
+                  <th className="border border-slate-300 px-3 py-1.5">Mata Pelajaran</th>
+                  <th className="w-24 border border-slate-300 px-2.5 py-1.5 text-center">Nilai</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data!.transkrip!.subjects.map((sub, idx) => (
+                  <tr key={sub.mapelId}>
+                    <td className="border border-slate-300 px-2.5 py-1 text-center tabular-nums">{idx + 1}.</td>
+                    <td className="border border-slate-300 px-3 py-1 font-semibold text-slate-900">{sub.mapelNama}</td>
+                    <td className="border border-slate-300 px-2.5 py-1 text-center font-bold tabular-nums text-slate-950">
+                      {sub.nilaiTranskrip ?? "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 font-extrabold text-slate-950">
+                  <td colSpan={2} className="border border-slate-300 px-3 py-1.5 text-center">
+                    Rata-rata
+                  </td>
+                  <td className="border border-slate-300 px-2.5 py-1.5 text-center tabular-nums">
+                    {data!.transkrip!.rataTranskrip ?? "-"}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Nilai Raport Digital (Hanya tampil jika sudah diterbitkan Admin/Wali Kelas) */}
+      <div className="dashboard-glass rounded-3xl p-5 print:border print:border-slate-300 print:shadow-none sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Award size={18} className="text-indigo-600 print:hidden" aria-hidden="true" />
+            <h3 className="text-base font-extrabold text-slate-900">E-Raport Digital</h3>
+          </div>
+          {isRaportPublished && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-800 print:hidden">
+              <CheckCircle2 size={12} /> Diterbitkan Resmi
+            </span>
+          )}
+        </div>
+        {!isRaportPublished || (data?.raport.length ?? 0) === 0 ? (
+          <div className="mt-3 flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-600">
+            <Lock size={15} className="shrink-0 text-slate-400" aria-hidden="true" />
+            <span>Raport Digital belum diterbitkan oleh pihak PKBM / Wali Kelas. Nilai raport akan tampil otomatis setelah diterbitkan.</span>
+          </div>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[34rem] text-left text-xs">

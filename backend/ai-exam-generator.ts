@@ -226,6 +226,7 @@ export async function generateExamDraftWithAi(
   },
   deps?: {
     env?: NodeJS.ProcessEnv;
+    apiKeyOverride?: string;
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
     retryDelayMs?: number;
@@ -238,8 +239,9 @@ export async function generateExamDraftWithAi(
   const retryDelayMs = deps?.retryDelayMs ?? 600;
   const logger = deps?.logger ?? console;
 
-  const geminiKey = resolveGeminiApiKey(env);
-  const openRouterKey = sanitizeEnvValue(env.OPENROUTER_API_KEY);
+  const overrideKey = sanitizeEnvValue(deps?.apiKeyOverride);
+  const geminiKey = overrideKey || resolveGeminiApiKey(env);
+  const openRouterKey = overrideKey ? "" : sanitizeEnvValue(env.OPENROUTER_API_KEY);
 
   if (!geminiKey && !openRouterKey) {
     logger.error("[CBT AI] GEMINI_API_KEY dan OPENROUTER_API_KEY kosong pada environment server.");

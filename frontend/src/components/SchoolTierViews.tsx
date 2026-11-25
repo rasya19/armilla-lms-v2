@@ -793,6 +793,58 @@ export function SchoolThemeIdentityView({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const [aiQuota, setAiQuota] = useState<{
+    isPro: boolean;
+    resetDateLabel: string;
+    hasFallbackKey: boolean;
+    maskedFallbackKey: string | null;
+    cbtGenerate: { limit: number; used: number; remaining: number };
+    assistant: { limit: number; used: number; remaining: number };
+  } | null>(null);
+  const [fallbackKeyInput, setFallbackKeyInput] = useState("");
+  const [fallbackBusy, setFallbackBusy] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchWithTimeout("/api/sekolah/ai-quota", { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as { quota?: typeof aiQuota } | null;
+        if (body?.quota) setAiQuota(body.quota);
+      })
+      .catch(() => {
+        // non-blocking
+      });
+    return () => controller.abort();
+  }, []);
+
+  async function saveFallbackApiKey(clear = false) {
+    if (fallbackBusy) return;
+    setFallbackBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/ai-fallback-key", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ geminiApiKey: clear ? "" : fallbackKeyInput.trim() }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        quota?: typeof aiQuota;
+        message?: string;
+        error?: string;
+      } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal memperbarui API Key Gemini lembaga.");
+      if (body?.quota) setAiQuota(body.quota);
+      setFallbackKeyInput("");
+      setMessage(body?.message || (clear ? "API Key Gemini cadangan dihapus." : "API Key Gemini cadangan disimpan."));
+    } catch (failure) {
+      setError(describeFetchError(failure, "API Key Gemini cadangan belum dapat disimpan."));
+    } finally {
+      setFallbackBusy(false);
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
@@ -1316,6 +1368,93 @@ export function SchoolThemeIdentityView({
               </button>
             </div>
           </form>
+
+          {/* Opsi API Key Gemini Mandiri Lembaga (Opsional — Hanya Fallback saat Kuota Vendor Habis) */}
+          <div className={panelClass}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className={`flex items-center gap-2 text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                  <Sparkles size={18} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+                  API Key Gemini Mandiri Lembaga (Opsional · Cadangan Kuota AI)
+                </h3>
+                <p className={`mt-1 text-xs leading-relaxed ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                  <strong>Tidak wajib diisi.</strong> Paket Pro sudah mendapatkan kuota bulanan wajar dari platform (<strong>25x Generate Soal CBT AI</strong> &amp; <strong>400 pesan Asisten Belajar AI</strong> per bulan, reset otomatis setiap tanggal 1). Kunci API Gemini milik lembaga ini <strong>hanya dipakai otomatis sebagai cadangan (fallback)</strong> apabila kuota bulanan dari vendor sudah habis.
+                </p>
+              </div>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-extrabold ${
+                  aiQuota?.hasFallbackKey
+                    ? "bg-emerald-100 text-emerald-800"
+                    : isDark
+                      ? "bg-slate-800 text-slate-300"
+                      : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {aiQuota?.hasFallbackKey ? `Cadangan Aktif (${aiQuota.maskedFallbackKey})` : "Belum Diatur (Opsional)"}
+              </span>
+            </div>
+
+            {aiQuota && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className={`rounded-xl border p-3 text-xs ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50"}`}>
+                  <p className="font-bold">Kuota Generator Soal CBT AI Bulan Ini</p>
+                  <p className="mt-1 text-sm font-black tabular-nums">
+                    {aiQuota.isPro ? `Sisa ${aiQuota.cbtGenerate.remaining} / ${aiQuota.cbtGenerate.limit}x` : "Khusus Paket Pro (0/0)"}
+                  </p>
+                  <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    Reset otomatis: {aiQuota.resetDateLabel}
+                  </p>
+                </div>
+                <div className={`rounded-xl border p-3 text-xs ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50"}`}>
+                  <p className="font-bold">Kuota Asisten Belajar AI Bulan Ini</p>
+                  <p className="mt-1 text-sm font-black tabular-nums">
+                    {aiQuota.isPro ? `Sisa ${aiQuota.assistant.remaining} / ${aiQuota.assistant.limit} pesan` : "Khusus Paket Pro (0/0)"}
+                  </p>
+                  <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    Reset otomatis: {aiQuota.resetDateLabel}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className={`block flex-1 text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Google AI Studio / Gemini API Key (Opsional)
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={fallbackKeyInput}
+                  onChange={(e) => setFallbackKeyInput(e.target.value)}
+                  placeholder={
+                    aiQuota?.hasFallbackKey
+                      ? `Tersimpan (${aiQuota.maskedFallbackKey}) — masukkan kunci baru untuk mengganti`
+                      : "AIzaSy... (kosongkan jika hanya memakai kuota bawaan Paket Pro)"
+                  }
+                  className={inputClass}
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={fallbackBusy || !fallbackKeyInput.trim()}
+                  onClick={() => void saveFallbackApiKey(false)}
+                  className="master-primary px-4 py-2.5 text-xs disabled:opacity-50"
+                >
+                  {fallbackBusy ? "Menyimpan..." : "Simpan API Cadangan"}
+                </button>
+                {aiQuota?.hasFallbackKey && (
+                  <button
+                    type="button"
+                    disabled={fallbackBusy}
+                    onClick={() => void saveFallbackApiKey(true)}
+                    className="rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                  >
+                    Hapus Kunci
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </section>

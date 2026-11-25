@@ -44,8 +44,10 @@ model Siswa {
   urlAktaKtp           String?
   urlIjazah            String?
   urlSuratPindah       String?
-  urlFotoIjazah        String?
-  sumberDapodik        Boolean            @default(false)
+  urlFotoIjazah          String?
+  transkripDiterbitkan   Boolean            @default(false)
+  transkripDiterbitkanPada DateTime?
+  sumberDapodik          Boolean            @default(false)
   statusVerval         String             @default("BELUM_LENGKAP")
   catatanVerval        String?
   statusVervalDinas    String             @default("MENUNGGU_DINAS")
@@ -69,6 +71,7 @@ model Guru {
   email      String
   telepon    String
   status     String // "Aktif" | "Nonaktif"
+  urlFoto    String?
   sekolahId  String?
   sekolah    Sekolah?          @relation(fields: [sekolahId], references: [id])
   akun       Akun?
@@ -261,7 +264,42 @@ model Sekolah {
   pembayaranLangganan PembayaranLangganan[]
   pendaftaranLembaga  PendaftaranSekolah?
 
+  bukuTamu             BukuTamu[]
+  agendaSurat          AgendaSurat[]
+
   @@index([kabupatenKota, izinVervalDinas])
+}
+
+model AgendaSurat {
+  id             String   @id @default(uuid())
+  sekolahId      String
+  sekolah        Sekolah  @relation(fields: [sekolahId], references: [id], onDelete: Cascade)
+  jenis          String   // "MASUK" | "KELUAR"
+  tahun          Int
+  nomorUrut      Int
+  nomorSurat     String
+  tanggalSurat   DateTime @db.Date
+  pengirimTujuan String
+  perihal        String
+  keterangan     String?
+  createdAt      DateTime @default(now())
+
+  @@index([sekolahId, jenis, tahun, nomorUrut])
+}
+
+model BukuTamu {
+  id              String   @id @default(uuid())
+  sekolahId       String
+  sekolah         Sekolah  @relation(fields: [sekolahId], references: [id], onDelete: Cascade)
+  nama            String
+  alamat          String
+  noHp            String
+  tujuanKunjungan String
+  instansi        String?
+  tanggalKunjung  DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([sekolahId, tanggalKunjung])
 }
 
 enum PeranAkun {
@@ -618,9 +656,11 @@ model CatatanRaport {
   kelasId       String
   siswaId       String
   catatanWali   String?
-  statusKenaikan String   @default("PROSES") // "PROSES" | "NAIK_KELAS" | "LULUS" | "TINGGAL_KELAS"
-  tanggalRapor  DateTime?
-  updatedAt     DateTime  @updatedAt
+  statusKenaikan        String    @default("PROSES") // "PROSES" | "NAIK_KELAS" | "LULUS" | "TINGGAL_KELAS"
+  tanggalRapor          DateTime?
+  raportDiterbitkan     Boolean   @default(false)
+  raportDiterbitkanPada DateTime?
+  updatedAt             DateTime  @updatedAt
 
   @@unique([sekolahId, tahunAjaranId, siswaId])
   @@index([sekolahId, kelasId])

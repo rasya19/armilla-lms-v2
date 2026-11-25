@@ -51,6 +51,8 @@ import {
 import { vervalRoutes } from "./verval-routes.js";
 import { dinasRoutes, type DinasContext } from "./dinas-routes.js";
 import { tahap2AcademicRoutes } from "./academic-raport-routes.js";
+import { publicGuestbookRoutes, schoolGuestbookRoutes } from "./guestbook-routes.js";
+import { mailAgendaRoutes } from "./mail-agenda-routes.js";
 import { cbtPublicBankRoutes, tahap2CbtRoutes } from "./cbt-routes.js";
 import { tahap2ProRoutes } from "./pro-admin-routes.js";
 import { tahap2CollabRoutes } from "./collab-asset-routes.js";
@@ -1375,13 +1377,13 @@ app.get("/api/auth/lms/session", async (req, res) => {
       session.akun.peran === "GURU" && session.akun.guruId && session.akun.sekolahId
         ? prisma.guru.findFirst({
             where: { id: session.akun.guruId, sekolahId: session.akun.sekolahId },
-            select: { id: true, nama: true, email: true, nuptk: true, telepon: true, mapelUtama: true },
+            select: { id: true, nama: true, email: true, nuptk: true, telepon: true, mapelUtama: true, urlFoto: true },
           })
         : null,
       session.akun.peran === "SISWA" && session.akun.siswaId && session.akun.sekolahId
         ? prisma.siswa.findFirst({
             where: { id: session.akun.siswaId, sekolahId: session.akun.sekolahId },
-            select: { id: true, nama: true, nisn: true, kelasId: true },
+            select: { id: true, nama: true, nisn: true, kelasId: true, urlFotoIjazah: true },
           })
         : null,
       session.akun.peran === "SISWA" && session.akun.siswaId && session.akun.sekolahId
@@ -1420,11 +1422,45 @@ app.get("/api/auth/lms/session", async (req, res) => {
       nuptk: guru?.nuptk ?? null,
       telepon: guru?.telepon ?? null,
       mapelUtama: guru?.mapelUtama ?? null,
+      fotoUrl: guru?.urlFoto ?? siswaProfile?.urlFotoIjazah ?? null,
       presensiHariIni,
     });
   } catch (error) {
     console.error("Gagal memeriksa sesi LMS:", error);
     return res.status(503).json({ error: "Sesi LMS tidak tersedia." });
+  }
+});
+
+// PUT /api/lms/guru/foto-profil — Simpan/hapus foto profil Guru/Tutor
+app.put("/api/lms/guru/foto-profil", async (req, res) => {
+  try {
+    const session = await getLmsSession(req);
+    const sandbox = !session ? await getDevSandboxLmsContext(req) : null;
+    const peran = session?.akun.peran ?? sandbox?.peran;
+    const guruId = session?.akun.guruId ?? sandbox?.guruId;
+    const sekolahId = session?.akun.sekolahId ?? sandbox?.sekolahId;
+    if (peran !== "GURU" || !guruId || !sekolahId) {
+      return res.status(403).json({ error: "Hanya guru/tutor yang dapat memperbarui foto profil ini." });
+    }
+    const rawUrl = typeof req.body?.fotoUrl === "string" ? req.body.fotoUrl.trim() : "";
+    if (rawUrl && rawUrl.length > 1_500_000) {
+      return res.status(400).json({ error: "Ukuran foto profil terlalu besar (maks. 1 MB)." });
+    }
+    if (rawUrl && !/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(rawUrl) && !/^https?:\/\//i.test(rawUrl)) {
+      return res.status(400).json({ error: "Format foto profil harus berupa gambar JPG/PNG/WebP." });
+    }
+    const updated = await prisma.guru.updateMany({
+      where: { id: guruId, sekolahId },
+      data: { urlFoto: rawUrl || null },
+    });
+    if (!updated.count) return res.status(404).json({ error: "Profil guru tidak ditemukan." });
+    return res.json({
+      fotoUrl: rawUrl || null,
+      message: rawUrl ? "Foto profil guru berhasil diperbarui." : "Foto profil guru dihapus.",
+    });
+  } catch (error) {
+    console.error("Gagal menyimpan foto profil guru:", error);
+    return res.status(503).json({ error: "Foto profil guru belum dapat disimpan." });
   }
 });
 
@@ -1583,11 +1619,21 @@ app.get("/api/lms/siswa/nilai", async (req, res) => {
     const [siswa, sekolah, tugasRows, ujianRows, nilaiRows, mapelRows, taRows, modulSkkRows, catatanRows] = await Promise.all([
       prisma.siswa.findFirst({
         where: { id: siswaId, sekolahId },
-        select: { id: true, nama: true, nisn: true, kelasId: true, jenjang: true },
+        select: {
+          id: true,
+          nama: true,
+          nisn: true,
+          kelasId: true,
+          jenjang: true,
+          tempatLahir: true,
+          tanggalLahir: true,
+          transkripDiterbitkan: true,
+          transkripDiterbitkanPada: true,
+        },
       }),
       prisma.sekolah.findUnique({
         where: { id: sekolahId },
-        select: { nama: true, npsn: true, alamatSekolah: true, namaKepalaSekolah: true },
+        select: { nama: true, npsn: true, alamatSekolah: true, kabupatenKota: true, namaKepalaSekolah: true },
       }),
       prisma.pengumpulanTugas.findMany({
         where: { siswaId, tugas: { sekolahId } },
@@ -1694,16 +1740,85 @@ app.get("/api/lms/siswa/nilai", async (req, res) => {
       ? modulSkkRows.filter((m) => m.jenjang === detectedJenjang)
       : [];
 
-    const raport = nilaiRows.map((row) => ({
-      id: row.id,
-      mapel: mapelMap.get(row.mapelId) ?? "Mata Pelajaran",
-      tahunAjaran: row.tahunAjaranId ? (taMap.get(row.tahunAjaranId) ?? "Semester Aktif") : "Semester Aktif",
-      nilaiMandiri: row.nilaiMandiri,
-      nilaiSimulasi: row.nilaiSimulasi,
-      nilaiAkhir: row.nilaiAkhir,
-      catatanKompetensi: row.catatanKompetensi,
-      predikat: row.nilaiAkhir >= 90 ? "A" : row.nilaiAkhir >= 80 ? "B" : row.nilaiAkhir >= 70 ? "C" : "D",
-    }));
+    const publishedCatatanRows = catatanRows.filter((c) => c.raportDiterbitkan);
+    const publishedTahunIds = new Set(publishedCatatanRows.map((c) => c.tahunAjaranId));
+    const raportDiterbitkan = publishedTahunIds.size > 0;
+    const latestPublishedCatatan = publishedCatatanRows[0] ?? null;
+
+    // Hanya tampilkan nilai E-Raport untuk semester yang sudah DITERBITKAN oleh admin/wali kelas
+    const raport = raportDiterbitkan
+      ? nilaiRows
+          .filter(
+            (row) =>
+              row.catatanKompetensi !== "__UPK_OVERRIDE__" &&
+              row.tahunAjaranId !== null &&
+              publishedTahunIds.has(row.tahunAjaranId),
+          )
+          .map((row) => ({
+            id: row.id,
+            mapel: mapelMap.get(row.mapelId) ?? "Mata Pelajaran",
+            tahunAjaran: row.tahunAjaranId ? (taMap.get(row.tahunAjaranId) ?? "Semester Aktif") : "Semester Aktif",
+            nilaiMandiri: row.nilaiMandiri,
+            nilaiSimulasi: row.nilaiSimulasi,
+            nilaiAkhir: row.nilaiAkhir,
+            catatanKompetensi: row.catatanKompetensi === "__LEGER_PINDAHAN__" ? null : row.catatanKompetensi,
+            predikat: row.nilaiAkhir >= 90 ? "A" : row.nilaiAkhir >= 80 ? "B" : row.nilaiAkhir >= 70 ? "C" : "D",
+          }))
+      : [];
+
+    // Hanya bangun data Transkrip Nilai resmi jika admin sudah klik "Terbitkan Transkrip"
+    const transkripDiterbitkan = Boolean(siswa.transkripDiterbitkan);
+    let transkrip: {
+      diterbitkanPada: Date | null;
+      rataTranskrip: number | null;
+      subjects: Array<{ mapelId: string; mapelNama: string; nilaiTranskrip: number | null; predikat: string }>;
+    } | null = null;
+
+    if (transkripDiterbitkan) {
+      const upkByMapel = new Map<string, number>();
+      const raportByMapel = new Map<string, number[]>();
+      for (const row of nilaiRows) {
+        if (row.catatanKompetensi === "__UPK_OVERRIDE__") {
+          if (!upkByMapel.has(row.mapelId)) upkByMapel.set(row.mapelId, row.nilaiAkhir);
+        } else {
+          const list = raportByMapel.get(row.mapelId) ?? [];
+          list.push(row.nilaiAkhir);
+          raportByMapel.set(row.mapelId, list);
+        }
+      }
+      const subjects = mapelRows
+        .map((m) => {
+          const rList = raportByMapel.get(m.id) ?? [];
+          const rataRaport = rList.length > 0 ? rList.reduce((a, b) => a + b, 0) / rList.length : null;
+          const nilaiUpk = upkByMapel.get(m.id) ?? null;
+          const finalScore =
+            rataRaport !== null && nilaiUpk !== null
+              ? Math.round((rataRaport * 0.6 + nilaiUpk * 0.4) * 100) / 100
+              : rataRaport !== null
+                ? Math.round(rataRaport * 100) / 100
+                : nilaiUpk !== null
+                  ? Math.round(nilaiUpk * 100) / 100
+                  : null;
+          return {
+            mapelId: m.id,
+            mapelNama: m.nama,
+            nilaiTranskrip: finalScore,
+            predikat: finalScore === null ? "-" : finalScore >= 90 ? "A" : finalScore >= 80 ? "B" : finalScore >= 70 ? "C" : "D",
+          };
+        })
+        .filter((s) => s.nilaiTranskrip !== null);
+
+      const filledScores = subjects.map((s) => s.nilaiTranskrip).filter((v): v is number => v !== null);
+      const rataTranskrip =
+        filledScores.length > 0
+          ? Math.round((filledScores.reduce((a, b) => a + b, 0) / filledScores.length) * 100) / 100
+          : null;
+      transkrip = {
+        diterbitkanPada: siswa.transkripDiterbitkanPada ?? null,
+        rataTranskrip,
+        subjects,
+      };
+    }
 
     const tugas = tugasRows.map((row) => ({
       id: row.id,
@@ -1746,25 +1861,32 @@ app.get("/api/lms/siswa/nilai", async (req, res) => {
         kelasId: siswa.kelasId,
         kelasNama,
         jenjang: detectedJenjang,
+        tempatLahir: siswa.tempatLahir ?? null,
+        tanggalLahir: siswa.tanggalLahir ? siswa.tanggalLahir.toISOString().slice(0, 10) : null,
       },
       sekolah: sekolah
         ? {
             nama: sekolah.nama,
             npsn: sekolah.npsn,
             alamat: sekolah.alamatSekolah,
+            kabupatenKota: sekolah.kabupatenKota ?? null,
             kepalaSekolah: sekolah.namaKepalaSekolah,
             logoUrl: webSettings?.logo_url ?? null,
           }
         : null,
       tugas,
       ujian,
+      raportDiterbitkan,
+      raportDiterbitkanPada: latestPublishedCatatan?.raportDiterbitkanPada ?? null,
       raport,
+      transkripDiterbitkan,
+      transkrip,
       modulSkk: matchingSkk,
-      catatanRaport: catatanRows[0] ?? null,
+      catatanRaport: latestPublishedCatatan,
       summary: {
         rataTugas: avg(tugasScores),
         rataUjian: avg(ujianScores),
-        rataRaport: avg(raportScores),
+        rataRaport: raportDiterbitkan ? avg(raportScores) : null,
         totalSkk: matchingSkk.reduce((sum, item) => sum + item.skkTotal, 0),
         totalTugasDinilai: tugasScores.length,
         totalUjianSelesai: ujian.filter((u) => u.dikumpulkanPada).length,
@@ -3052,6 +3174,9 @@ app.use(
   ),
 );
 app.use("/api/module-bank", moduleBankRoutes(resolveAdminOrTeacherSession));
+app.use("/api/buku-tamu", publicGuestbookRoutes());
+app.use("/api/sekolah", schoolGuestbookRoutes(resolveAdminOrTeacherSession));
+app.use("/api/sekolah", mailAgendaRoutes(resolveAdminOrTeacherSession));
 app.use("/api/verval", vervalRoutes(async (req) => {
   const sandbox = await getDevSandboxLmsContext(req);
   if (sandbox && sandbox.peran === "SISWA" && sandbox.siswaId) {

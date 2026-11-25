@@ -3,6 +3,12 @@ import { Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
 import { prisma } from "./db.js";
 import {
+  checkSchoolAiQuota,
+  getSchoolAiQuotaSummary,
+  recordSchoolAiUsage,
+} from "./ai-quota.js";
+import { normalizeTenantPlan } from "./plan-utils.js";
+import {
   cleanInt,
   cleanText,
   isPrismaMissingSchema,
@@ -96,9 +102,9 @@ function buildStructuredAiFallback(params: {
   ].join("\n");
 }
 
-async function callExternalAiProvider(prompt: string): Promise<string | null> {
-  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+async function callExternalAiProvider(prompt: string, apiKeyOverride?: string): Promise<string | null> {
+  const openRouterKey = apiKeyOverride ? "" : process.env.OPENROUTER_API_KEY?.trim();
+  const geminiKey = apiKeyOverride?.trim() || process.env.GEMINI_API_KEY?.trim();
 
   if (openRouterKey) {
     try {
@@ -515,13 +521,47 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
   });
 
   // ==========================================
-  // 3. ASISTEN BELAJAR AI (PRO)
+  // 3. RINGKASAN KUOTA AI & ASISTEN BELAJAR AI (PRO · 400 PESAN/BULAN)
   // ==========================================
-  router.post("/ai-assistant", async (req, res) => {
+  router.get("/ai-quota", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "pro");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId } = auth.session;
+      const school = await prisma.sekolah.findUnique({
+        where: { id: sekolahId },
+        select: { plan: true },
+      });
+      const plan = normalizeTenantPlan(school?.plan);
+      const quota = await getSchoolAiQuotaSummary(sekolahId, plan);
+      return res.json({ quota });
+    } catch (error) {
+      console.error("Gagal memuat kuota AI:", error);
+      return res.status(503).json({ error: "Informasi kuota AI belum dapat dimuat." });
+    }
+  });
+
+  router.post("/ai-assistant", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const school = await prisma.sekolah.findUnique({
+        where: { id: sekolahId },
+        select: { nama: true, plan: true },
+      });
+      const schoolName = school?.nama ?? "PKBM";
+      const plan = normalizeTenantPlan(school?.plan);
+
+      const quotaGate = await checkSchoolAiQuota(sekolahId, plan, "assistant");
+      if (quotaGate.ok === false) {
+        return res.status(quotaGate.status).json({
+          error: quotaGate.error,
+          code: quotaGate.code,
+          quota: quotaGate.summary,
+        });
+      }
 
       const rawMode = cleanText(req.body?.mode, 20);
       const mode: "modul" | "soal" | "chat" =
@@ -540,12 +580,6 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
         return res.status(400).json({ error: "Isi topik bahasan yang ingin dibuatkan materinya." });
       }
 
-      const school = await prisma.sekolah.findUnique({
-        where: { id: sekolahId },
-        select: { nama: true },
-      });
-      const schoolName = school?.nama ?? "PKBM";
-
       const prompt =
         mode === "modul"
           ? `Buat modul ajar & rangkuman terstruktur untuk pendidikan kesetaraan ${jenjang}, mata pelajaran ${mapel}, topik "${topik}" pada lembaga ${schoolName}. Sertakan tujuan pembelajaran, ringkasan pokok materi, aktivitas Tatap Muka/Tutorial/Mandiri, dan pertanyaan refleksi.`
@@ -553,7 +587,7 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
             ? `Buat ${jumlahSoal} soal latihan tipe ${jenisSoal === "ESAI" ? "Esai/Uraian" : "Pilihan Ganda (A-D)"} lengkap dengan kunci jawaban dan pembahasan singkat untuk pendidikan kesetaraan ${jenjang}, mata pelajaran ${mapel}, topik "${topik}".`
             : `Konteks: ${jenjang}, mapel ${mapel}${topik ? `, topik ${topik}` : ""}. Pertanyaan warga belajar/tutor: ${pesan}`;
 
-      const externalText = await callExternalAiProvider(prompt);
+      const externalText = await callExternalAiProvider(prompt, quotaGate.apiKeyOverride);
       const content =
         externalText ??
         buildStructuredAiFallback({
@@ -567,9 +601,17 @@ export function tahap2CollabRoutes(getSchoolSession: SchoolContextResolver) {
           schoolName,
         });
 
+      // Potong kuota bulanan HANYA jika pemanggilan provider AI eksternal berhasil mengembalikan respons valid
+      const updatedQuota =
+        externalText && quotaGate.mode === "vendor"
+          ? await recordSchoolAiUsage(sekolahId, plan, "assistant")
+          : quotaGate.summary;
+
       return res.json({
         mode,
         source: externalText ? "ai-provider" : "kurikulum-kesetaraan",
+        usedSchoolFallbackKey: Boolean(externalText) && quotaGate.mode === "school_fallback",
+        quota: updatedQuota,
         content,
       });
     } catch (error) {

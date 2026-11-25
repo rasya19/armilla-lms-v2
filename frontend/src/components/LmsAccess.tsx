@@ -48,6 +48,7 @@ type Session = {
   nisn?: string | null;
   kelasId?: string | null;
   kelasNama?: string | null;
+  fotoUrl?: string | null;
   presensiHariIni?: StudentTodayAttendance | null;
 };
 const input = "glass-input mt-2 w-full rounded-xl px-4 py-3";
@@ -326,6 +327,7 @@ export function LmsHome() {
           nisn: typeof raw.nisn === "string" ? raw.nisn : null,
           kelasId: typeof raw.kelasId === "string" ? raw.kelasId : null,
           kelasNama: typeof raw.kelasNama === "string" ? raw.kelasNama : null,
+          fotoUrl: typeof raw.fotoUrl === "string" ? raw.fotoUrl : null,
           presensiHariIni,
         };
         setSession(nextSession);
@@ -398,6 +400,7 @@ export function LmsHome() {
           nuptk={session.nuptk}
           telepon={session.telepon}
           mapelUtama={session.mapelUtama}
+          fotoUrl={session.fotoUrl}
           busy={busy}
           error={error}
           onLogout={logout}
@@ -408,6 +411,9 @@ export function LmsHome() {
           onProfileUpdated={(nextNama) => {
             setSession((prev) => (prev ? { ...prev, nama: nextNama } : prev));
           }}
+          onFotoUpdated={(nextFoto) => {
+            setSession((prev) => (prev ? { ...prev, fotoUrl: nextFoto } : prev));
+          }}
         />
       ) : session.peran === "SISWA" && !session.wajibGantiPassword ? (
         <StudentPortal
@@ -416,6 +422,7 @@ export function LmsHome() {
           kelasId={session.kelasId}
           kelasNama={session.kelasNama}
           school={session.sekolah}
+          fotoUrl={session.fotoUrl}
           presensiHariIni={session.presensiHariIni}
           busy={busy}
           error={error}

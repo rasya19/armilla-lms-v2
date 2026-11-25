@@ -18,6 +18,7 @@ const SchoolRegistration = lazy(() => import("./components/SchoolRegistration").
 const SchoolHome = lazy(() => import("./components/SchoolAccess").then((m) => ({ default: m.SchoolHome })));
 const SchoolLogin = lazy(() => import("./components/SchoolAccess").then((m) => ({ default: m.SchoolLogin })));
 const PublicPPDB = lazy(() => import("./components/SchoolForms").then((m) => ({ default: m.PublicPPDB })));
+const PublicGuestbookPage = lazy(() => import("./components/PublicGuestbookPage").then((m) => ({ default: m.PublicGuestbookPage })));
 const LmsHome = lazy(() => import("./components/LmsAccess").then((m) => ({ default: m.LmsHome })));
 const LmsLogin = lazy(() => import("./components/LmsAccess").then((m) => ({ default: m.LmsLogin })));
 const DinasHome = lazy(() => import("./components/DinasDashboard").then((m) => ({ default: m.DinasHome })));
@@ -150,7 +151,7 @@ function MasterHome() {
 function AppRoutes() {
   return (
     <Suspense fallback={<PortalSpinner label="Memuat halaman" />}>
-      <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>
+      <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<SchoolLogin />} /><Route path="/sekolah" element={<SchoolHome />} /><Route path="/lms/login" element={<LmsLogin />} /><Route path="/lms" element={<LmsHome />} /><Route path="/ppdb/:slug" element={<PublicPPDB />} /><Route path="/buku-tamu/:slug" element={<PublicGuestbookPage />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>
     </Suspense>
   );
 }
@@ -236,7 +237,7 @@ export default function App() {
   if (mainDomain) {
     return (
       <Suspense fallback={<PortalSpinner label="Memuat halaman" />}>
-        <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>
+        <Routes><Route path="/" element={<LandingPage />} /><Route path="/daftar" element={<SchoolRegistration />} /><Route path="/buku-tamu/:slug" element={<PublicGuestbookPage />} /><Route path="/login" element={<Unavailable schoolLogin />} /><Route path="/lms/login" element={<Unavailable schoolLogin />} /><Route path="/dinas/login" element={<DinasLogin />} /><Route path="/dinas" element={<DinasHome />} /><Route path="/dinas/berita-acara" element={<DinasHome />} /><Route path="/dinas/arsip-berita-acara" element={<DinasHome />} /><Route path="/master/login" element={<MasterLogin />} /><Route path="/master" element={<MasterHome />} /><Route path="*" element={<Unavailable />} /></Routes>
       </Suspense>
     );
   }
@@ -257,6 +258,7 @@ export default function App() {
             <Route path="/lms/login" element={<LmsLogin />} />
             <Route path="/lms" element={<LmsHome />} />
             <Route path="/ppdb/:slug" element={<PublicPPDB />} />
+            <Route path="/buku-tamu/:slug" element={<PublicGuestbookPage />} />
             <Route path="/dinas/login" element={<DinasLogin />} />
             <Route path="/dinas" element={<DinasHome />} />
             <Route path="/dinas/berita-acara" element={<DinasHome />} />

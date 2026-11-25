@@ -17,6 +17,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  FileText,
   GraduationCap,
   Home,
   Layers,
@@ -74,6 +75,8 @@ import {
   CekRaportView,
   ModulKesetaraanView,
 } from "./SchoolEquivalenceRaport";
+import { SchoolGuestbookView } from "./SchoolGuestbookView";
+import { SchoolMailAgendaView } from "./SchoolMailAgendaView";
 import {
   CbtBankSoalView,
   CbtImportView,
@@ -119,6 +122,8 @@ type SchoolModuleId =
   | "akreditasi-snp"
   | "data-alumni"
   | "cek-raport"
+  | "buku-tamu-qr"
+  | "agenda-surat"
   | "cbt-bank-soal"
   | "cbt-impor"
   | "cbt-jadwal"
@@ -221,6 +226,8 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
     items: [
       { label: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler" },
       { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "reguler" },
+      { label: "Buku Tamu Digital QR", icon: QrCode, target: "buku-tamu-qr", requiredPlan: "reguler" },
+      { label: "Agenda Surat (Masuk & Keluar)", icon: FileText, target: "agenda-surat", requiredPlan: "reguler" },
       { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
       { label: "Data Alumni & Tracer Study", icon: Briefcase, target: "data-alumni", requiredPlan: "pro" },
       { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro" },
@@ -698,11 +705,11 @@ export function SchoolHome() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [autoHideSidebar, setAutoHideSidebar] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<SchoolNavGroupId, boolean>>({
-    master: true,
-    kbm: true,
+    master: false,
+    kbm: false,
     cbt: false,
     rapor: false,
-    pengaturan: true,
+    pengaturan: false,
   });
   const [upgradePrompt, setUpgradePrompt] = useState<{ featureName: string; requiredPlan: Exclude<PlanSlug, "basic"> } | null>(null);
   const [refreshingPlan, setRefreshingPlan] = useState(false);
@@ -1109,6 +1116,8 @@ export function SchoolHome() {
           {view === "akreditasi-snp" && hasPlanAccess(plan, "pro") && <AkreditasiSnpView />}
           {view === "keuangan-spp" && hasPlanAccess(plan, "pro") && <KeuanganSppView />}
           {view === "kartu-digital-qr" && hasPlanAccess(plan, "reguler") && <KartuDigitalQrView />}
+          {view === "buku-tamu-qr" && hasPlanAccess(plan, "reguler") && <SchoolGuestbookView />}
+          {view === "agenda-surat" && hasPlanAccess(plan, "reguler") && <SchoolMailAgendaView />}
           {view === "data-alumni" && hasPlanAccess(plan, "pro") && <DataAlumniView />}
           {view === "asisten-ai" && hasPlanAccess(plan, "pro") && <AsistenAiView />}
           {view === "manajemen-aset" && hasPlanAccess(plan, "pro") && <ManajemenAsetView />}

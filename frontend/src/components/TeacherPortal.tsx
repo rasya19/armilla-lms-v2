@@ -58,6 +58,7 @@ import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWi
 import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
 import { ModuleBankView } from "./ModuleBankView";
 import { isSafeSubmissionPhotoSrc, SubmissionPhotoModal } from "./LmsLearning";
+import { compressPasFoto4x6 } from "./StudentVervalForm";
 
 export type TeacherView =
   | "beranda"
@@ -219,6 +220,8 @@ export function TeacherPortal({
   onPasswordChanged,
   onBackToAdmin,
   onProfileUpdated,
+  onFotoUpdated,
+  fotoUrl,
 }: {
   nama: string;
   school?: string;
@@ -227,6 +230,7 @@ export function TeacherPortal({
   nuptk?: string | null;
   telepon?: string | null;
   mapelUtama?: string | null;
+  fotoUrl?: string | null;
   busy?: boolean;
   error?: string;
   sandboxRole?: "GURU";
@@ -234,6 +238,7 @@ export function TeacherPortal({
   onPasswordChanged?: () => void;
   onBackToAdmin?: () => void;
   onProfileUpdated?: (nextNama: string) => void;
+  onFotoUpdated?: (nextFoto: string | null) => void;
 }) {
   const theme = useTenantTheme();
   const isDark = theme === "dark";
@@ -250,6 +255,11 @@ export function TeacherPortal({
   const [beranda, setBeranda] = useState<TeacherBerandaPayload | null>(null);
   const [berandaLoading, setBerandaLoading] = useState(true);
   const [berandaError, setBerandaError] = useState("");
+  const [teacherFotoUrl, setTeacherFotoUrl] = useState<string | null>(fotoUrl ?? null);
+
+  useEffect(() => {
+    if (fotoUrl !== undefined) setTeacherFotoUrl(fotoUrl ?? null);
+  }, [fotoUrl]);
 
   const effectivePlan: PlanSlug = beranda?.plan ?? plan;
   const effectiveSchool = beranda?.sekolah || school || "Lembaga PKBM";
@@ -559,8 +569,12 @@ export function TeacherPortal({
                   Profil Guru
                 </p>
               </div>
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-black text-white shadow-md ${palette.headerAvatar}`}>
-                {initials}
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-black text-white shadow-md ${palette.headerAvatar}`}>
+                {teacherFotoUrl ? (
+                  <img src={teacherFotoUrl} alt={effectiveName} className="h-full w-full object-cover" />
+                ) : (
+                  initials
+                )}
               </span>
             </button>
           </header>
@@ -671,9 +685,14 @@ export function TeacherPortal({
                   mapelUtama: beranda?.profil.mapelUtama ?? mapelUtama ?? null,
                 }}
                 school={effectiveSchool}
+                fotoUrl={teacherFotoUrl}
                 isWaliKelas={Boolean(beranda?.isWaliKelas)}
                 sandboxRole={sandboxRole}
                 onPasswordChanged={onPasswordChanged}
+                onFotoChanged={(nextUrl) => {
+                  setTeacherFotoUrl(nextUrl);
+                  onFotoUpdated?.(nextUrl);
+                }}
                 onSaved={(updatedNama) => {
                   onProfileUpdated?.(updatedNama);
                   void loadBeranda();
@@ -1627,21 +1646,26 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
 function TeacherProfileSection({
   profil,
   school,
+  fotoUrl,
   isWaliKelas,
   sandboxRole,
   onPasswordChanged,
+  onFotoChanged,
   onSaved,
 }: {
   profil: TeacherProfile;
   school: string;
+  fotoUrl?: string | null;
   isWaliKelas: boolean;
   sandboxRole?: "GURU";
   onPasswordChanged?: () => void;
+  onFotoChanged?: (nextUrl: string | null) => void;
   onSaved: (updatedNama: string) => void;
 }) {
   const [nama, setNama] = useState(profil.nama);
   const [telepon, setTelepon] = useState(profil.telepon ?? "");
   const [mapelUtama, setMapelUtama] = useState(profil.mapelUtama ?? "");
+  const [fotoBusy, setFotoBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -1674,6 +1698,51 @@ function TeacherProfileSection({
     }
   }
 
+  async function handleTeacherPhotoChange(file: File | undefined) {
+    if (!file || fotoBusy) return;
+    setFotoBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const encoded = await compressPasFoto4x6(file);
+      const res = await fetchWithTimeout("/api/lms/guru/foto-profil", {
+        method: "PUT",
+        headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ fotoUrl: encoded }),
+      });
+      const body = (await res.json().catch(() => null)) as { fotoUrl?: string | null; message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Foto profil guru gagal disimpan.");
+      onFotoChanged?.(body?.fotoUrl ?? encoded);
+      setNotice(body?.message || "Foto profil guru berhasil diperbarui.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Foto profil guru gagal diunggah."));
+    } finally {
+      setFotoBusy(false);
+    }
+  }
+
+  async function handleRemoveTeacherPhoto() {
+    if (fotoBusy) return;
+    setFotoBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/lms/guru/foto-profil", {
+        method: "PUT",
+        headers: sandboxHeaders(sandboxRole, { "Content-Type": "application/json" }),
+        body: JSON.stringify({ fotoUrl: "" }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Foto profil guru gagal dihapus.");
+      onFotoChanged?.(null);
+      setNotice(body?.message || "Foto profil guru dihapus.");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Foto profil guru gagal dihapus."));
+    } finally {
+      setFotoBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <DashboardHero
@@ -1682,6 +1751,49 @@ function TeacherProfileSection({
         description={`Kelola informasi identitas tutor pada ${school}, ganti kata sandi akun, dan bantu reset akses siswa binaan.`}
         badge={isWaliKelas ? "Guru & Wali Kelas" : "Guru / Tutor Aktif"}
       />
+
+      <div className="dashboard-glass flex flex-col items-start gap-4 rounded-2xl p-5 sm:flex-row sm:items-center">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-indigo-200 bg-indigo-50 text-lg font-black text-indigo-700 shadow-xs">
+          {fotoUrl ? (
+            <img src={fotoUrl} alt={profil.nama} className="h-full w-full object-cover" />
+          ) : (
+            profil.nama.charAt(0).toUpperCase()
+          )}
+        </div>
+        <div className="min-w-0 flex-1 space-y-2">
+          <div>
+            <h2 className="text-sm font-extrabold text-slate-900">Foto Profil Guru / Tutor</h2>
+            <p className="text-xs text-slate-600">
+              Foto ini tampil otomatis pada ikon profil kanan atas di Portal Guru. Format JPG/PNG/WebP.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500">
+              {fotoBusy ? "Mengunggah..." : "Unggah / Ganti Foto Profil"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={fotoBusy}
+                onChange={(e) => {
+                  void handleTeacherPhotoChange(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+                className="sr-only"
+              />
+            </label>
+            {fotoUrl && (
+              <button
+                type="button"
+                disabled={fotoBusy}
+                onClick={() => void handleRemoveTeacherPhoto()}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+              >
+                Hapus Foto
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <form onSubmit={saveProfile} className="dashboard-glass space-y-4 rounded-2xl p-6">

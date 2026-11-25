@@ -2,6 +2,8 @@ import { Router } from "express";
 import { createHash, randomBytes } from "crypto";
 import { prisma } from "./db.js";
 import { readSchoolKopSurat } from "./kop-surat-helper.js";
+import { checkSchoolAiQuota, recordSchoolAiUsage } from "./ai-quota.js";
+import { normalizeTenantPlan } from "./plan-utils.js";
 import {
   cleanInt,
   cleanText,
@@ -1826,13 +1828,27 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
   });
 
   // ==========================================
-  // GENERATE SOAL AI (UTS / UAS / UJIAN AKHIR KELAS AKHIR)
+  // GENERATE SOAL AI (PRO · FAIR USAGE 25x/BULAN + FALLBACK KEY LEMBAGA)
   // ==========================================
   router.post("/cbt/generate-ai", async (req, res) => {
     try {
-      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
       if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
       const { sekolahId, peran, guruId: sessionGuruId } = auth.session;
+
+      const school = await prisma.sekolah.findUnique({
+        where: { id: sekolahId },
+        select: { nama: true, plan: true },
+      });
+      const plan = normalizeTenantPlan(school?.plan);
+      const quotaGate = await checkSchoolAiQuota(sekolahId, plan, "cbt_generate");
+      if (quotaGate.ok === false) {
+        return res.status(quotaGate.status).json({
+          error: quotaGate.error,
+          code: quotaGate.code,
+          quota: quotaGate.summary,
+        });
+      }
 
       const kelasId = cleanText(req.body?.kelasId, 100);
       const mapelId = cleanText(req.body?.mapelId, 100);
@@ -1851,8 +1867,7 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
         }
       }
 
-      const [school, kelas, mapel] = await Promise.all([
-        prisma.sekolah.findUnique({ where: { id: sekolahId }, select: { nama: true } }),
+      const [kelas, mapel] = await Promise.all([
         prisma.kelas.findFirst({ where: { id: kelasId, sekolahId }, select: { id: true, nama: true } }),
         prisma.mapel.findFirst({ where: { id: mapelId, sekolahId }, select: { id: true, nama: true } }),
       ]);
@@ -1861,22 +1876,27 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
         return res.status(404).json({ error: "Kelas atau mata pelajaran tidak ditemukan di sekolah ini." });
       }
 
-      const generated = await generateExamDraftWithAi({
-        kategori,
-        kelasNama: kelas.nama,
-        mapelNama: mapel.nama,
-        topik,
-        jumlahSoal,
-        schoolName: school?.nama ?? undefined,
-      });
+      const generated = await generateExamDraftWithAi(
+        {
+          kategori,
+          kelasNama: kelas.nama,
+          mapelNama: mapel.nama,
+          topik,
+          jumlahSoal,
+          schoolName: school?.nama ?? undefined,
+        },
+        quotaGate.apiKeyOverride ? { apiKeyOverride: quotaGate.apiKeyOverride } : undefined,
+      );
 
       if (generated.ok === false) {
+        // Jangan potong kuota jika pemanggilan Gemini gagal / error / 502
         console.error("[POST /api/sekolah/cbt/generate-ai] Gagal generate draf soal:", {
           sekolahId,
           kategori,
           kelasId,
           mapelId,
           jumlahSoal,
+          mode: quotaGate.mode,
           status: generated.status,
           code: generated.code,
           detail: generated.detail ?? null,
@@ -1884,12 +1904,20 @@ export function tahap2CbtRoutes(getSchoolSession: SchoolContextResolver) {
         return res.status(generated.status).json({
           error: generated.error,
           code: generated.code,
+          quota: quotaGate.summary,
         });
       }
+
+      const updatedQuota =
+        quotaGate.mode === "vendor"
+          ? await recordSchoolAiUsage(sekolahId, plan, "cbt_generate")
+          : quotaGate.summary;
 
       return res.json({
         provider: generated.provider,
         model: generated.model,
+        usedSchoolFallbackKey: quotaGate.mode === "school_fallback",
+        quota: updatedQuota,
         kategori,
         kelas,
         mapel,

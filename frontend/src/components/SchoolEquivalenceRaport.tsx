@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Award,
   BookOpen,
@@ -774,7 +774,13 @@ type RaportPayload = {
   mapel: Array<MapelOpt & { skk: number }>;
   siswa: Array<{ id: string; nama: string; nisn: string; jenjang: string | null }>;
   nilai: Array<{ id: string; siswaId: string; mapelId: string; nilaiMandiri: number; nilaiSimulasi: number; nilaiAkhir: number; catatanKompetensi: string | null }>;
-  catatan: Array<{ siswaId: string; catatanWali: string | null; statusKenaikan: string }>;
+  catatan: Array<{
+    siswaId: string;
+    catatanWali: string | null;
+    statusKenaikan: string;
+    raportDiterbitkan?: boolean;
+    raportDiterbitkanPada?: string | null;
+  }>;
 };
 
 const STATUS_KENAIKAN_LABELS: Record<string, string> = {
@@ -842,7 +848,7 @@ function buildKurikulumMerdekaDescription(mapelNama: string, nilaiAkhir: number 
 export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<RaportPayload | null>(null);
-  const [raportSubTab, setRaportSubTab] = useState<"raport" | "leger" | "leger-6sem" | "transkrip">("raport");
+  const [raportSubTab, setRaportSubTab] = useState<"input" | "raport" | "leger-6sem" | "leger" | "transkrip">("input");
   const [kelasId, setKelasId] = useState("");
   const [tahunId, setTahunId] = useState("");
   const [selectedSiswaId, setSelectedSiswaId] = useState("");
@@ -852,11 +858,10 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  // Edit score form state
-  const [editMapelId, setEditMapelId] = useState("");
-  const [nilaiMandiri, setNilaiMandiri] = useState(80);
-  const [nilaiSimulasi, setNilaiSimulasi] = useState(82);
-  const [catatanKompetensi, setCatatanKompetensi] = useState("");
+  // Inline batch table grades state per mapelId
+  const [inlineGrades, setInlineGrades] = useState<
+    Record<string, { mandiri: string; simulasi: string; catatan: string }>
+  >({});
 
   // Edit homeroom note & decision state
   const [catatanWali, setCatatanWali] = useState("");
@@ -890,9 +895,6 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       } else if (body.siswa.length === 0) {
         setSelectedSiswaId("");
       }
-      if (body.mapel.length > 0 && !editMapelId) {
-        setEditMapelId(body.mapel[0].id);
-      }
       setError("");
     } catch (failure) {
       if (!isCallerAborted(failure, signal)) {
@@ -901,7 +903,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [selectedSiswaId, editMapelId, sandboxRole]);
+  }, [selectedSiswaId, sandboxRole]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -914,26 +916,29 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     [data, selectedSiswaId],
   );
 
-  useEffect(() => {
-    if (!data || !activeSiswa) return;
-    const note = data.catatan.find((c) => c.siswaId === activeSiswa.id);
-    setCatatanWali(note?.catatanWali ?? "Terus tingkatkan ketekunan dalam pembelajaran mandiri dan tatap muka.");
-    setStatusKenaikan(note?.statusKenaikan ?? "NAIK_KELAS");
-  }, [data, activeSiswa]);
+  const activeCatatanObj = useMemo(
+    () => (data && activeSiswa ? data.catatan.find((c) => c.siswaId === activeSiswa.id) ?? null : null),
+    [data, activeSiswa],
+  );
+  const isRaportPublished = Boolean(activeCatatanObj?.raportDiterbitkan);
 
   useEffect(() => {
-    if (!data || !activeSiswa || !editMapelId) return;
-    const existing = data.nilai.find((n) => n.siswaId === activeSiswa.id && n.mapelId === editMapelId);
-    if (existing) {
-      setNilaiMandiri(existing.nilaiMandiri);
-      setNilaiSimulasi(existing.nilaiSimulasi);
-      setCatatanKompetensi(existing.catatanKompetensi ?? "");
-    } else {
-      setNilaiMandiri(78);
-      setNilaiSimulasi(80);
-      setCatatanKompetensi("");
+    if (!data || !activeSiswa) return;
+    setCatatanWali(activeCatatanObj?.catatanWali ?? "Terus tingkatkan ketekunan dalam pembelajaran mandiri dan tatap muka.");
+    setStatusKenaikan(activeCatatanObj?.statusKenaikan ?? "NAIK_KELAS");
+
+    const byMapel = new Map(data.nilai.filter((n) => n.siswaId === activeSiswa.id).map((n) => [n.mapelId, n]));
+    const next: Record<string, { mandiri: string; simulasi: string; catatan: string }> = {};
+    for (const m of data.mapel) {
+      const existing = byMapel.get(m.id);
+      next[m.id] = {
+        mandiri: existing ? String(existing.nilaiMandiri) : "",
+        simulasi: existing ? String(existing.nilaiSimulasi) : "",
+        catatan: existing?.catatanKompetensi ?? "",
+      };
     }
-  }, [data, activeSiswa, editMapelId]);
+    setInlineGrades(next);
+  }, [data, activeSiswa, activeCatatanObj]);
 
   async function handleCreateTahunAjaran(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -968,14 +973,32 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     }
   }
 
-  async function saveScore(event: React.FormEvent) {
-    event.preventDefault();
-    if (!activeSiswa || !editMapelId) return;
+  function updateInlineGrade(mapelId: string, field: "mandiri" | "simulasi" | "catatan", value: string) {
+    setInlineGrades((prev) => ({
+      ...prev,
+      [mapelId]: {
+        ...(prev[mapelId] ?? { mandiri: "", simulasi: "", catatan: "" }),
+        [field]: value,
+      },
+    }));
+  }
+
+  async function saveInlineGrades(goToReview: boolean) {
+    if (!activeSiswa || busy) return;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const res = await fetchWithTimeout("/api/sekolah/raport/nilai", {
+      const entries = filteredMapels.map((m) => {
+        const row = inlineGrades[m.id] ?? { mandiri: "", simulasi: "", catatan: "" };
+        return {
+          mapelId: m.id,
+          nilaiMandiri: row.mandiri.trim() === "" ? null : Number(row.mandiri),
+          nilaiSimulasi: row.simulasi.trim() === "" ? null : Number(row.simulasi),
+          catatanKompetensi: row.catatan.trim() || null,
+        };
+      });
+      const res = await fetchWithTimeout("/api/sekolah/raport/nilai-batch", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -983,19 +1006,53 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         },
         body: JSON.stringify({
           siswaId: activeSiswa.id,
-          mapelId: editMapelId,
+          kelasId,
           tahunAjaranId: tahunId || undefined,
-          nilaiMandiri,
-          nilaiSimulasi,
-          catatanKompetensi,
+          entries,
+          catatanWali,
+          statusKenaikan,
         }),
       });
-      const body = (await res.json()) as { message?: string; error?: string };
-      if (!res.ok) throw new Error(body.error || "Gagal menyimpan nilai.");
-      setNotice(body.message || "Nilai tersimpan.");
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menyimpan nilai raport.");
+      setNotice(body?.message || "Semua nilai berhasil disimpan.");
+      await loadRaport(kelasId, tahunId);
+      if (goToReview) {
+        setRaportSubTab("raport");
+      }
+    } catch (failure) {
+      setError(describeFetchError(failure, "Nilai raport belum dapat disimpan."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function togglePublishRaport(diterbitkan: boolean, publishAllInClass = false) {
+    if (!kelasId || !tahunId || (!activeSiswa && !publishAllInClass) || busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/raport/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({
+          tahunAjaranId: tahunId,
+          kelasId,
+          siswaId: activeSiswa?.id,
+          publishAllInClass,
+          diterbitkan,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal memperbarui status terbit raport.");
+      setNotice(body?.message || (diterbitkan ? "Raport Digital diterbitkan." : "Terbitan Raport Digital ditarik."));
       await loadRaport(kelasId, tahunId);
     } catch (failure) {
-      setError(describeFetchError(failure, "Nilai belum dapat disimpan."));
+      setError(describeFetchError(failure, "Status terbit Raport Digital belum dapat diperbarui."));
     } finally {
       setBusy(false);
     }
@@ -1189,7 +1246,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           title="E-Raport, Leger & Transkrip Nilai Ijazah"
           description="Kelola laporan hasil belajar E-Raport Kurikulum Merdeka Pendidikan Kesetaraan, leger kelas, hingga cetak transkrip nilai kelulusan siap cetak."
           action={
-            raportSubTab === "raport" ? (
+            raportSubTab === "input" ? (
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -1199,6 +1256,29 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                 >
                   <CheckCircle2 size={15} />
                   {busy ? "Menyinkronkan..." : "Sinkron Nilai Tugas & CBT"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !activeSiswa}
+                  onClick={() => void saveInlineGrades(true)}
+                  className="dashboard-hero-action"
+                >
+                  <Printer size={16} />
+                  Simpan &amp; Review Raport →
+                </button>
+              </div>
+            ) : raportSubTab === "raport" ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy || !activeSiswa || !tahunId}
+                  onClick={() => void togglePublishRaport(!isRaportPublished, false)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white shadow-xs transition disabled:opacity-50 ${
+                    isRaportPublished ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"
+                  }`}
+                >
+                  <CheckCircle2 size={15} />
+                  {isRaportPublished ? "Tarik Terbitan Raport" : "Terbitkan Raport Digital"}
                 </button>
                 <button type="button" onClick={() => window.print()} disabled={!activeSiswa} className="dashboard-hero-action">
                   <Printer size={16} />
@@ -1211,10 +1291,11 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
         <div className={`flex flex-wrap gap-2 rounded-2xl p-1.5 ${panelClass(isDark)}`}>
           {([
-            { id: "raport" as const, label: "Input & E-Raport Siswa" },
-            { id: "leger" as const, label: "Leger Raport Kelas" },
-            { id: "leger-6sem" as const, label: "Input Leger Semester 1–6" },
-            { id: "transkrip" as const, label: "Transkrip Nilai Ijazah" },
+            { id: "input" as const, label: "Input Nilai" },
+            { id: "raport" as const, label: "Raport Digital" },
+            { id: "leger-6sem" as const, label: "Input Leger 1–6" },
+            { id: "leger" as const, label: "Leger Raport" },
+            { id: "transkrip" as const, label: "Transkrip Nilai" },
           ]).map((tab) => (
             <button
               key={tab.id}
@@ -1241,7 +1322,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
         {raportSubTab !== "transkrip" && raportSubTab !== "leger-6sem" && (
         <div className={`space-y-3 rounded-2xl p-4 ${panelClass(isDark)}`}>
-          <div className={`grid gap-4 ${raportSubTab === "raport" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
+          <div className={`grid gap-4 ${raportSubTab === "input" || raportSubTab === "raport" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
             <div className="block text-xs font-bold">
               <div className="flex items-center justify-between gap-2">
                 <span>Tahun Ajaran</span>
@@ -1283,7 +1364,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                 {data?.kelasList.map((k) => <option key={k.id} value={k.id}>{k.nama}</option>)}
               </select>
             </label>
-            {raportSubTab === "raport" && (
+            {(raportSubTab === "input" || raportSubTab === "raport") && (
             <label className="block text-xs font-bold">
               Pilih Warga Belajar
               <select value={activeSiswa?.id ?? ""} onChange={(e) => setSelectedSiswaId(e.target.value)} className={inputClass(isDark)}>
@@ -1335,65 +1416,231 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         </div>
         )}
 
-        {raportSubTab === "raport" && (loading ? (
+        {raportSubTab === "raport" && activeSiswa && (
+          <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4 ${panelClass(isDark)}`}>
+            <div className="flex flex-wrap items-center gap-2.5 text-xs">
+              <span className="font-bold">Status Akses Siswa (Raport Digital):</span>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold ${
+                  isRaportPublished
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-amber-100 text-amber-900"
+                }`}
+              >
+                {isRaportPublished ? "Sudah Diterbitkan ke Siswa" : "Belum Diterbitkan (Disembunyikan dari Siswa)"}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={busy || !tahunId}
+                onClick={() => void togglePublishRaport(!isRaportPublished, false)}
+                className={`rounded-xl px-3.5 py-2 text-xs font-extrabold text-white transition disabled:opacity-50 ${
+                  isRaportPublished ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"
+                }`}
+              >
+                {isRaportPublished ? "Tarik Terbitan Siswa Ini" : "Terbitkan Raport Siswa Ini"}
+              </button>
+              <button
+                type="button"
+                disabled={busy || !tahunId || !kelasId}
+                onClick={() => void togglePublishRaport(true, true)}
+                className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                Terbitkan 1 Kelas
+              </button>
+              <button
+                type="button"
+                onClick={() => setRaportSubTab("input")}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                ← Edit Nilai
+              </button>
+            </div>
+          </div>
+        )}
+
+        {raportSubTab === "input" && (loading ? (
           <CardGridSkeleton count={2} columns={2} />
         ) : !activeSiswa ? (
           <EmptyState title="Belum ada warga belajar di kelas terpilih" description="Pastikan kelas memiliki warga belajar aktif melalui menu Penempatan / Kenaikan Kelas." />
         ) : (
-          <div className="grid gap-5 lg:grid-cols-2">
-            <form onSubmit={saveScore} className={`space-y-3 rounded-2xl p-5 ${panelClass(isDark)}`}>
-              <h3 className="flex items-center gap-2 text-sm font-bold">
-                <Award size={17} className="text-sky-600" />
-                Input / Perbarui Nilai Mapel ({activeSiswa.nama})
-              </h3>
-              <label className="block text-xs font-bold">
-                Mata Pelajaran
-                <select value={editMapelId} onChange={(e) => setEditMapelId(e.target.value)} className={inputClass(isDark)}>
-                  {filteredMapels.map((m) => <option key={m.id} value={m.id}>{m.nama} (KKM {m.kkm})</option>)}
-                </select>
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs font-bold">
-                  Nilai Modul / Mandiri
-                  <input type="number" min={0} max={100} value={nilaiMandiri} onChange={(e) => setNilaiMandiri(Number(e.target.value))} className={inputClass(isDark)} />
-                </label>
-                <label className="block text-xs font-bold">
-                  Nilai Simulasi / CBT
-                  <input type="number" min={0} max={100} value={nilaiSimulasi} onChange={(e) => setNilaiSimulasi(Number(e.target.value))} className={inputClass(isDark)} />
-                </label>
+          <div className="space-y-5">
+            <div className={`rounded-2xl p-5 ${panelClass(isDark)}`}>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
+                    <Award size={17} className="text-sky-600" />
+                    Input Nilai Langsung Per Mata Pelajaran — {activeSiswa.nama}
+                  </h3>
+                  <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    Isi nilai Mandiri &amp; Simulasi/CBT langsung pada tabel di bawah. Jika kolom Deskripsi dikosongkan, narasi Capaian Kompetensi Kurikulum Merdeka terisi otomatis.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveInlineGrades(false)}
+                    className="rounded-xl border border-sky-300 bg-sky-50 px-3.5 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                  >
+                    {busy ? "Menyimpan..." : "Simpan Semua Nilai"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveInlineGrades(true)}
+                    className="master-primary px-4 py-2 text-xs disabled:opacity-50"
+                  >
+                    {busy ? "Menyimpan..." : "Simpan & Review Raport Cetak →"}
+                  </button>
+                </div>
               </div>
-              <label className="block text-xs font-bold">
-                Deskripsi Capaian Kompetensi
-                <input value={catatanKompetensi} onChange={(e) => setCatatanKompetensi(e.target.value)} placeholder="Contoh: Sangat baik dalam penerapan materi fungsional." className={inputClass(isDark)} />
-              </label>
-              <div className="flex justify-end">
-                <button type="submit" disabled={busy || !editMapelId} className="master-primary px-4 py-2 text-xs">
-                  Simpan Nilai Mapel
-                </button>
+
+              <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-xs leading-relaxed text-sky-950">
+                <p className="font-extrabold text-sky-900">
+                  Dasar Regulasi Narasi Capaian Kompetensi E-Raport:
+                </p>
+                <p className="mt-1">
+                  Format dan narasi otomatis Capaian Kompetensi disusun mengacu pada{" "}
+                  <strong>Permendikbudristek No. 21 Tahun 2022</strong> (Standar Penilaian Pendidikan),{" "}
+                  <strong>Permendikbudristek No. 12 Tahun 2024</strong> (Kurikulum Pendidikan Kesetaraan), serta{" "}
+                  <strong>Panduan Pembelajaran dan Asesmen (PPA) BSKAP Kemendikbudristek</strong> berbasis KKTP. Tutor/Wali Kelas tetap dapat menyesuaikan deskripsi tiap mata pelajaran sesuai kondisi warga belajar.
+                </p>
               </div>
-            </form>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[780px] border-collapse border border-slate-300 text-left text-xs">
+                  <thead>
+                    <tr className={isDark ? "bg-slate-800 text-slate-200" : "bg-slate-100 font-extrabold text-slate-900"}>
+                      <th className="w-10 border border-slate-300 px-2 py-2 text-center">No</th>
+                      <th className="w-56 border border-slate-300 px-3 py-2">Mata Pelajaran</th>
+                      <th className="w-14 border border-slate-300 px-2 py-2 text-center">SKK</th>
+                      <th className="w-24 border border-slate-300 px-2 py-2 text-center">Mandiri</th>
+                      <th className="w-24 border border-slate-300 px-2 py-2 text-center">Simulasi/CBT</th>
+                      <th className="w-20 border border-slate-300 px-2 py-2 text-center">Nilai Akhir</th>
+                      <th className="border border-slate-300 px-3 py-2">Capaian Kompetensi (Opsional)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      {
+                        label: "A. Kelompok Mata Pelajaran Umum",
+                        rows: kelompokUmumScores.length > 0 ? kelompokUmumScores : studentScores,
+                      },
+                      ...(kelompokKeterampilanScores.length > 0
+                        ? [{ label: "B. Kelompok Pemberdayaan dan Keterampilan (Integrasi P5)", rows: kelompokKeterampilanScores }]
+                        : []),
+                    ].map((section) => (
+                      <Fragment key={section.label}>
+                        <tr className={isDark ? "bg-slate-800/70 font-bold text-slate-200" : "bg-slate-50 font-bold text-slate-900"}>
+                          <td colSpan={7} className="border border-slate-300 px-3 py-1.5 text-[11px] uppercase tracking-wide">
+                            {section.label}
+                          </td>
+                        </tr>
+                        {section.rows.map((row, idx) => {
+                          const cell = inlineGrades[row.mapel.id] ?? { mandiri: "", simulasi: "", catatan: "" };
+                          const mNum = cell.mandiri.trim() !== "" ? Number(cell.mandiri) : null;
+                          const sNum = cell.simulasi.trim() !== "" ? Number(cell.simulasi) : null;
+                          const liveAkhir =
+                            mNum !== null && sNum !== null && Number.isFinite(mNum) && Number.isFinite(sNum)
+                              ? Math.round(((mNum + sNum) / 2) * 10) / 10
+                              : mNum !== null && Number.isFinite(mNum)
+                                ? mNum
+                                : sNum !== null && Number.isFinite(sNum)
+                                  ? sNum
+                                  : null;
+                          return (
+                            <tr key={row.mapel.id}>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center tabular-nums">{idx + 1}</td>
+                              <td className="border border-slate-300 px-3 py-1.5 font-semibold">
+                                {row.mapel.nama}
+                                <span className="ml-1.5 text-[10px] font-normal text-slate-500">(KKM {row.mapel.kkm})</span>
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center tabular-nums">{row.mapel.skk}</td>
+                              <td className="border border-slate-300 px-1.5 py-1 text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  aria-label={`Nilai Mandiri ${row.mapel.nama}`}
+                                  value={cell.mandiri}
+                                  onChange={(e) => updateInlineGrade(row.mapel.id, "mandiri", e.target.value)}
+                                  placeholder="-"
+                                  className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
+                                />
+                              </td>
+                              <td className="border border-slate-300 px-1.5 py-1 text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  aria-label={`Nilai Simulasi ${row.mapel.nama}`}
+                                  value={cell.simulasi}
+                                  onChange={(e) => updateInlineGrade(row.mapel.id, "simulasi", e.target.value)}
+                                  placeholder="-"
+                                  className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
+                                />
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1.5 text-center text-sm font-extrabold tabular-nums text-sky-800">
+                                {liveAkhir !== null ? liveAkhir : "-"}
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1">
+                                <input
+                                  type="text"
+                                  aria-label={`Deskripsi ${row.mapel.nama}`}
+                                  value={cell.catatan}
+                                  onChange={(e) => updateInlineGrade(row.mapel.id, "catatan", e.target.value)}
+                                  placeholder="Kosongkan untuk narasi KKTP otomatis..."
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800 focus:border-sky-600 focus:outline-none"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
             <form onSubmit={saveHomeroomNote} className={`space-y-3 rounded-2xl p-5 ${panelClass(isDark)}`}>
               <h3 className="flex items-center gap-2 text-sm font-bold">
                 <UserCheck size={17} className="text-emerald-600" />
                 Catatan Wali Kelas &amp; Keputusan Semester
               </h3>
-              <label className="block text-xs font-bold">
-                Status Kenaikan / Kelulusan
-                <select value={statusKenaikan} onChange={(e) => setStatusKenaikan(e.target.value)} className={inputClass(isDark)}>
-                  <option value="PROSES">Proses Penilaian Semester</option>
-                  <option value="NAIK_KELAS">Naik ke Tingkat Berikutnya</option>
-                  <option value="LULUS">Lulus Pendidikan Kesetaraan</option>
-                  <option value="TINGGAL_KELAS">Perlu Pengulangan Modul</option>
-                </select>
-              </label>
-              <label className="block text-xs font-bold">
-                Catatan Wali Kelas / Tutor Pembimbing
-                <textarea rows={3} value={catatanWali} onChange={(e) => setCatatanWali(e.target.value)} className={inputClass(isDark)} />
-              </label>
-              <div className="flex justify-end">
-                <button type="submit" disabled={busy || !tahunId} className="master-primary px-4 py-2 text-xs">
-                  Simpan Catatan &amp; Keputusan
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="block text-xs font-bold">
+                  Status Kenaikan / Kelulusan
+                  <select value={statusKenaikan} onChange={(e) => setStatusKenaikan(e.target.value)} className={inputClass(isDark)}>
+                    <option value="PROSES">Proses Penilaian Semester</option>
+                    <option value="NAIK_KELAS">Naik ke Tingkat Berikutnya</option>
+                    <option value="LULUS">Lulus Pendidikan Kesetaraan</option>
+                    <option value="TINGGAL_KELAS">Perlu Pengulangan Modul</option>
+                  </select>
+                </label>
+                <label className="block text-xs font-bold md:col-span-2">
+                  Catatan Wali Kelas / Tutor Pembimbing
+                  <textarea rows={2} value={catatanWali} onChange={(e) => setCatatanWali(e.target.value)} className={inputClass(isDark)} />
+                </label>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void saveInlineGrades(false)}
+                  className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                >
+                  {busy ? "Menyimpan..." : "Simpan Semua Nilai & Catatan"}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void saveInlineGrades(true)}
+                  className="master-primary px-5 py-2 text-xs disabled:opacity-50"
+                >
+                  {busy ? "Menyimpan..." : "Simpan & Review Raport Cetak →"}
                 </button>
               </div>
             </form>
@@ -1541,7 +1788,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                   </td>
                   <td className="border border-slate-400 px-2 py-2 text-center tabular-nums">{totalSkkRaport} SKK</td>
                   <td colSpan={2} className="border border-slate-400 px-3 py-2 text-[11px] font-medium text-slate-600">
-                    1 SKK setara 1 JP Tatap Muka / 2 JP Tutorial / 3 JP Mandiri (Permendikbudristek No. 12 Tahun 2024)
+                    1 SKK setara 1 JP Tatap Muka / 2 JP Tutorial / 3 JP Mandiri (Permendikbudristek No. 12 Tahun 2024). Deskripsi capaian kompetensi mengacu pada Permendikbudristek No. 21 Tahun 2022 &amp; Panduan Pembelajaran dan Asesmen Kemendikbudristek.
                   </td>
                 </tr>
               </tfoot>

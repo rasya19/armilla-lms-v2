@@ -202,7 +202,16 @@ type TranscriptSubject = {
 };
 
 type TranscriptStudentRow = {
-  siswa: { id: string; nama: string; nisn: string; jenjang: string | null; tempatLahir?: string | null; tanggalLahir?: string | null };
+  siswa: {
+    id: string;
+    nama: string;
+    nisn: string;
+    jenjang: string | null;
+    tempatLahir?: string | null;
+    tanggalLahir?: string | null;
+    transkripDiterbitkan?: boolean;
+    transkripDiterbitkanPada?: string | null;
+  };
   subjects: TranscriptSubject[];
   rataRaportKeseluruhan: number | null;
   rataUpkKeseluruhan: number | null;
@@ -672,6 +681,7 @@ export function RaportTranscriptPanel({
   };
   const [loading, setLoading] = useState(true);
   const [savingUpk, setSavingUpk] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -679,10 +689,87 @@ export function RaportTranscriptPanel({
   const [upkMapelId, setUpkMapelId] = useState("");
   const [upkScore, setUpkScore] = useState("85");
 
-  // Optional official transcript metadata for print
+  // Optional official transcript metadata for print (auto-synced with Agenda Surat Keluar)
   const [nomorTranskrip, setNomorTranskrip] = useState("");
   const [nomorIjazah, setNomorIjazah] = useState("");
   const [tanggalKelulusan, setTanggalKelulusan] = useState("");
+  const [agendaMeta, setAgendaMeta] = useState<{
+    lastNomorUrut: number;
+    nextNomorUrut: number;
+    suggestedNomorSurat: string;
+    tahun: number;
+  } | null>(null);
+  const [loggingAgenda, setLoggingAgenda] = useState(false);
+
+  const loadNextAgendaNumber = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined);
+      const res = await fetchWithTimeout("/api/sekolah/agenda-surat/next-keluar", {
+        signal,
+        ...(headers ? { headers } : {}),
+      });
+      if (!res.ok) return;
+      const body = (await res.json().catch(() => null)) as {
+        tahun: number;
+        lastNomorUrut: number;
+        nextNomorUrut: number;
+        suggestedNomorSurat: string;
+      } | null;
+      if (body?.suggestedNomorSurat) {
+        setAgendaMeta(body);
+        setNomorTranskrip((prev) => prev || body.suggestedNomorSurat);
+      }
+    } catch {
+      // non-blocking
+    }
+  }, [sandboxRole]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadNextAgendaNumber(controller.signal);
+    return () => controller.abort();
+  }, [loadNextAgendaNumber]);
+
+  async function logTranscriptToMailAgenda() {
+    if (loggingAgenda || !activeRow || !nomorTranskrip.trim()) return;
+    setLoggingAgenda(true);
+    setError("");
+    setNotice("");
+    try {
+      const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined, {
+        "Content-Type": "application/json",
+      });
+      const res = await fetchWithTimeout("/api/sekolah/agenda-surat", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jenis: "KELUAR",
+          nomorUrut: agendaMeta?.nextNomorUrut,
+          nomorSurat: nomorTranskrip.trim(),
+          tanggalSurat: tanggalKelulusan || new Date().toISOString().slice(0, 10),
+          pengirimTujuan: activeRow.siswa.nama,
+          perihal: `Transkrip Nilai - ${activeRow.siswa.nama} (NISN ${activeRow.siswa.nisn})`,
+          keterangan: "Tercatat otomatis dari cetak Transkrip Nilai",
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal mencatat nomor transkrip ke Agenda Surat Keluar.");
+      setNotice(body?.message || "Nomor transkrip tercatat di Agenda Surat Keluar.");
+      // Refresh next available number for the next student
+      const nextRes = await fetchWithTimeout("/api/sekolah/agenda-surat/next-keluar", {
+        ...(headers ? { headers } : {}),
+      });
+      const nextBody = (await nextRes.json().catch(() => null)) as typeof agendaMeta;
+      if (nextRes.ok && nextBody?.suggestedNomorSurat) {
+        setAgendaMeta(nextBody);
+        setNomorTranskrip(nextBody.suggestedNomorSurat);
+      }
+    } catch (failure) {
+      setError(describeFetchError(failure, "Nomor transkrip belum dapat dicatat ke Agenda Surat Keluar."));
+    } finally {
+      setLoggingAgenda(false);
+    }
+  }
 
   const loadTranscript = useCallback(async (targetKelasId: string, signal?: AbortSignal) => {
     setLoading(true);
@@ -785,6 +872,36 @@ export function RaportTranscriptPanel({
       return parsed.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
     }
     return raw.trim();
+  }
+
+  async function togglePublishTranscript(diterbitkan: boolean, publishAllInClass = false) {
+    if (publishing || (!activeRow && !publishAllInClass)) return;
+    setPublishing(true);
+    setError("");
+    setNotice("");
+    try {
+      const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined, {
+        "Content-Type": "application/json",
+      });
+      const res = await fetchWithTimeout("/api/sekolah/raport/transkrip/publish", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          kelasId,
+          siswaId: activeRow?.siswa.id,
+          publishAllInClass,
+          diterbitkan,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal memperbarui status terbit transkrip.");
+      setNotice(body?.message || (diterbitkan ? "Transkrip diterbitkan ke portal siswa." : "Terbitan transkrip ditarik."));
+      await loadTranscript(kelasId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Gagal memperbarui status terbit transkrip."));
+    } finally {
+      setPublishing(false);
+    }
   }
 
   async function handleSaveUpk(event: React.FormEvent<HTMLFormElement>) {
@@ -944,16 +1061,34 @@ export function RaportTranscriptPanel({
           )}
 
           <div className="mt-3 grid gap-3 border-t border-slate-200/60 pt-3 sm:grid-cols-3">
-            <label className="block text-xs font-bold">
-              Nomor Transkrip (Opsional)
-              <input
-                type="text"
-                value={nomorTranskrip}
-                onChange={(e) => setNomorTranskrip(e.target.value)}
-                placeholder="Contoh: 421/012/PKBM/2026"
-                className={fieldCls}
-              />
-            </label>
+            <div className="block text-xs font-bold">
+              <div className="flex items-center justify-between gap-2">
+                <span>Nomor Transkrip (Sinkron Agenda Surat)</span>
+                {agendaMeta && (
+                  <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-extrabold text-sky-900">
+                    No. {agendaMeta.lastNomorUrut} → {agendaMeta.nextNomorUrut}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 flex gap-1.5">
+                <input
+                  type="text"
+                  value={nomorTranskrip}
+                  onChange={(e) => setNomorTranskrip(e.target.value)}
+                  placeholder="Contoh: 024/PKBM/XI/2026"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                />
+                <button
+                  type="button"
+                  disabled={loggingAgenda || !activeRow || !nomorTranskrip.trim()}
+                  onClick={() => void logTranscriptToMailAgenda()}
+                  title="Catat nomor ini ke Agenda Surat Keluar agar nomor berikutnya otomatis naik"
+                  className="shrink-0 rounded-xl border border-sky-300 bg-sky-50 px-2.5 py-2 text-[11px] font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                >
+                  {loggingAgenda ? "..." : "Catat Agenda"}
+                </button>
+              </div>
+            </div>
             <label className="block text-xs font-bold">
               Nomor Ijazah (Opsional)
               <input
@@ -1075,6 +1210,48 @@ export function RaportTranscriptPanel({
               </table>
             </div>
           </div>
+
+          {/* Kontrol Penerbitan Transkrip Nilai ke Portal Siswa */}
+          {activeRow && (
+            <div className={`no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4 ${cardCls}`}>
+              <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                <span className="font-bold">Status Akses Siswa (Transkrip Nilai):</span>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold ${
+                    activeRow.siswa.transkripDiterbitkan
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-900"
+                  }`}
+                >
+                  {activeRow.siswa.transkripDiterbitkan
+                    ? "Sudah Diterbitkan ke Siswa"
+                    : "Belum Diterbitkan (Disembunyikan dari Siswa)"}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={publishing}
+                  onClick={() => void togglePublishTranscript(!activeRow.siswa.transkripDiterbitkan, false)}
+                  className={`rounded-xl px-3.5 py-2 text-xs font-extrabold text-white transition disabled:opacity-50 ${
+                    activeRow.siswa.transkripDiterbitkan
+                      ? "bg-amber-600 hover:bg-amber-500"
+                      : "bg-emerald-600 hover:bg-emerald-500"
+                  }`}
+                >
+                  {activeRow.siswa.transkripDiterbitkan ? "Tarik Terbitan Transkrip" : "Terbitkan Transkrip"}
+                </button>
+                <button
+                  type="button"
+                  disabled={publishing || !kelasId}
+                  onClick={() => void togglePublishTranscript(true, true)}
+                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  Terbitkan 1 Kelas
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Dokumen Resmi Transkrip Nilai (1 Lembar A4) */}
           {activeRow && (

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CheckCircle2, GraduationCap, Loader2, Save, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, GraduationCap, Loader2, Lock, Save, Sparkles, Trash2 } from "lucide-react";
 import { buildSandboxHeaders } from "../utils/safeUrl";
 import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 import { useTenantTheme } from "./TenantThemeProvider";
@@ -56,6 +56,30 @@ export function CbtAiGeneratorPanel({
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([]);
+  const [aiQuota, setAiQuota] = useState<{
+    isPro: boolean;
+    resetDateLabel: string;
+    hasFallbackKey: boolean;
+    cbtGenerate: { limit: number; used: number; remaining: number };
+  } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined);
+    fetchWithTimeout("/api/sekolah/ai-quota", {
+      signal: controller.signal,
+      ...(headers ? { headers } : {}),
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as { quota?: typeof aiQuota } | null;
+        if (body?.quota) setAiQuota(body.quota);
+      })
+      .catch(() => {
+        // non-blocking
+      });
+    return () => controller.abort();
+  }, [sandboxRole]);
 
   const finalGradeClasses = useMemo(
     () => kelasList.filter((k) => isFinalGradeClass(k.nama)),
@@ -118,8 +142,11 @@ export function CbtAiGeneratorPanel({
         error?: string;
         code?: string;
         model?: string;
+        usedSchoolFallbackKey?: boolean;
+        quota?: typeof aiQuota;
         draft?: { judulPaket?: string; deskripsiPaket?: string; butirSoal?: DraftQuestion[] };
       } | null;
+      if (body?.quota) setAiQuota(body.quota);
       if (!res.ok || !body?.draft?.butirSoal?.length) {
         throw new Error(body?.error || `Draf soal AI belum dapat dibuat (HTTP ${res.status}).`);
       }
@@ -127,7 +154,9 @@ export function CbtAiGeneratorPanel({
       setDraftDescription(body.draft.deskripsiPaket || "");
       setDraftQuestions(body.draft.butirSoal);
       setNotice(
-        `Berhasil menyusun ${body.draft.butirSoal.length} soal dengan AI${body.model ? ` (${body.model})` : ""}. Periksa draf di bawah lalu simpan ke CBT.`,
+        `Berhasil menyusun ${body.draft.butirSoal.length} soal dengan AI${body.model ? ` (${body.model})` : ""}${
+          body.usedSchoolFallbackKey ? " · Menggunakan API Key cadangan lembaga" : ""
+        }. Periksa draf di bawah lalu simpan ke Bank Soal CBT sekolah.`,
       );
     } catch (failure) {
       setError(describeFetchError(failure, "Gagal menghasilkan soal dengan AI."));
@@ -210,10 +239,40 @@ export function CbtAiGeneratorPanel({
               Generator Soal AI (UTS, UAS &amp; Ujian Akhir Kelas Akhir)
             </h3>
             <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Susun paket soal pilihan ganda lengkap dengan kunci jawaban &amp; pembahasan secara otomatis menggunakan Gemini AI, lalu simpan langsung ke CBT sekolah.
+              Susun paket soal pilihan ganda lengkap dengan kunci jawaban &amp; pembahasan secara otomatis menggunakan Gemini AI, lalu simpan langsung ke Bank Soal CBT sekolah.
             </p>
           </div>
+          {aiQuota && (
+            <div className="flex flex-wrap items-center gap-2">
+              {!aiQuota.isPro ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-extrabold text-amber-900">
+                  <Lock size={12} aria-hidden="true" />
+                  Khusus Paket Pro (25x/bln)
+                </span>
+              ) : aiQuota.cbtGenerate.remaining > 0 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-300 bg-violet-50 px-3 py-1 text-[11px] font-extrabold text-violet-900">
+                  <Sparkles size={12} aria-hidden="true" />
+                  Sisa Kuota CBT AI: {aiQuota.cbtGenerate.remaining} / {aiQuota.cbtGenerate.limit}x · Reset {aiQuota.resetDateLabel}
+                </span>
+              ) : aiQuota.hasFallbackKey ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-[11px] font-extrabold text-emerald-900">
+                  <CheckCircle2 size={12} aria-hidden="true" />
+                  Kuota Vendor 0/{aiQuota.cbtGenerate.limit} · Cadangan API Key Lembaga Aktif
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-rose-50 px-3 py-1 text-[11px] font-extrabold text-rose-900">
+                  Kuota Bulan Ini Habis (0/{aiQuota.cbtGenerate.limit}) · Reset {aiQuota.resetDateLabel}
+                </span>
+              )}
+            </div>
+          )}
         </div>
+
+        {aiQuota && !aiQuota.isPro && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-3 text-xs text-amber-950">
+            <strong>Akses Khusus Paket Pro:</strong> Fitur Generator Soal CBT AI (Gemini) hanya tersedia untuk lembaga berpaket <strong>Pro</strong> (kuota wajar 25x generate/bulan). Paket Basic &amp; Reguler tetap dapat membuat soal manual atau impor soal Word/Excel secara penuh.
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {([

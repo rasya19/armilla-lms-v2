@@ -719,6 +719,226 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     }
   });
 
+  // POST /api/sekolah/raport/nilai-batch — Simpan semua nilai mapel + catatan wali dalam 1x klik
+  router.post("/raport/nilai-batch", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const tahunAjaranId = cleanText(req.body?.tahunAjaranId, 100) || null;
+      const kelasId = cleanText(req.body?.kelasId, 100);
+      const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+      if (!siswaId) {
+        return res.status(400).json({ error: "Warga belajar wajib dipilih." });
+      }
+
+      const [siswa, tahunAjaran, validMapels] = await Promise.all([
+        prisma.siswa.findFirst({ where: { id: siswaId, sekolahId }, select: { id: true, kelasId: true } }),
+        tahunAjaranId
+          ? prisma.tahunAjaran.findFirst({ where: { id: tahunAjaranId, sekolahId }, select: { id: true } })
+          : Promise.resolve({ id: "" }),
+        prisma.mapel.findMany({ where: { sekolahId }, select: { id: true } }),
+      ]);
+      if (!siswa || (tahunAjaranId && !tahunAjaran)) {
+        return res.status(404).json({ error: "Warga belajar atau tahun ajaran tidak ditemukan." });
+      }
+
+      const teacherScope = peran === "GURU" && guruId ? await resolveTeacherScope(sekolahId, guruId) : null;
+      const validMapelIds = new Set(validMapels.map((m) => m.id));
+      let savedCount = 0;
+
+      for (const rawItem of rawEntries.slice(0, 100)) {
+        if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) continue;
+        const entry = rawItem as Record<string, unknown>;
+        const mapelId = cleanText(entry.mapelId, 100);
+        if (!mapelId || !validMapelIds.has(mapelId)) continue;
+
+        if (teacherScope && !teacherScope.isWaliKelas) {
+          if (!teacherScope.assignedMapelIds.includes(mapelId) || !siswa.kelasId || !teacherScope.assignedKelasIds.includes(siswa.kelasId)) {
+            continue;
+          }
+        }
+
+        const rawMandiri = entry.nilaiMandiri;
+        const rawSimulasi = entry.nilaiSimulasi;
+        const hasMandiri = rawMandiri !== null && rawMandiri !== undefined && String(rawMandiri).trim() !== "";
+        const hasSimulasi = rawSimulasi !== null && rawSimulasi !== undefined && String(rawSimulasi).trim() !== "";
+        if (!hasMandiri && !hasSimulasi) continue;
+
+        const mVal = hasMandiri ? Math.max(0, Math.min(100, Number(rawMandiri))) : Math.max(0, Math.min(100, Number(rawSimulasi)));
+        const sVal = hasSimulasi ? Math.max(0, Math.min(100, Number(rawSimulasi))) : mVal;
+        if (!Number.isFinite(mVal) || !Number.isFinite(sVal)) continue;
+
+        const nilaiAkhir = Math.round(((mVal + sVal) / 2) * 10) / 10;
+        const catatanKompetensi = cleanText(entry.catatanKompetensi, 500) || null;
+
+        const existing = await prisma.nilai.findFirst({
+          where: { sekolahId, siswaId, mapelId, tahunAjaranId, AND: [NOT_UPK_MARKER_FILTER] },
+          select: { id: true },
+        });
+        if (existing) {
+          await prisma.nilai.update({
+            where: { id: existing.id },
+            data: { nilaiMandiri: mVal, nilaiSimulasi: sVal, nilaiAkhir, catatanKompetensi, tanggalSimulasi: new Date() },
+          });
+        } else {
+          await prisma.nilai.create({
+            data: {
+              id: randomBytes(16).toString("hex"),
+              sekolahId,
+              siswaId,
+              mapelId,
+              tahunAjaranId,
+              nilaiMandiri: mVal,
+              nilaiSimulasi: sVal,
+              nilaiAkhir,
+              catatanKompetensi,
+            },
+          });
+        }
+        savedCount += 1;
+      }
+
+      if (tahunAjaranId && kelasId && (req.body?.catatanWali !== undefined || req.body?.statusKenaikan !== undefined)) {
+        const catatanWali = cleanText(req.body?.catatanWali, 1000) || null;
+        const rawStatus = cleanText(req.body?.statusKenaikan, 30).toUpperCase();
+        const statusKenaikan = ["PROSES", "NAIK_KELAS", "LULUS", "TINGGAL_KELAS"].includes(rawStatus) ? rawStatus : "PROSES";
+        const existingCatatan = await prisma.catatanRaport.findUnique({
+          where: { sekolahId_tahunAjaranId_siswaId: { sekolahId, tahunAjaranId, siswaId } },
+          select: { id: true },
+        });
+        if (existingCatatan) {
+          await prisma.catatanRaport.update({
+            where: { id: existingCatatan.id },
+            data: { kelasId, catatanWali, statusKenaikan, tanggalRapor: new Date() },
+          });
+        } else {
+          await prisma.catatanRaport.create({
+            data: { sekolahId, tahunAjaranId, kelasId, siswaId, catatanWali, statusKenaikan, tanggalRapor: new Date() },
+          });
+        }
+      }
+
+      return res.json({
+        savedCount,
+        message: `${savedCount} nilai mata pelajaran & catatan wali berhasil disimpan.`,
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan nilai raport batch:", error);
+      return res.status(503).json({ error: "Nilai raport belum dapat disimpan." });
+    }
+  });
+
+  // POST /api/sekolah/raport/publish — Terbitkan / tarik terbitan E-Raport Digital ke portal siswa
+  router.post("/raport/publish", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const tahunAjaranId = cleanText(req.body?.tahunAjaranId, 100);
+      const kelasId = cleanText(req.body?.kelasId, 100);
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const publishAllInClass = req.body?.publishAllInClass === true;
+      const diterbitkan = req.body?.diterbitkan === true;
+
+      if (!tahunAjaranId || !kelasId || (!siswaId && !publishAllInClass)) {
+        return res.status(400).json({ error: "Tahun ajaran, kelas, dan target siswa wajib dipilih." });
+      }
+
+      const targetSiswaIds = publishAllInClass
+        ? (
+            await prisma.siswa.findMany({
+              where: { sekolahId, kelasId, status: "Aktif" },
+              select: { id: true },
+            })
+          ).map((s) => s.id)
+        : [siswaId];
+
+      const now = diterbitkan ? new Date() : null;
+      let affected = 0;
+      for (const sid of targetSiswaIds) {
+        const existing = await prisma.catatanRaport.findUnique({
+          where: { sekolahId_tahunAjaranId_siswaId: { sekolahId, tahunAjaranId, siswaId: sid } },
+          select: { id: true },
+        });
+        if (existing) {
+          await prisma.catatanRaport.update({
+            where: { id: existing.id },
+            data: { raportDiterbitkan: diterbitkan, raportDiterbitkanPada: now },
+          });
+        } else {
+          await prisma.catatanRaport.create({
+            data: {
+              sekolahId,
+              tahunAjaranId,
+              kelasId,
+              siswaId: sid,
+              statusKenaikan: "PROSES",
+              raportDiterbitkan: diterbitkan,
+              raportDiterbitkanPada: now,
+              tanggalRapor: new Date(),
+            },
+          });
+        }
+        affected += 1;
+      }
+
+      return res.json({
+        affected,
+        diterbitkan,
+        message: diterbitkan
+          ? `Raport Digital berhasil diterbitkan ke portal siswa (${affected} warga belajar).`
+          : `Terbitan Raport Digital ditarik kembali (${affected} warga belajar tidak dapat melihat raport).`,
+      });
+    } catch (error) {
+      console.error("Gagal menerbitkan raport digital:", error);
+      return res.status(503).json({ error: "Status terbit Raport Digital belum dapat diperbarui." });
+    }
+  });
+
+  // POST /api/sekolah/raport/transkrip/publish — Terbitkan / tarik terbitan Transkrip Nilai ke portal siswa
+  router.post("/raport/transkrip/publish", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const kelasId = cleanText(req.body?.kelasId, 100);
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const publishAllInClass = req.body?.publishAllInClass === true;
+      const diterbitkan = req.body?.diterbitkan === true;
+
+      if (!siswaId && (!publishAllInClass || !kelasId)) {
+        return res.status(400).json({ error: "Target siswa atau kelas wajib dipilih." });
+      }
+
+      const result = await prisma.siswa.updateMany({
+        where: {
+          sekolahId,
+          ...(publishAllInClass ? { kelasId, status: "Aktif" } : { id: siswaId }),
+        },
+        data: {
+          transkripDiterbitkan: diterbitkan,
+          transkripDiterbitkanPada: diterbitkan ? new Date() : null,
+        },
+      });
+
+      return res.json({
+        affected: result.count,
+        diterbitkan,
+        message: diterbitkan
+          ? `Transkrip Nilai berhasil diterbitkan ke portal siswa (${result.count} warga belajar).`
+          : `Terbitan Transkrip Nilai ditarik kembali (${result.count} warga belajar tidak dapat melihat transkrip).`,
+      });
+    } catch (error) {
+      console.error("Gagal menerbitkan transkrip nilai:", error);
+      return res.status(503).json({ error: "Status terbit Transkrip Nilai belum dapat diperbarui." });
+    }
+  });
+
   async function ensureSixSemesters(sekolahId: string) {
     let tahunList = await prisma.tahunAjaran.findMany({
       where: { sekolahId },
@@ -846,7 +1066,16 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const siswaList = activeKelas
         ? await prisma.siswa.findMany({
             where: { sekolahId, kelasId: activeKelas.id, status: "Aktif" },
-            select: { id: true, nama: true, nisn: true, jenjang: true, tempatLahir: true, tanggalLahir: true },
+            select: {
+              id: true,
+              nama: true,
+              nisn: true,
+              jenjang: true,
+              tempatLahir: true,
+              tanggalLahir: true,
+              transkripDiterbitkan: true,
+              transkripDiterbitkanPada: true,
+            },
             orderBy: { nama: "asc" },
             take: 500,
           })

@@ -64,6 +64,29 @@ export function AsistenAiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   const [chatMessages, setChatMessages] = useState<AiChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [aiQuota, setAiQuota] = useState<{
+    isPro: boolean;
+    resetDateLabel: string;
+    hasFallbackKey: boolean;
+    assistant: { limit: number; used: number; remaining: number };
+  } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchWithTimeout("/api/school/ai-quota", {
+      signal: controller.signal,
+      ...(sandboxRole ? { headers: { "X-Dev-Sandbox-Role": sandboxRole } } : {}),
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as { quota?: typeof aiQuota } | null;
+        if (body?.quota) setAiQuota(body.quota);
+      })
+      .catch(() => {
+        // non-blocking
+      });
+    return () => controller.abort();
+  }, [sandboxRole]);
 
   async function runGenerator(event: React.FormEvent) {
     event.preventDefault();
@@ -87,10 +110,19 @@ export function AsistenAiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           jumlahSoal: Number(jumlahSoal),
         }),
       });
-      const body = (await res.json()) as { content?: string; source?: string; error?: string };
+      const body = (await res.json()) as {
+        content?: string;
+        source?: string;
+        usedSchoolFallbackKey?: boolean;
+        quota?: typeof aiQuota;
+        error?: string;
+      };
+      if (body.quota) setAiQuota(body.quota);
       if (!res.ok) throw new Error(body.error || "Gagal memproses permintaan asisten AI.");
       setGeneratedOutput(body.content ?? "");
-      setOutputSource(body.source ?? "kurikulum-kesetaraan");
+      setOutputSource(
+        body.usedSchoolFallbackKey ? "ai-provider (API Cadangan Lembaga)" : (body.source ?? "kurikulum-kesetaraan"),
+      );
     } catch (failure) {
       setError(describeFetchError(failure, "Asisten belajar belum merespons."));
     } finally {
@@ -123,7 +155,14 @@ export function AsistenAiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           pesan: trimmed,
         }),
       });
-      const body = (await res.json()) as { content?: string; source?: string; error?: string };
+      const body = (await res.json()) as {
+        content?: string;
+        source?: string;
+        usedSchoolFallbackKey?: boolean;
+        quota?: typeof aiQuota;
+        error?: string;
+      };
+      if (body.quota) setAiQuota(body.quota);
       if (!res.ok) throw new Error(body.error || "Gagal mengirim pertanyaan.");
       setChatMessages((prev) => [
         ...prev,
@@ -131,7 +170,7 @@ export function AsistenAiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           id: `${Date.now()}-a`,
           role: "assistant",
           content: body.content ?? "",
-          source: body.source,
+          source: body.usedSchoolFallbackKey ? "ai-provider (API Cadangan Lembaga)" : body.source,
         },
       ]);
     } catch (failure) {
@@ -156,6 +195,30 @@ export function AsistenAiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           title="Asisten Belajar AI Kesetaraan"
           description="Susun modul ajar dan rangkuman Paket A/B/C, buat bank soal otomatis beserta kunci jawaban, atau konsultasi materi interaktif."
         />
+
+        {aiQuota && (
+          <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 text-xs ${panelClass(isDark)}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-bold">Kuota Bulanan Asisten Belajar AI:</span>
+              {aiQuota.assistant.remaining > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-0.5 font-extrabold text-indigo-900">
+                  Sisa {aiQuota.assistant.remaining} / {aiQuota.assistant.limit} pesan bulan ini
+                </span>
+              ) : aiQuota.hasFallbackKey ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-0.5 font-extrabold text-emerald-900">
+                  Kuota Vendor 0/{aiQuota.assistant.limit} · Cadangan API Key Lembaga Aktif
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-3 py-0.5 font-extrabold text-rose-900">
+                  Kuota Habis (0/{aiQuota.assistant.limit})
+                </span>
+              )}
+            </div>
+            <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+              Reset otomatis: <strong>{aiQuota.resetDateLabel}</strong>
+            </span>
+          </div>
+        )}
 
         {error && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{error}</p>}
 

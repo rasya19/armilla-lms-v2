@@ -70,7 +70,8 @@ test("sanitizes GEMINI_API_KEY and GEMINI_MODEL quotes, whitespace, and models/ 
   assert.deepEqual(buildGeminiModelCandidates({ GEMINI_MODEL: "gemini-custom" }), [
     "gemini-custom",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-flash-latest",
   ]);
 });
 

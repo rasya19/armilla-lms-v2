@@ -48,7 +48,7 @@ export type AiGenerateResult =
     };
 
 export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-export const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"] as const;
+export const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"] as const;
 
 /**
  * Safely trims whitespace and accidental surrounding quotes from environment variables.
@@ -235,7 +235,7 @@ export async function generateExamDraftWithAi(
 ): Promise<AiGenerateResult> {
   const env = deps?.env ?? process.env;
   const fetchImpl = deps?.fetchImpl ?? fetch;
-  const timeoutMs = deps?.timeoutMs ?? 25_000;
+  const timeoutMs = deps?.timeoutMs ?? 45_000;
   const retryDelayMs = deps?.retryDelayMs ?? 600;
   const logger = deps?.logger ?? console;
 
@@ -303,6 +303,7 @@ export async function generateExamDraftWithAi(
                 temperature: 0.4,
                 maxOutputTokens: 8192,
                 responseMimeType: "application/json",
+                ...(model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
               },
             }),
             signal: AbortSignal.timeout(timeoutMs),

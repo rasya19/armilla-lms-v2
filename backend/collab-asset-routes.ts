@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
 import { prisma } from "./db.js";
+import { buildGeminiModelCandidates } from "./ai-exam-generator.js";
 import {
   checkSchoolAiQuota,
   getSchoolAiQuotaSummary,
@@ -139,40 +140,47 @@ async function callExternalAiProvider(prompt: string, apiKeyOverride?: string): 
   }
 
   if (geminiKey) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiKey)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: `Sebagai Asisten Tutor Pendidikan Kesetaraan PKBM (Paket A, B, C) berbahasa Indonesia, jawab permintaan berikut secara terstruktur dan mudah dipahami:\n\n${prompt}`,
-                  },
-                ],
+    const modelCandidates = buildGeminiModelCandidates();
+    for (const model of modelCandidates) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: `Sebagai Asisten Tutor Pendidikan Kesetaraan PKBM (Paket A, B, C) berbahasa Indonesia, jawab permintaan berikut secara terstruktur dan mudah dipahami:\n\n${prompt}`,
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                maxOutputTokens: 1024,
+                temperature: 0.5,
+                ...(model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
               },
-            ],
-            generationConfig: {
-              maxOutputTokens: 1024,
-              temperature: 0.5,
-            },
-          }),
-          signal: AbortSignal.timeout(20000),
-        },
-      );
-      if (response.ok) {
-        const json = (await response.json()) as {
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        };
-        const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim();
-        if (text) return text;
+            }),
+            signal: AbortSignal.timeout(25000),
+          },
+        );
+        if (response.ok) {
+          const json = (await response.json()) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          };
+          const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim();
+          if (text) return text;
+        }
+        if (response.status === 401 || response.status === 403 || response.status === 429) {
+          break;
+        }
+      } catch {
+        // Try next candidate model
       }
-    } catch {
-      // Fallback gracefully
     }
   }
 

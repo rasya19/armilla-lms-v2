@@ -27,7 +27,7 @@ import type { SchoolProfile } from "./schoolProfile";
 import { SchoolModal } from "./SchoolModal";
 import { SchoolAttendance } from "./SchoolAttendance";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
-import { isThemeKey, useTenantTheme, type ThemeKey } from "./TenantThemeProvider";
+import { useTenantTheme } from "./TenantThemeProvider";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import { ensureStandardClasses } from "./standardClasses";
 import { getPlanBySlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
@@ -705,44 +705,6 @@ export function SchoolAcademicRecap({
   );
 }
 
-const THEME_OPTIONS: Array<{
-  key: ThemeKey;
-  label: string;
-  description: string;
-  swatch: string;
-}> = [
-  {
-    key: "ocean",
-    label: "Ocean & Gold",
-    description: "Nuansa biru profesional cerah dengan aksen emas khas edukasi modern.",
-    swatch: "from-sky-700 via-blue-700 to-amber-500",
-  },
-  {
-    key: "violet",
-    label: "Royal Violet",
-    description: "Ungu indigo elegan berpadu aksen lavender lembut.",
-    swatch: "from-indigo-700 via-indigo-600 to-violet-600",
-  },
-  {
-    key: "emerald",
-    label: "Emerald Fresh",
-    description: "Segar dan menenangkan dengan aksen hijau zamrud dan teal.",
-    swatch: "from-emerald-700 via-teal-700 to-cyan-800",
-  },
-  {
-    key: "sunset",
-    label: "Sunset Violet",
-    description: "Tampilan kreatif dengan gradien ungu & magenta hangat.",
-    swatch: "from-violet-700 via-fuchsia-700 to-rose-600",
-  },
-  {
-    key: "dark",
-    label: "Rasyatech Dark",
-    description: "Tema gelap glassmorphism premium dengan grid arsitektural & aksen emas menyala.",
-    swatch: "from-slate-950 via-slate-900 to-amber-500",
-  },
-];
-
 type IdentityPayload = {
   sekolah: { nama: string; slug: string; npsn: string | null; themeKey: string };
   kopSurat?: SchoolProfile;
@@ -768,12 +730,8 @@ export function SchoolThemeIdentityView({
 } = {}) {
   const isDark = useTenantTheme() === "dark";
   const initialIdentity = getCached<IdentityPayload>("/api/sekolah/identitas");
-  const [selectedTheme, setSelectedTheme] = useState<ThemeKey>(() =>
-    initialIdentity && isThemeKey(initialIdentity.sekolah.themeKey) ? initialIdentity.sekolah.themeKey : "ocean"
-  );
   const [form, setForm] = useState(() => ({
     primary_color: initialIdentity?.settings.primary_color || "#4f46e5",
-    logo_url: initialIdentity?.settings.logo_url ?? "",
     hero_title: initialIdentity?.settings.hero_title ?? "",
     hero_subtitle: initialIdentity?.settings.hero_subtitle ?? "",
     footer_text: initialIdentity?.settings.footer_text ?? "",
@@ -849,10 +807,8 @@ export function SchoolThemeIdentityView({
     const controller = new AbortController();
     const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
     if (cached) {
-      if (isThemeKey(cached.sekolah.themeKey)) setSelectedTheme(cached.sekolah.themeKey);
       setForm({
         primary_color: cached.settings.primary_color || "#4f46e5",
-        logo_url: cached.settings.logo_url ?? "",
         hero_title: cached.settings.hero_title ?? "",
         hero_subtitle: cached.settings.hero_subtitle ?? "",
         footer_text: cached.settings.footer_text ?? "",
@@ -878,14 +834,11 @@ export function SchoolThemeIdentityView({
           throw new Error(
             typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
               ? body.error
-              : "Pengaturan tema dan identitas belum dapat dimuat."
+              : "Profil dan identitas sekolah belum dapat dimuat."
           );
         }
         const data = body as IdentityPayload;
         setCached("/api/sekolah/identitas", data);
-        if (isThemeKey(data.sekolah.themeKey)) {
-          setSelectedTheme(data.sekolah.themeKey);
-        }
         setKopForm(
           buildKopSuratProfile(data.kopSurat, {
             nama: data.sekolah.nama,
@@ -896,12 +849,11 @@ export function SchoolThemeIdentityView({
         saveCachedTenantProfile(data.sekolah.slug || deriveTenantSlugFromHost(), {
           nama: data.sekolah.nama,
           slug: data.sekolah.slug,
-          logoUrl: data.settings.logo_url ?? null,
+          logoUrl: data.kopSurat?.logoUrl ?? data.settings.logo_url ?? null,
           themeKey: data.sekolah.themeKey,
         });
         setForm({
           primary_color: data.settings.primary_color || "#4f46e5",
-          logo_url: data.settings.logo_url ?? "",
           hero_title: data.settings.hero_title ?? "",
           hero_subtitle: data.settings.hero_subtitle ?? "",
           footer_text: data.settings.footer_text ?? "",
@@ -936,49 +888,22 @@ export function SchoolThemeIdentityView({
         throw new Error(
           typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
             ? body.error
-            : "Identitas sekolah gagal disimpan."
+            : "Identitas portal lembaga gagal disimpan."
         );
       }
       invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
-      const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
-      const slugKey = cached?.sekolah.slug || deriveTenantSlugFromHost();
-      if (slugKey && cached) {
-        saveCachedTenantProfile(slugKey, {
-          nama: cached.sekolah.nama,
-          slug: slugKey,
-          logoUrl: form.logo_url.trim() || null,
-        });
-      }
-      setMessage("Identitas dan kustomisasi halaman lembaga berhasil disimpan.");
+      setMessage("Identitas portal lembaga berhasil disimpan.");
     } catch (failure: unknown) {
-      setError(describeFetchError(failure, "Identitas sekolah gagal disimpan."));
+      setError(describeFetchError(failure, "Identitas portal lembaga gagal disimpan."));
     } finally {
       setFormBusy(false);
     }
   }
 
-  function handleIdentityLogoUpload(file: File | undefined) {
-    if (!file) return;
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
-      setError("Logo lembaga harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 1 MB.");
-      return;
-    }
-    setError("");
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        const dataUrl = reader.result;
-        setForm((prev) => ({ ...prev, logo_url: dataUrl }));
-        setKopForm((prev) => ({ ...prev, logoUrl: dataUrl }));
-      }
-    };
-    reader.readAsDataURL(file);
-  }
-
   function handleKopLogoUpload(file: File | undefined) {
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
-      setError("Logo kop surat harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 1 MB.");
+      setError("Logo PKBM harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 1 MB.");
       return;
     }
     setError("");
@@ -1025,12 +950,20 @@ export function SchoolThemeIdentityView({
       }
       if (body?.kopSurat) {
         setKopForm(body.kopSurat);
-        setForm((prev) => ({ ...prev, logo_url: body.kopSurat?.logoUrl ?? prev.logo_url }));
+        const cached = getCached<IdentityPayload>("/api/sekolah/identitas");
+        const slugKey = cached?.sekolah.slug || deriveTenantSlugFromHost();
+        if (slugKey) {
+          saveCachedTenantProfile(slugKey, {
+            nama: body.kopSurat.nama || cached?.sekolah.nama || "PKBM",
+            slug: slugKey,
+            logoUrl: body.kopSurat.logoUrl ?? null,
+          });
+        }
       }
       invalidateCache(["/api/sekolah/identitas", "/api/sekolah/pengaturan"]);
       setMessage(
         body?.message ||
-          "Kop surat resmi lembaga berhasil disimpan dan otomatis diterapkan pada E-Raport, Transkrip, dan Naskah Soal.",
+          "Konfigurasi kop surat dan logo PKBM berhasil disimpan untuk portal serta seluruh dokumen cetak resmi.",
       );
     } catch (failure) {
       setError(describeFetchError(failure, "Konfigurasi kop surat gagal disimpan."));
@@ -1049,9 +982,9 @@ export function SchoolThemeIdentityView({
   return (
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
-        eyebrow="TAMPILAN & BRANDING"
+        eyebrow="PROFIL & IDENTITAS"
         title="Profil & Identitas Sekolah"
-        description="Seluruh paket menggunakan tema platform seragam dari Master Admin, serta kelola identitas portal dan keamanan akun sekolah Anda."
+        description="Kelola cadangan API Key AI, identitas portal lembaga, dan konfigurasi kop surat resmi sekolah dalam satu halaman."
         action={
           (onOpenPassword || onOpenAdvanced) ? (
             <div className="flex flex-wrap gap-2">
@@ -1085,75 +1018,105 @@ export function SchoolThemeIdentityView({
       )}
 
       {loading ? (
-        <CardGridSkeleton count={4} columns={4} />
+        <CardGridSkeleton count={3} columns={3} />
       ) : (
         <div className="mt-5 space-y-6">
+          {/* 1. API Key Gemini Mandiri Lembaga (Opsional — Cadangan Kuota AI) */}
           <div className={panelClass}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Palette size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
-                <div>
-                  <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Tema Global Platform Aktif</h3>
-                  <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                    Dikelola terpusat oleh Master Admin dan diterapkan seragam untuk seluruh paket (Basic, Reguler, maupun Pro).
-                  </p>
-                </div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className={`flex items-center gap-2 text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                  <Sparkles size={18} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+                  API Key Gemini Mandiri Lembaga (Opsional · Cadangan Kuota AI)
+                </h3>
+                <p className={`mt-1 text-xs leading-relaxed ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                  <strong>Tidak wajib diisi.</strong> Paket Pro sudah mendapatkan kuota bulanan wajar dari platform (<strong>25x Generate Soal CBT AI</strong> &amp; <strong>400 pesan Asisten Belajar AI</strong> per bulan, reset otomatis setiap tanggal 1). Kunci API Gemini milik lembaga ini <strong>hanya dipakai otomatis sebagai cadangan (fallback)</strong> apabila kuota bulanan dari vendor sudah habis.
+                </p>
               </div>
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ${
-                  isDark ? "bg-amber-400/20 text-amber-300 ring-1 ring-amber-400/35" : "bg-indigo-100 text-indigo-900"
+                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-extrabold ${
+                  aiQuota?.hasFallbackKey
+                    ? "bg-emerald-100 text-emerald-800"
+                    : isDark
+                      ? "bg-slate-800 text-slate-300"
+                      : "bg-slate-100 text-slate-600"
                 }`}
               >
-                <Check size={13} aria-hidden="true" />
-                {THEME_OPTIONS.find((item) => item.key === selectedTheme)?.label ?? selectedTheme}
+                {aiQuota?.hasFallbackKey ? `Cadangan Aktif (${aiQuota.maskedFallbackKey})` : "Belum Diatur (Opsional)"}
               </span>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {THEME_OPTIONS.map((option) => {
-                const active = selectedTheme === option.key;
-                return (
-                  <div
-                    key={option.key}
-                    className={`rounded-2xl border p-3.5 text-left transition ${
-                      active
-                        ? isDark
-                          ? "border-amber-400/70 bg-amber-500/12 ring-2 ring-amber-400/30"
-                          : "border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/30"
-                        : isDark
-                          ? "border-slate-700/70 bg-slate-950/60 opacity-75"
-                          : "border-slate-200 bg-white opacity-75"
-                    }`}
+            {aiQuota && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className={`rounded-xl border p-3 text-xs ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50"}`}>
+                  <p className="font-bold">Kuota Generator Soal CBT AI Bulan Ini</p>
+                  <p className="mt-1 text-sm font-black tabular-nums">
+                    {aiQuota.isPro ? `Sisa ${aiQuota.cbtGenerate.remaining} / ${aiQuota.cbtGenerate.limit}x` : "Khusus Paket Pro (0/0)"}
+                  </p>
+                  <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    Reset otomatis: {aiQuota.resetDateLabel}
+                  </p>
+                </div>
+                <div className={`rounded-xl border p-3 text-xs ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50"}`}>
+                  <p className="font-bold">Kuota Asisten Belajar AI Bulan Ini</p>
+                  <p className="mt-1 text-sm font-black tabular-nums">
+                    {aiQuota.isPro ? `Sisa ${aiQuota.assistant.remaining} / ${aiQuota.assistant.limit} pesan` : "Khusus Paket Pro (0/0)"}
+                  </p>
+                  <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                    Reset otomatis: {aiQuota.resetDateLabel}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className={`block flex-1 text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                Google AI Studio / Gemini API Key (Opsional)
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={fallbackKeyInput}
+                  onChange={(e) => setFallbackKeyInput(e.target.value)}
+                  placeholder={
+                    aiQuota?.hasFallbackKey
+                      ? `Tersimpan (${aiQuota.maskedFallbackKey}) — masukkan kunci baru untuk mengganti`
+                      : "AIzaSy... (kosongkan jika hanya memakai kuota bawaan Paket Pro)"
+                  }
+                  className={inputClass}
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={fallbackBusy || !fallbackKeyInput.trim()}
+                  onClick={() => void saveFallbackApiKey(false)}
+                  className="master-primary px-4 py-2.5 text-xs disabled:opacity-50"
+                >
+                  {fallbackBusy ? "Menyimpan..." : "Simpan API Key Cadangan"}
+                </button>
+                {aiQuota?.hasFallbackKey && (
+                  <button
+                    type="button"
+                    disabled={fallbackBusy}
+                    onClick={() => void saveFallbackApiKey(true)}
+                    className="rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
                   >
-                    <div className={`h-11 w-full rounded-xl bg-gradient-to-r ${option.swatch}`} />
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <span className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{option.label}</span>
-                      {active && (
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                            isDark
-                              ? "bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950"
-                              : "bg-indigo-600 text-white"
-                          }`}
-                        >
-                          <Check size={11} aria-hidden="true" />
-                          Aktif
-                        </span>
-                      )}
-                    </div>
-                    <p className={`mt-1 text-xs leading-5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{option.description}</p>
-                  </div>
-                );
-              })}
+                    Hapus Kunci
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
+          {/* 2. Identitas Portal Lembaga */}
           <form onSubmit={saveIdentity} className={panelClass}>
             <div className="flex items-center gap-2">
-              <Sparkles size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
+              <Globe size={19} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
               <div>
-                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Identitas &amp; Branding Lembaga</h3>
-                <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kelola judul portal, subjudul, warna aksen, dan teks footer sekolah.</p>
+                <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Identitas Portal Lembaga</h3>
+                <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                  Kelola judul portal, slogan, teks footer, dan visibilitas konten publik sekolah. Logo PKBM dikelola terpusat pada kartu Kop Surat Resmi di bawah.
+                </p>
               </div>
             </div>
 
@@ -1171,24 +1134,14 @@ export function SchoolThemeIdentityView({
               </label>
 
               <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                Warna Aksen Utama (Hex)
-                <div className="mt-1.5 flex items-center gap-2">
-                  <input
-                    type="color"
-                    aria-label="Pemilih warna aksen"
-                    value={/^#[0-9a-fA-F]{6}$/.test(form.primary_color) ? form.primary_color : "#4f46e5"}
-                    onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
-                    className={`h-10 w-12 cursor-pointer rounded-lg border p-1 ${isDark ? "border-slate-700 bg-slate-900" : "border-slate-300 bg-white"}`}
-                  />
-                  <input
-                    type="text"
-                    maxLength={7}
-                    pattern="^#[0-9a-fA-F]{6}$"
-                    value={form.primary_color}
-                    onChange={(e) => setForm({ ...form, primary_color: e.target.value })}
-                    className={`${inputClass} mt-0 font-mono`}
-                  />
-                </div>
+                Teks Footer Lembaga
+                <input
+                  type="text"
+                  maxLength={300}
+                  value={form.footer_text}
+                  onChange={(e) => setForm({ ...form, footer_text: e.target.value })}
+                  className={inputClass}
+                />
               </label>
 
               <label className={`block text-sm font-semibold sm:col-span-2 ${isDark ? "text-slate-200" : "text-slate-800"}`}>
@@ -1200,63 +1153,6 @@ export function SchoolThemeIdentityView({
                   onChange={(e) => setForm({ ...form, hero_subtitle: e.target.value })}
                   className={inputClass}
                   placeholder="Deskripsi singkat visi belajar atau layanan pendidikan kesetaraan"
-                />
-              </label>
-
-              <div className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                <span>Logo Lembaga (Upload PNG/JPG/WebP maks. 1 MB atau Link URL)</span>
-                <div className="mt-1.5 flex items-center gap-3">
-                  {form.logo_url.trim() && (
-                    <img
-                      src={form.logo_url}
-                      alt="Pratinjau Logo Lembaga"
-                      className="h-12 w-12 shrink-0 rounded-xl border border-slate-300 bg-white object-contain p-1"
-                    />
-                  )}
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <input
-                      type="text"
-                      maxLength={500}
-                      value={form.logo_url.startsWith("data:") ? "[Logo Terunggah]" : form.logo_url}
-                      onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
-                      className={`${inputClass} mt-0`}
-                      placeholder="https://... atau klik Upload Logo di bawah"
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-100">
-                        Upload File Logo (Maks. 1 MB)
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          onChange={(e) => {
-                            handleIdentityLogoUpload(e.target.files?.[0]);
-                            e.target.value = "";
-                          }}
-                          className="sr-only"
-                        />
-                      </label>
-                      {form.logo_url.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, logo_url: "" })}
-                          className="text-xs font-bold text-rose-600 hover:underline"
-                        >
-                          Hapus Logo
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                Teks Footer Lembaga
-                <input
-                  type="text"
-                  maxLength={300}
-                  value={form.footer_text}
-                  onChange={(e) => setForm({ ...form, footer_text: e.target.value })}
-                  className={inputClass}
                 />
               </label>
 
@@ -1284,11 +1180,12 @@ export function SchoolThemeIdentityView({
 
             <div className="mt-5 flex justify-end">
               <button type="submit" disabled={formBusy} className="master-primary px-5 py-2.5 disabled:opacity-50">
-                {formBusy ? "Menyimpan..." : "Simpan Identitas Sekolah"}
+                {formBusy ? "Menyimpan..." : "Simpan Identitas Portal"}
               </button>
             </div>
           </form>
 
+          {/* 3. Konfigurasi Kop Surat Resmi Lembaga (Satu Card Utuh + Pratinjau Kop Surat Saja + Sumber Logo Tunggal) */}
           <form onSubmit={saveKopSurat} className={panelClass}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1296,7 +1193,7 @@ export function SchoolThemeIdentityView({
                   Konfigurasi Kop Surat Resmi Lembaga
                 </h3>
                 <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                  Digunakan otomatis pada dokumen cetak <strong>E-Raport Kurikulum Merdeka</strong>, <strong>Leger</strong>, <strong>Transkrip Nilai Ijazah</strong>, serta <strong>Naskah Soal UTS / UAS / UPK</strong>.
+                  Satu sumber konfigurasi untuk <strong>Logo PKBM</strong> (portal &amp; kop surat) serta identitas kop surat resmi yang otomatis diterapkan pada dokumen cetak lembaga.
                 </p>
               </div>
             </div>
@@ -1411,7 +1308,7 @@ export function SchoolThemeIdentityView({
               <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
                 <div className="flex flex-col">
                   <label className={`flex flex-1 flex-col justify-end text-sm font-semibold leading-snug ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                    <span className="break-words">Logo PKBM (Maks. 1 MB)</span>
+                    <span className="break-words">Logo PKBM (Portal &amp; Kop Surat, Maks. 1 MB)</span>
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
@@ -1458,97 +1355,10 @@ export function SchoolThemeIdentityView({
 
             <div className="mt-5 flex justify-end">
               <button type="submit" disabled={kopBusy} className="master-primary px-5 py-2.5 disabled:opacity-50">
-                {kopBusy ? "Menyimpan Kop Surat..." : "Simpan Kop Surat Lembaga"}
+                {kopBusy ? "Menyimpan Kop Surat..." : "Simpan Kop Surat & Logo Lembaga"}
               </button>
             </div>
           </form>
-
-          {/* Opsi API Key Gemini Mandiri Lembaga (Opsional — Hanya Fallback saat Kuota Vendor Habis) */}
-          <div className={panelClass}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className={`flex items-center gap-2 text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
-                  <Sparkles size={18} className={isDark ? "text-amber-400" : "text-indigo-600"} aria-hidden="true" />
-                  API Key Gemini Mandiri Lembaga (Opsional · Cadangan Kuota AI)
-                </h3>
-                <p className={`mt-1 text-xs leading-relaxed ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                  <strong>Tidak wajib diisi.</strong> Paket Pro sudah mendapatkan kuota bulanan wajar dari platform (<strong>25x Generate Soal CBT AI</strong> &amp; <strong>400 pesan Asisten Belajar AI</strong> per bulan, reset otomatis setiap tanggal 1). Kunci API Gemini milik lembaga ini <strong>hanya dipakai otomatis sebagai cadangan (fallback)</strong> apabila kuota bulanan dari vendor sudah habis.
-                </p>
-              </div>
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-extrabold ${
-                  aiQuota?.hasFallbackKey
-                    ? "bg-emerald-100 text-emerald-800"
-                    : isDark
-                      ? "bg-slate-800 text-slate-300"
-                      : "bg-slate-100 text-slate-600"
-                }`}
-              >
-                {aiQuota?.hasFallbackKey ? `Cadangan Aktif (${aiQuota.maskedFallbackKey})` : "Belum Diatur (Opsional)"}
-              </span>
-            </div>
-
-            {aiQuota && (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className={`rounded-xl border p-3 text-xs ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50"}`}>
-                  <p className="font-bold">Kuota Generator Soal CBT AI Bulan Ini</p>
-                  <p className="mt-1 text-sm font-black tabular-nums">
-                    {aiQuota.isPro ? `Sisa ${aiQuota.cbtGenerate.remaining} / ${aiQuota.cbtGenerate.limit}x` : "Khusus Paket Pro (0/0)"}
-                  </p>
-                  <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                    Reset otomatis: {aiQuota.resetDateLabel}
-                  </p>
-                </div>
-                <div className={`rounded-xl border p-3 text-xs ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50"}`}>
-                  <p className="font-bold">Kuota Asisten Belajar AI Bulan Ini</p>
-                  <p className="mt-1 text-sm font-black tabular-nums">
-                    {aiQuota.isPro ? `Sisa ${aiQuota.assistant.remaining} / ${aiQuota.assistant.limit} pesan` : "Khusus Paket Pro (0/0)"}
-                  </p>
-                  <p className={`mt-0.5 text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-                    Reset otomatis: {aiQuota.resetDateLabel}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-              <label className={`block flex-1 text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                Google AI Studio / Gemini API Key (Opsional)
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={fallbackKeyInput}
-                  onChange={(e) => setFallbackKeyInput(e.target.value)}
-                  placeholder={
-                    aiQuota?.hasFallbackKey
-                      ? `Tersimpan (${aiQuota.maskedFallbackKey}) — masukkan kunci baru untuk mengganti`
-                      : "AIzaSy... (kosongkan jika hanya memakai kuota bawaan Paket Pro)"
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={fallbackBusy || !fallbackKeyInput.trim()}
-                  onClick={() => void saveFallbackApiKey(false)}
-                  className="master-primary px-4 py-2.5 text-xs disabled:opacity-50"
-                >
-                  {fallbackBusy ? "Menyimpan..." : "Simpan API Cadangan"}
-                </button>
-                {aiQuota?.hasFallbackKey && (
-                  <button
-                    type="button"
-                    disabled={fallbackBusy}
-                    onClick={() => void saveFallbackApiKey(true)}
-                    className="rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                  >
-                    Hapus Kunci
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </section>

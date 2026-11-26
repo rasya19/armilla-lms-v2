@@ -6,6 +6,7 @@ import {
   Building2,
   Calendar,
   CheckCircle2,
+  CheckSquare,
   Database,
   ExternalLink,
   Eye,
@@ -26,6 +27,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  Upload,
   Users,
   X,
 } from "lucide-react";
@@ -150,8 +152,20 @@ type DinasSummaryResponse = {
   pkbm: PkbmSummary[];
 };
 
+type VervalSource = "LMS" | "MANUAL_DINAS";
+
+type ManualVervalChecklist = {
+  kk: boolean;
+  aktaKtp: boolean;
+  ijazah: boolean;
+  suratPindah: boolean;
+};
+
 type DinasStudentRow = {
   id: string;
+  sumberVerval?: VervalSource;
+  pkbmNama?: string | null;
+  pkbmNpsn?: string | null;
   nisn: string;
   nama: string;
   nik: string | null;
@@ -181,8 +195,76 @@ type DinasStudentRow = {
   statusVervalDinas: VervalDinasStatus;
   catatanDinas: string | null;
   kelengkapanPersen: number;
+  manualChecklist?: ManualVervalChecklist;
   isDemoSimulation?: boolean;
 };
+
+type ManualDinasStudentApiRow = {
+  id: string;
+  sumberVerval: "MANUAL_DINAS";
+  wilayah: string;
+  pkbmNama: string;
+  pkbmNpsn: string | null;
+  nisn: string;
+  nama: string;
+  nik: string | null;
+  noKk: string | null;
+  namaIbuKandung: string | null;
+  paketKategori: string;
+  kelasNama: string;
+  tanggalMasuk: string | null;
+  statusVervalDinas: VervalDinasStatus;
+  catatanDinas: string | null;
+  manualChecklist: ManualVervalChecklist;
+};
+
+const EMPTY_MANUAL_CHECKLIST: ManualVervalChecklist = {
+  kk: false,
+  aktaKtp: false,
+  ijazah: false,
+  suratPindah: false,
+};
+
+function mapManualRowToStudentRow(item: ManualDinasStudentApiRow): DinasStudentRow {
+  const checklist = item.manualChecklist ?? EMPTY_MANUAL_CHECKLIST;
+  const checkedCount = [checklist.kk, checklist.aktaKtp, checklist.ijazah, checklist.suratPindah].filter(Boolean).length;
+  return {
+    id: item.id,
+    sumberVerval: "MANUAL_DINAS",
+    pkbmNama: item.pkbmNama,
+    pkbmNpsn: item.pkbmNpsn,
+    nisn: item.nisn,
+    nama: item.nama,
+    nik: item.nik,
+    noKk: item.noKk,
+    tempatLahir: null,
+    tanggalLahir: null,
+    jenisKelamin: null,
+    jenjang: item.paketKategori,
+    paketKategori: item.paketKategori,
+    kelasNama: item.kelasNama || item.paketKategori,
+    tanggalMasuk: item.tanggalMasuk,
+    memenuhiCutoff: Boolean(item.tanggalMasuk),
+    namaIbuKandung: item.namaIbuKandung,
+    alamatLengkap: null,
+    desaKelurahan: null,
+    kecamatan: null,
+    sekolahAsal: null,
+    npsnAsal: null,
+    nomorIjazahTerakhir: null,
+    sumberDapodik: false,
+    urlKk: null,
+    urlAktaKtp: null,
+    urlIjazah: null,
+    urlSuratPindah: null,
+    statusVerval: "SIAP_VERVAL",
+    catatanVerval: "Upload Manual Non-LMS (berkas diperiksa secara fisik/manual).",
+    statusVervalDinas: item.statusVervalDinas,
+    catatanDinas: item.catatanDinas,
+    kelengkapanPersen: Math.round((checkedCount / 4) * 100),
+    manualChecklist: checklist,
+  };
+}
 
 function makeDemoDocPreviewUrl(title: string, holder: string, docNumber: string): string {
   const safe = (v: string) => v.replace(/[<>&"']/g, "");
@@ -203,6 +285,7 @@ function makeDemoDocPreviewUrl(title: string, holder: string, docNumber: string)
 function buildDemoSimulationDataset(wilayah: string, cutoffDate: string): {
   pkbm: PkbmSummary[];
   studentsByPkbmId: Record<string, DinasStudentRow[]>;
+  manualStudents: DinasStudentRow[];
 } {
   const regionLabel = wilayah && wilayah !== "Semua Wilayah" ? wilayah : "Kabupaten Kuningan";
   const pkbmList: PkbmSummary[] = [
@@ -407,17 +490,94 @@ function buildDemoSimulationDataset(wilayah: string, cutoffDate: string): {
     ],
   };
 
-  return { pkbm: pkbmList, studentsByPkbmId };
+  const manualStudents: DinasStudentRow[] = [
+    {
+      id: "demo-manual-1",
+      sumberVerval: "MANUAL_DINAS",
+      pkbmNama: "PKBM Maju Mandiri (Non-LMS)",
+      pkbmNpsn: "P2029988",
+      nisn: "0054412091",
+      nama: "Yudi Hermawan",
+      nik: "3208110504040003",
+      noKk: "3208111902110012",
+      tempatLahir: null,
+      tanggalLahir: null,
+      jenisKelamin: "L",
+      jenjang: "Paket C",
+      paketKategori: "Paket C",
+      kelasNama: "Paket C XII",
+      tanggalMasuk: `${cutoffDate.slice(0, 4)}-07-20`,
+      memenuhiCutoff: true,
+      namaIbuKandung: "Tati Suryati",
+      alamatLengkap: null,
+      desaKelurahan: null,
+      kecamatan: null,
+      sekolahAsal: null,
+      npsnAsal: null,
+      nomorIjazahTerakhir: null,
+      sumberDapodik: false,
+      urlKk: null,
+      urlAktaKtp: null,
+      urlIjazah: null,
+      urlSuratPindah: null,
+      statusVerval: "SIAP_VERVAL",
+      catatanVerval: "Upload Manual Non-LMS (berkas fisik diverifikasi langsung oleh Dinas).",
+      statusVervalDinas: "MENUNGGU_DINAS",
+      catatanDinas: null,
+      kelengkapanPersen: 50,
+      manualChecklist: { kk: true, aktaKtp: true, ijazah: false, suratPindah: false },
+      isDemoSimulation: true,
+    },
+    {
+      id: "demo-manual-2",
+      sumberVerval: "MANUAL_DINAS",
+      pkbmNama: "PKBM Maju Mandiri (Non-LMS)",
+      pkbmNpsn: "P2029988",
+      nisn: "0061189320",
+      nama: "Neng Susi Susanti",
+      nik: "3208114809050007",
+      noKk: "3208110403120045",
+      tempatLahir: null,
+      tanggalLahir: null,
+      jenisKelamin: "P",
+      jenjang: "Paket B",
+      paketKategori: "Paket B",
+      kelasNama: "Paket B IX",
+      tanggalMasuk: `${cutoffDate.slice(0, 4)}-07-12`,
+      memenuhiCutoff: true,
+      namaIbuKandung: "Imas Masitoh",
+      alamatLengkap: null,
+      desaKelurahan: null,
+      kecamatan: null,
+      sekolahAsal: null,
+      npsnAsal: null,
+      nomorIjazahTerakhir: null,
+      sumberDapodik: false,
+      urlKk: null,
+      urlAktaKtp: null,
+      urlIjazah: null,
+      urlSuratPindah: null,
+      statusVerval: "SIAP_VERVAL",
+      catatanVerval: "Berkas fisik lengkap & telah diperiksa petugas Dinas.",
+      statusVervalDinas: "LOLOS_VERVAL",
+      catatanDinas: "Berkas fisik KK, Akta, dan Ijazah SD telah diperiksa langsung dan sesuai.",
+      kelengkapanPersen: 75,
+      manualChecklist: { kk: true, aktaKtp: true, ijazah: true, suratPindah: false },
+      isDemoSimulation: true,
+    },
+  ];
+
+  return { pkbm: pkbmList, studentsByPkbmId, manualStudents };
 }
 
 function statusDinasBadge(status: VervalDinasStatus): { label: string; cls: string } {
   switch (status) {
     case "LOLOS_VERVAL":
-      return { label: "Lolos Verval", cls: "border-emerald-300 bg-emerald-50 text-emerald-800" };
+      return { label: "Terverifikasi", cls: "border-emerald-300 bg-emerald-50 text-emerald-800" };
     case "PERLU_PERBAIKAN":
       return { label: "Perlu Perbaikan", cls: "border-rose-300 bg-rose-50 text-rose-800" };
     default:
-      return { label: "Menunggu Dinas", cls: "border-amber-300 bg-amber-50 text-amber-900" };
+      return { label: "Menunggu Verifikasi", cls: "border-amber-300 bg-amber-50 text-amber-900" };
   }
 }
 
@@ -783,16 +943,38 @@ export function DinasHome() {
 
   const [selectedPkbm, setSelectedPkbm] = useState<PkbmSummary | null>(null);
   const [pkbmStudents, setPkbmStudents] = useState<DinasStudentRow[]>([]);
+  const [manualStudents, setManualStudents] = useState<DinasStudentRow[]>([]);
+  const [manualLoading, setManualLoading] = useState(false);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"ALL" | VervalSource>("ALL");
   const [studentStatusFilter, setStudentStatusFilter] = useState("");
 
   const [inspectStudent, setInspectStudent] = useState<DinasStudentRow | null>(null);
   const [catatanInput, setCatatanInput] = useState("");
+  const [manualChecklistInput, setManualChecklistInput] = useState<ManualVervalChecklist>(EMPTY_MANUAL_CHECKLIST);
+  const [quickVerifyBusyId, setQuickVerifyBusyId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [docTab, setDocTab] = useState<"kk" | "akta" | "ijazah" | "pindah">("kk");
   const [reloadTick, setReloadTick] = useState(0);
+
+  // Modal Upload Manual Non-LMS (Data Siswa Saja, Berkas Fisik Manual)
+  const [manualUploadOpen, setManualUploadOpen] = useState(false);
+  const [manualUploadBusy, setManualUploadBusy] = useState(false);
+  const [manualUploadError, setManualUploadError] = useState("");
+  const [manualForm, setManualForm] = useState({
+    pkbmNama: "",
+    pkbmNpsn: "",
+    nama: "",
+    nisn: "",
+    nik: "",
+    noKk: "",
+    namaIbuKandung: "",
+    paketKategori: "Paket C" as "Paket A" | "Paket B" | "Paket C",
+    kelasNama: "",
+    tanggalMasuk: "",
+  });
 
   // State Penerbitan & Arsip Berita Acara Verval
   const initialSignerPrefs = useMemo(() => loadBaSignerPrefs(), []);
@@ -928,34 +1110,59 @@ export function DinasHome() {
     };
   }, [summary, showDemoSimulation, demoDataset]);
 
+  // Otomatis pilih PKBM pertama agar panel Verval Peserta Didik langsung siap dipakai
   useEffect(() => {
-    if (!selectedPkbm) return;
-    if (selectedPkbm.isDemoSimulation) {
-      const baseRows = demoDataset.studentsByPkbmId[selectedPkbm.id] ?? [];
-      const term = studentSearch.trim().toLowerCase();
-      const filtered = baseRows.filter((row) => {
-        if (studentStatusFilter && row.statusVervalDinas !== studentStatusFilter) return false;
-        if (term) {
-          const matches =
-            row.nama.toLowerCase().includes(term) ||
-            row.nisn.toLowerCase().includes(term) ||
-            (row.nik ?? "").toLowerCase().includes(term);
-          if (!matches) return false;
+    const list = displayedView?.pkbm ?? [];
+    if (list.length === 0) return;
+    if (!selectedPkbm || !list.some((item) => item.id === selectedPkbm.id)) {
+      setSelectedPkbm(list[0]);
+    }
+  }, [displayedView, selectedPkbm]);
+
+  // Muat daftar peserta didik Jalur Upload Manual Non-LMS
+  useEffect(() => {
+    if (status !== "ready") return;
+    const controller = new AbortController();
+    setManualLoading(true);
+    const qs = wilayahFilter ? `?kabupaten=${encodeURIComponent(wilayahFilter)}` : "";
+    fetchWithTimeout(`/api/dinas/manual-siswa${qs}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as { siswa?: ManualDinasStudentApiRow[] } | null;
+        if (Array.isArray(body?.siswa)) {
+          setManualStudents(body.siswa.map(mapManualRowToStudentRow));
         }
-        return true;
+      })
+      .catch(() => {
+        // Non-blocking
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setManualLoading(false);
       });
+    return () => controller.abort();
+  }, [status, wilayahFilter, reloadTick]);
+
+  useEffect(() => {
+    if (!selectedPkbm) {
+      setPkbmStudents([]);
       setStudentsLoading(false);
-      setPkbmStudents(filtered);
+      return;
+    }
+    if (selectedPkbm.isDemoSimulation) {
+      const baseRows = (demoDataset.studentsByPkbmId[selectedPkbm.id] ?? []).map((row) => ({
+        ...row,
+        sumberVerval: "LMS" as const,
+        pkbmNama: selectedPkbm.nama,
+        pkbmNpsn: selectedPkbm.npsn,
+      }));
+      setStudentsLoading(false);
+      setPkbmStudents(baseRows);
       return;
     }
 
     const controller = new AbortController();
     setStudentsLoading(true);
-    const params = new URLSearchParams({
-      ...(studentStatusFilter ? { statusVervalDinas: studentStatusFilter } : {}),
-      ...(studentSearch.trim() ? { q: studentSearch.trim() } : {}),
-    });
-    fetchWithTimeout(`/api/dinas/pkbm/${encodeURIComponent(selectedPkbm.id)}/siswa?${params.toString()}`, {
+    fetchWithTimeout(`/api/dinas/pkbm/${encodeURIComponent(selectedPkbm.id)}/siswa`, {
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -963,7 +1170,14 @@ export function DinasHome() {
         if (!res.ok || !body?.siswa) {
           throw new Error(body?.error || "Daftar siswa PKBM belum dapat dimuat.");
         }
-        setPkbmStudents(body.siswa);
+        setPkbmStudents(
+          body.siswa.map((row) => ({
+            ...row,
+            sumberVerval: "LMS",
+            pkbmNama: row.pkbmNama ?? selectedPkbm.nama,
+            pkbmNpsn: row.pkbmNpsn ?? selectedPkbm.npsn,
+          })),
+        );
       })
       .catch((failure: unknown) => {
         if (!isCallerAborted(failure, controller.signal)) {
@@ -974,7 +1188,51 @@ export function DinasHome() {
         if (!controller.signal.aborted) setStudentsLoading(false);
       });
     return () => controller.abort();
-  }, [selectedPkbm, studentStatusFilter, studentSearch, reloadTick, demoDataset]);
+  }, [selectedPkbm, reloadTick, demoDataset]);
+
+  const allVervalStudents = useMemo(() => {
+    const manualCombined = showDemoSimulation
+      ? [...manualStudents, ...demoDataset.manualStudents]
+      : manualStudents;
+    return [...pkbmStudents, ...manualCombined];
+  }, [pkbmStudents, manualStudents, showDemoSimulation, demoDataset.manualStudents]);
+
+  const vervalStats = useMemo(() => {
+    let viaLms = 0;
+    let manualDinas = 0;
+    let menunggu = 0;
+    let terverifikasi = 0;
+    let perluPerbaikan = 0;
+    for (const row of allVervalStudents) {
+      if (row.sumberVerval === "MANUAL_DINAS") manualDinas += 1;
+      else viaLms += 1;
+      if (row.statusVervalDinas === "LOLOS_VERVAL") terverifikasi += 1;
+      else if (row.statusVervalDinas === "PERLU_PERBAIKAN") perluPerbaikan += 1;
+      else menunggu += 1;
+    }
+    return {
+      total: allVervalStudents.length,
+      viaLms,
+      manualDinas,
+      menunggu,
+      terverifikasi,
+      perluPerbaikan,
+    };
+  }, [allVervalStudents]);
+
+  const filteredVervalStudents = useMemo(() => {
+    const term = studentSearch.trim().toLowerCase();
+    return allVervalStudents.filter((row) => {
+      const rowSource: VervalSource = row.sumberVerval === "MANUAL_DINAS" ? "MANUAL_DINAS" : "LMS";
+      if (sourceFilter !== "ALL" && rowSource !== sourceFilter) return false;
+      if (studentStatusFilter && row.statusVervalDinas !== studentStatusFilter) return false;
+      if (term) {
+        const hay = `${row.nama} ${row.nisn} ${row.nik ?? ""} ${row.pkbmNama ?? ""}`.toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [allVervalStudents, sourceFilter, studentStatusFilter, studentSearch]);
 
   useEffect(() => {
     if (!toast) return;
@@ -1227,16 +1485,28 @@ export function DinasHome() {
       setInspectStudent(null);
       return;
     }
+    const isManual = inspectStudent.sumberVerval === "MANUAL_DINAS";
     setActionBusy(true);
     setActionError("");
     try {
-      const res = await fetchWithTimeout(`/api/dinas/siswa/${encodeURIComponent(inspectStudent.id)}/verval`, {
+      const endpoint = isManual
+        ? `/api/dinas/manual-siswa/${encodeURIComponent(inspectStudent.id)}/verval`
+        : `/api/dinas/siswa/${encodeURIComponent(inspectStudent.id)}/verval`;
+      const payload = isManual
+        ? {
+            wilayah: wilayahFilter || summary?.wilayah || "",
+            statusVervalDinas,
+            catatanDinas: catatanInput.trim() || null,
+            manualChecklist: manualChecklistInput,
+          }
+        : {
+            statusVervalDinas,
+            catatanDinas: catatanInput.trim() || null,
+          };
+      const res = await fetchWithTimeout(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          statusVervalDinas,
-          catatanDinas: catatanInput.trim() || null,
-        }),
+        body: JSON.stringify(payload),
       });
       const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
       if (!res.ok) {
@@ -1250,6 +1520,163 @@ export function DinasHome() {
       setActionError(describeFetchError(failure, "Gagal memperbarui verifikasi Dinas."));
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function quickVerifyManualStudent(st: DinasStudentRow) {
+    if (st.isDemoSimulation) {
+      setToast("Mode Simulasi Demo bersifat pratinjau paparan — unggah data riil via Upload Manual Non-LMS untuk menyimpan verifikasi.");
+      return;
+    }
+    setQuickVerifyBusyId(st.id);
+    setError("");
+    try {
+      const nextChecklist: ManualVervalChecklist = {
+        kk: true,
+        aktaKtp: true,
+        ijazah: true,
+        suratPindah: st.manualChecklist?.suratPindah ?? false,
+      };
+      const res = await fetchWithTimeout(`/api/dinas/manual-siswa/${encodeURIComponent(st.id)}/verval`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wilayah: wilayahFilter || summary?.wilayah || "",
+          statusVervalDinas: "LOLOS_VERVAL",
+          catatanDinas: st.catatanDinas ?? "Berkas fisik manual telah diperiksa dan dinyatakan sesuai.",
+          manualChecklist: nextChecklist,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal memverifikasi siswa berkas manual.");
+      setToast(body?.message || `${st.nama} (Berkas Manual) berhasil diverifikasi.`);
+      setReloadTick((v) => v + 1);
+    } catch (failure: unknown) {
+      setError(describeFetchError(failure, "Verifikasi cepat berkas manual gagal."));
+    } finally {
+      setQuickVerifyBusyId(null);
+    }
+  }
+
+  async function handleManualQuickAdd(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManualUploadError("");
+    if (!manualForm.pkbmNama.trim() || !manualForm.nama.trim()) {
+      setManualUploadError("Nama PKBM dan Nama Siswa wajib diisi.");
+      return;
+    }
+    setManualUploadBusy(true);
+    try {
+      const res = await fetchWithTimeout("/api/dinas/manual-siswa/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wilayah: wilayahFilter || summary?.wilayah || "",
+          pkbmNama: manualForm.pkbmNama.trim(),
+          pkbmNpsn: manualForm.pkbmNpsn.trim() || null,
+          rows: [manualForm],
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menambahkan siswa jalur Upload Manual.");
+      setToast(body?.message || "Peserta didik jalur Upload Manual Non-LMS berhasil ditambahkan.");
+      setManualForm((prev) => ({
+        ...prev,
+        nama: "",
+        nisn: "",
+        nik: "",
+        noKk: "",
+        namaIbuKandung: "",
+        kelasNama: "",
+      }));
+      setManualUploadOpen(false);
+      setSourceFilter("MANUAL_DINAS");
+      setReloadTick((v) => v + 1);
+    } catch (failure: unknown) {
+      setManualUploadError(describeFetchError(failure, "Gagal menambahkan data siswa manual."));
+    } finally {
+      setManualUploadBusy(false);
+    }
+  }
+
+  async function handleManualExcelUpload(file: File | undefined) {
+    if (!file) return;
+    setManualUploadError("");
+    setManualUploadBusy(true);
+    try {
+      const XLSX = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: "" });
+      const pick = (obj: Record<string, unknown>, keys: string[]) => {
+        for (const k of Object.keys(obj)) {
+          const norm = k.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+          if (keys.includes(norm)) {
+            const val = obj[k];
+            if (val !== undefined && val !== null && String(val).trim() !== "") return String(val).trim();
+          }
+        }
+        return "";
+      };
+      const parsedRows = rawRows
+        .map((r) => ({
+          pkbmNama: pick(r, ["namapkbm", "pkbm", "lembaga", "namalembaga", "sekolah"]) || manualForm.pkbmNama.trim(),
+          pkbmNpsn: pick(r, ["npsn", "npsnpkbm"]) || manualForm.pkbmNpsn.trim(),
+          nama: pick(r, ["nama", "namasiswa", "namawargabelajar", "pesertadidik"]),
+          nisn: pick(r, ["nisn"]),
+          nik: pick(r, ["nik"]),
+          noKk: pick(r, ["nokk", "kk", "nomorkk"]),
+          namaIbuKandung: pick(r, ["namaibu", "namaibukandung", "ibukandung", "ibu"]),
+          paketKategori: pick(r, ["paket", "jenjang", "program"]) || manualForm.paketKategori,
+          kelasNama: pick(r, ["kelas", "rombel", "tingkat"]),
+          tanggalMasuk: pick(r, ["tanggalmasuk", "tglmasuk"]),
+        }))
+        .filter((item) => item.nama && item.pkbmNama);
+
+      if (parsedRows.length === 0) {
+        throw new Error(
+          "Tidak ada baris valid pada file Excel. Pastikan ada kolom 'Nama' dan 'Nama PKBM' (atau isi Nama PKBM di formulir).",
+        );
+      }
+
+      const res = await fetchWithTimeout("/api/dinas/manual-siswa/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wilayah: wilayahFilter || summary?.wilayah || "",
+          pkbmNama: manualForm.pkbmNama.trim(),
+          pkbmNpsn: manualForm.pkbmNpsn.trim() || null,
+          rows: parsedRows,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Impor Excel siswa manual gagal.");
+      setToast(body?.message || `${parsedRows.length} siswa manual Non-LMS berhasil diunggah.`);
+      setManualUploadOpen(false);
+      setSourceFilter("MANUAL_DINAS");
+      setReloadTick((v) => v + 1);
+    } catch (failure: unknown) {
+      setManualUploadError(describeFetchError(failure, "Gagal membaca atau mengunggah file Excel."));
+    } finally {
+      setManualUploadBusy(false);
+    }
+  }
+
+  async function handleDeleteManualStudent(st: DinasStudentRow) {
+    if (st.isDemoSimulation) return;
+    setError("");
+    try {
+      const qs = wilayahFilter ? `?kabupaten=${encodeURIComponent(wilayahFilter)}` : "";
+      const res = await fetchWithTimeout(`/api/dinas/manual-siswa/${encodeURIComponent(st.id)}${qs}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menghapus data siswa manual.");
+      setToast(body?.message || "Data siswa manual dihapus.");
+      setReloadTick((v) => v + 1);
+    } catch (failure: unknown) {
+      setError(describeFetchError(failure, "Gagal menghapus data siswa manual."));
     }
   }
 
@@ -2089,102 +2516,211 @@ export function DinasHome() {
           )}
         </section>
 
-        {/* Baris 4: Panel Pemeriksaan Nominatif PKBM Terpilih */}
-        {selectedPkbm && (
-          <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-blue-500/45 bg-white/95 p-5 text-slate-900 shadow-[0_14px_36px_rgba(37,99,235,0.12)] backdrop-blur-xl sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
-                    PEMERIKSAAN NOMINATIF LEMBAGA (ADMINISTRATIF NON-KBM)
-                  </p>
-                  {selectedPkbm.isDemoSimulation && (
-                    <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold text-amber-800">
-                      CONTOH SIMULASI PAPARAN
-                    </span>
-                  )}
-                </div>
-                <h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-950">
-                  {selectedPkbm.nama} (NPSN: {selectedPkbm.npsn ?? "—"})
-                </h2>
-              </div>
+        {/* Baris 4: Panel Verval Peserta Didik PKBM (Dua Jalur: Via LMS & Upload Manual Non-LMS) */}
+        <section id="panel-nominatif-dinas" className="scroll-mt-6 space-y-4 rounded-2xl border-2 border-blue-500/45 bg-white/95 p-5 text-slate-900 shadow-[0_14px_36px_rgba(37,99,235,0.12)] backdrop-blur-xl sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
+            <div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="search"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    placeholder="Cari nama/NISN/NIK..."
-                    className="rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
-                  />
-                </div>
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                  VERVAL PESERTA DIDIK PKBM · DUA JALUR (LMS &amp; UPLOAD MANUAL NON-LMS)
+                </p>
+                {selectedPkbm?.isDemoSimulation && (
+                  <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-extrabold text-amber-800">
+                    SIMULASI PAPARAN
+                  </span>
+                )}
+              </div>
+              <h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-950">
+                {sourceFilter === "MANUAL_DINAS"
+                  ? "Daftar Peserta Didik — Upload Manual Dinas (Berkas Manual)"
+                  : selectedPkbm
+                    ? `${selectedPkbm.nama} (NPSN: ${selectedPkbm.npsn ?? "—"})`
+                    : "Daftar Verval Peserta Didik"}
+              </h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-600">
+                Jalur <strong>Via LMS</strong> menampilkan berkas digital terlampir untuk diperiksa langsung; Jalur <strong>Upload Manual Dinas</strong> menggunakan checklist pemeriksaan berkas fisik dengan aksi verifikasi cepat.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {displayedView && displayedView.pkbm.length > 0 && (
                 <select
-                  aria-label="Filter Status Verval Dinas"
-                  value={studentStatusFilter}
-                  onChange={(e) => setStudentStatusFilter(e.target.value)}
+                  aria-label="Pilih PKBM LMS"
+                  value={selectedPkbm?.id ?? ""}
+                  onChange={(e) => {
+                    const next = displayedView.pkbm.find((p) => p.id === e.target.value) ?? null;
+                    setSelectedPkbm(next);
+                  }}
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
                 >
-                  <option value="">Semua Status Dinas</option>
-                  <option value="MENUNGGU_DINAS">Menunggu Dinas</option>
-                  <option value="LOLOS_VERVAL">Lolos Verval</option>
-                  <option value="PERLU_PERBAIKAN">Perlu Perbaikan</option>
+                  {displayedView.pkbm.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      PKBM LMS: {p.nama}
+                    </option>
+                  ))}
                 </select>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setManualUploadError("");
+                  setManualUploadOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-3.5 py-2 text-xs font-extrabold text-white shadow-sm shadow-indigo-600/25 transition hover:from-indigo-700 hover:to-blue-700"
+              >
+                <Upload size={14} /> Upload Manual Non-LMS
+              </button>
+            </div>
+          </div>
+
+          {/* Ringkasan Jumlah Sumber & Status Verval */}
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Total Siswa</p>
+              <p className="mt-0.5 text-xl font-black tabular-nums text-slate-950">{vervalStats.total}</p>
+            </div>
+            <div className="rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-sky-700">Via LMS</p>
+              <p className="mt-0.5 text-xl font-black tabular-nums text-sky-900">{vervalStats.viaLms}</p>
+            </div>
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-3 py-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">Upload Manual</p>
+              <p className="mt-0.5 text-xl font-black tabular-nums text-indigo-900">{vervalStats.manualDinas}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800">Menunggu Verifikasi</p>
+              <p className="mt-0.5 text-xl font-black tabular-nums text-amber-900">{vervalStats.menunggu}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Terverifikasi</p>
+              <p className="mt-0.5 text-xl font-black tabular-nums text-emerald-900">{vervalStats.terverifikasi}</p>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700">Perlu Perbaikan</p>
+              <p className="mt-0.5 text-xl font-black tabular-nums text-rose-900">{vervalStats.perluPerbaikan}</p>
+            </div>
+          </div>
+
+          {/* Bar Filter Sumber, Status Verval & Pencarian */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter Sumber Data Verval">
+              {(
+                [
+                  { id: "ALL", label: `Semua (${vervalStats.total})` },
+                  { id: "LMS", label: `Via LMS (${vervalStats.viaLms})` },
+                  { id: "MANUAL_DINAS", label: `Upload Manual Dinas (${vervalStats.manualDinas})` },
+                ] as const
+              ).map((tab) => (
                 <button
+                  key={tab.id}
                   type="button"
-                  onClick={() => setSelectedPkbm(null)}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-100"
+                  onClick={() => setSourceFilter(tab.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+                    sourceFilter === tab.id
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "border border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                  }`}
                 >
-                  Tutup Panel
+                  {tab.label}
                 </button>
-              </div>
+              ))}
             </div>
 
-            {studentsLoading ? (
-              <DinasTableSkeleton rows={4} columns={5} />
-            ) : pkbmStudents.length === 0 ? (
-              <DinasEmptyState
-                title="Belum ada data warga belajar yang disinkronkan"
-                description="Belum ada siswa aktif di PKBM ini atau tidak ada yang cocok dengan filter status/pencarian."
-              />
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 bg-sky-50/90 text-xs font-extrabold uppercase tracking-wider text-slate-800">
-                    <tr>
-                      <th className="px-4 py-3">Warga Belajar</th>
-                      <th className="px-4 py-3">NIK / KK / Ibu</th>
-                      <th className="px-4 py-3">Paket &amp; Cut-Off</th>
-                      <th className="px-4 py-3">Berkas</th>
-                      <th className="px-4 py-3">Status Dinas</th>
-                      <th className="px-4 py-3 text-right">Verifikasi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200/80">
-                    {pkbmStudents.map((st) => {
-                      const badge = statusDinasBadge(st.statusVervalDinas);
-                      return (
-                        <tr key={st.id} className="transition hover:bg-sky-50/60">
-                          <td className="px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label="Filter Status Verval Dinas"
+                value={studentStatusFilter}
+                onChange={(e) => setStudentStatusFilter(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
+              >
+                <option value="">Semua Status ({vervalStats.total})</option>
+                <option value="MENUNGGU_DINAS">Menunggu Verifikasi ({vervalStats.menunggu})</option>
+                <option value="LOLOS_VERVAL">Terverifikasi ({vervalStats.terverifikasi})</option>
+                <option value="PERLU_PERBAIKAN">Perlu Perbaikan ({vervalStats.perluPerbaikan})</option>
+              </select>
+
+              <div className="relative">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  placeholder="Cari nama/NISN/NIK/PKBM..."
+                  className="rounded-xl border border-slate-300 bg-white py-2 pl-8 pr-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {studentsLoading || manualLoading ? (
+            <DinasTableSkeleton rows={4} columns={6} />
+          ) : filteredVervalStudents.length === 0 ? (
+            <DinasEmptyState
+              title="Belum ada peserta didik yang sesuai dengan filter ini"
+              description="Ubah filter sumber/status verval, pilih PKBM LMS lain, atau klik 'Upload Manual Non-LMS' untuk menambahkan peserta didik berkas manual."
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-200 bg-sky-50/90 text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                  <tr>
+                    <th className="px-4 py-3">Warga Belajar &amp; Sumber</th>
+                    <th className="px-4 py-3">NIK / KK / Ibu</th>
+                    <th className="px-4 py-3">Paket &amp; Cut-Off</th>
+                    <th className="px-4 py-3">Berkas</th>
+                    <th className="px-4 py-3">Status Verval</th>
+                    <th className="px-4 py-3 text-right">Aksi Verifikasi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/80">
+                  {filteredVervalStudents.map((st) => {
+                    const badge = statusDinasBadge(st.statusVervalDinas);
+                    const isManual = st.sumberVerval === "MANUAL_DINAS";
+                    const checklist = st.manualChecklist ?? EMPTY_MANUAL_CHECKLIST;
+                    const checkedCount = [checklist.kk, checklist.aktaKtp, checklist.ijazah, checklist.suratPindah].filter(Boolean).length;
+                    return (
+                      <tr key={st.id} className="transition hover:bg-sky-50/60">
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <p className="font-extrabold text-slate-950">{st.nama}</p>
-                            <p className="text-xs font-medium text-slate-600">
-                              NISN <span className="font-mono text-slate-800">{st.nisn}</span> · {st.kelengkapanPersen}% lengkap
-                            </p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-700">
-                            <p className="font-mono font-semibold text-slate-900">NIK: {st.nik ?? "—"}</p>
-                            <p className="font-mono font-semibold text-slate-900">KK: {st.noKk ?? "—"}</p>
-                            <p className="font-medium text-slate-600">Ibu: {st.namaIbuKandung ?? "—"}</p>
-                          </td>
-                          <td className="px-4 py-3 text-xs">
-                            <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
-                              {st.paketKategori} · {st.kelasNama}
-                            </span>
-                            <p className={`mt-1 ${st.memenuhiCutoff ? "font-bold text-emerald-700" : "font-medium text-slate-500"}`}>
-                              {st.memenuhiCutoff ? "Memenuhi Cut-Off" : "Di luar Cut-Off / Kosong"}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3">
+                            {isManual ? (
+                              <span className="rounded-md border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-extrabold text-indigo-800">
+                                Upload Manual Dinas
+                              </span>
+                            ) : (
+                              <span className="rounded-md border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-extrabold text-sky-800">
+                                Via LMS
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-xs font-medium text-slate-600">
+                            NISN <span className="font-mono text-slate-800">{st.nisn}</span>
+                            {st.pkbmNama ? ` · ${st.pkbmNama}` : ""}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-700">
+                          <p className="font-mono font-semibold text-slate-900">NIK: {st.nik ?? "—"}</p>
+                          <p className="font-mono font-semibold text-slate-900">KK: {st.noKk ?? "—"}</p>
+                          <p className="font-medium text-slate-600">Ibu: {st.namaIbuKandung ?? "—"}</p>
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
+                            {st.paketKategori} · {st.kelasNama}
+                          </span>
+                          <p className={`mt-1 ${st.memenuhiCutoff ? "font-bold text-emerald-700" : "font-medium text-slate-500"}`}>
+                            {st.memenuhiCutoff ? "Memenuhi Cut-Off" : isManual ? "Verifikasi Fisik Manual" : "Di luar Cut-Off / Kosong"}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          {isManual ? (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-900">
+                                <CheckSquare size={11} /> Berkas Manual
+                              </span>
+                              <p className="text-[11px] font-semibold text-slate-600">
+                                Checklist fisik: <span className="font-extrabold text-indigo-700">{checkedCount}/4 dicek</span>
+                              </p>
+                            </div>
+                          ) : (
                             <div className="flex flex-wrap gap-1 text-[10px] font-bold">
                               <span className={`rounded border px-1.5 py-0.5 ${st.urlKk ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-100 text-slate-400"}`}>
                                 KK
@@ -2199,23 +2735,37 @@ export function DinasHome() {
                                 Surat Pindah
                               </span>
                             </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${badge.cls}`}>
-                              {badge.label}
-                            </span>
-                            {st.catatanDinas && (
-                              <p className="mt-1 max-w-[180px] truncate text-[11px] font-semibold text-rose-700" title={st.catatanDinas}>
-                                {st.catatanDinas}
-                              </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                          {st.catatanDinas && (
+                            <p className="mt-1 max-w-[180px] truncate text-[11px] font-semibold text-rose-700" title={st.catatanDinas}>
+                              {st.catatanDinas}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                            {isManual && st.statusVervalDinas !== "LOLOS_VERVAL" && (
+                              <button
+                                type="button"
+                                disabled={quickVerifyBusyId === st.id}
+                                onClick={() => void quickVerifyManualStudent(st)}
+                                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-extrabold text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                <CheckCircle2 size={13} />
+                                {quickVerifyBusyId === st.id ? "Memproses..." : "Verifikasi"}
+                              </button>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-right">
                             <button
                               type="button"
                               onClick={() => {
                                 setInspectStudent(st);
                                 setCatatanInput(st.catatanDinas ?? "");
+                                setManualChecklistInput(st.manualChecklist ?? EMPTY_MANUAL_CHECKLIST);
                                 setActionError("");
                                 setDocTab(
                                   st.urlKk
@@ -2231,18 +2781,36 @@ export function DinasHome() {
                               }}
                               className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
                             >
-                              <FileText size={13} /> Cek &amp; Putuskan
+                              {isManual ? (
+                                <>
+                                  <CheckSquare size={13} /> Checklist
+                                </>
+                              ) : (
+                                <>
+                                  <FileText size={13} /> Lihat Berkas &amp; Verifikasi
+                                </>
+                              )}
                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
+                            {isManual && !st.isDemoSimulation && (
+                              <button
+                                type="button"
+                                title="Hapus data manual"
+                                onClick={() => void handleDeleteManualStudent(st)}
+                                className="rounded-xl border border-rose-200 bg-rose-50 p-1.5 text-rose-700 transition hover:bg-rose-100"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
         </>
         )}
 
@@ -2857,10 +3425,26 @@ export function DinasHome() {
           <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white bg-white text-slate-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-sky-50 to-blue-50/70 px-6 py-4">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
-                  VERIFIKASI DINAS PENDIDIKAN {inspectStudent.isDemoSimulation ? "· SIMULASI PAPARAN" : ""}
-                </p>
-                <h3 className="text-lg font-extrabold tracking-tight text-slate-950">{inspectStudent.nama}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                    VERIFIKASI DINAS PENDIDIKAN {inspectStudent.isDemoSimulation ? "· SIMULASI PAPARAN" : ""}
+                  </p>
+                  {inspectStudent.sumberVerval === "MANUAL_DINAS" ? (
+                    <span className="rounded-md border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[10px] font-extrabold text-indigo-800">
+                      Upload Manual Non-LMS · Berkas Manual
+                    </span>
+                  ) : (
+                    <span className="rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-800">
+                      Via LMS · Berkas Digital
+                    </span>
+                  )}
+                </div>
+                <h3 className="mt-0.5 text-lg font-extrabold tracking-tight text-slate-950">
+                  {inspectStudent.nama}
+                  {inspectStudent.pkbmNama ? (
+                    <span className="ml-2 text-xs font-semibold text-slate-500">({inspectStudent.pkbmNama})</span>
+                  ) : null}
+                </h3>
               </div>
               <button
                 type="button"
@@ -2875,7 +3459,7 @@ export function DinasHome() {
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 text-xs">
               {inspectStudent.isDemoSimulation && (
                 <p className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-bold text-amber-900">
-                  Contoh data simulasi paparan (hanya pratinjau dokumen administrasi — perubahan tidak disimpan ke database).
+                  Contoh data simulasi paparan (hanya pratinjau — perubahan tidak disimpan ke database).
                 </p>
               )}
 
@@ -2884,67 +3468,133 @@ export function DinasHome() {
                 <p><span className="font-semibold text-slate-500">NIK:</span> <strong className="font-mono text-slate-950">{inspectStudent.nik ?? "—"}</strong></p>
                 <p><span className="font-semibold text-slate-500">No. KK:</span> <strong className="font-mono text-slate-950">{inspectStudent.noKk ?? "—"}</strong></p>
                 <p><span className="font-semibold text-slate-500">Ibu Kandung:</span> <strong className="text-slate-950">{inspectStudent.namaIbuKandung ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-500">Sekolah Asal:</span> <strong className="text-slate-950">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-500">No. Ijazah:</span> <strong className="text-slate-950">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
-                <p><span className="font-semibold text-slate-500">Status PKBM:</span> <strong className="text-blue-700">{inspectStudent.statusVerval}</strong></p>
+                <p><span className="font-semibold text-slate-500">Paket / Kelas:</span> <strong className="text-slate-950">{inspectStudent.paketKategori} · {inspectStudent.kelasNama}</strong></p>
                 <p><span className="font-semibold text-slate-500">Tanggal Masuk:</span> <strong className="text-slate-950">{inspectStudent.tanggalMasuk ?? "—"}</strong></p>
+                {inspectStudent.sumberVerval !== "MANUAL_DINAS" && (
+                  <>
+                    <p><span className="font-semibold text-slate-500">Sekolah Asal:</span> <strong className="text-slate-950">{inspectStudent.sekolahAsal ?? "—"}</strong></p>
+                    <p><span className="font-semibold text-slate-500">No. Ijazah:</span> <strong className="text-slate-950">{inspectStudent.nomorIjazahTerakhir ?? "—"}</strong></p>
+                  </>
+                )}
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                  <span className="font-extrabold uppercase tracking-wider text-slate-800">Pratinjau Berkas</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {([
-                      { id: "kk", label: "KK", url: inspectStudent.urlKk },
-                      { id: "akta", label: "Akta / KTP", url: inspectStudent.urlAktaKtp },
-                      { id: "ijazah", label: "Ijazah", url: inspectStudent.urlIjazah },
-                      { id: "pindah", label: "Surat Pindah", url: inspectStudent.urlSuratPindah },
-                    ] as const).map((tab) => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setDocTab(tab.id)}
-                        className={`rounded-lg px-3 py-1 font-bold transition ${
-                          docTab === tab.id
-                            ? "bg-blue-600 text-white shadow-sm"
-                            : "border border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"
-                        }`}
+              {inspectStudent.sumberVerval === "MANUAL_DINAS" ? (
+                <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-200/80 pb-3">
+                    <div>
+                      <span className="font-extrabold uppercase tracking-wider text-indigo-900">
+                        Checklist Pemeriksaan Berkas Fisik (Manual)
+                      </span>
+                      <p className="mt-0.5 text-[11px] font-medium text-indigo-800">
+                        Data diunggah manual oleh Dinas tanpa berkas digital di web. Centang berkas fisik yang sudah diperiksa lalu klik <strong>Verifikasi</strong>.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setManualChecklistInput({
+                          kk: true,
+                          aktaKtp: true,
+                          ijazah: true,
+                          suratPindah: manualChecklistInput.suratPindah,
+                        })
+                      }
+                      className="rounded-lg border border-indigo-300 bg-white px-2.5 py-1.5 text-[11px] font-extrabold text-indigo-800 hover:bg-indigo-100"
+                    >
+                      Centang Berkas Wajib
+                    </button>
+                  </div>
+
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {(
+                      [
+                        { key: "kk", label: "Kartu Keluarga (KK) fisik sesuai" },
+                        { key: "aktaKtp", label: "Akta Kelahiran / KTP fisik sesuai" },
+                        { key: "ijazah", label: "Ijazah Terakhir fisik sesuai" },
+                        { key: "suratPindah", label: "Surat Pindah / SKP (jika pindahan)" },
+                      ] as const
+                    ).map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-indigo-200/80 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 hover:border-indigo-400"
                       >
-                        {tab.label}
-                      </button>
+                        <input
+                          type="checkbox"
+                          checked={manualChecklistInput[item.key]}
+                          onChange={(e) =>
+                            setManualChecklistInput((prev) => ({
+                              ...prev,
+                              [item.key]: e.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 rounded border-slate-300 accent-indigo-600"
+                        />
+                        <span>{item.label}</span>
+                      </label>
                     ))}
                   </div>
                 </div>
-                {(() => {
-                  const u =
-                    docTab === "kk"
-                      ? inspectStudent.urlKk
-                      : docTab === "akta"
-                        ? inspectStudent.urlAktaKtp
-                        : docTab === "ijazah"
-                          ? inspectStudent.urlIjazah
-                          : inspectStudent.urlSuratPindah;
-                  return (
-                    <div className="mt-3">
-                      <DocumentPreviewFrame
-                        url={u}
-                        title="Pratinjau Berkas"
-                        heightClass="h-64"
-                        emptyText="Berkas belum diunggah."
-                      />
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                    <span className="font-extrabold uppercase tracking-wider text-slate-800">Pratinjau Berkas Digital (LMS)</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {([
+                        { id: "kk", label: "KK", url: inspectStudent.urlKk },
+                        { id: "akta", label: "Akta / KTP", url: inspectStudent.urlAktaKtp },
+                        { id: "ijazah", label: "Ijazah", url: inspectStudent.urlIjazah },
+                        { id: "pindah", label: "Surat Pindah", url: inspectStudent.urlSuratPindah },
+                      ] as const).map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setDocTab(tab.id)}
+                          className={`rounded-lg px-3 py-1 font-bold transition ${
+                            docTab === tab.id
+                              ? "bg-blue-600 text-white shadow-sm"
+                              : "border border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
-                  );
-                })()}
-              </div>
+                  </div>
+                  {(() => {
+                    const u =
+                      docTab === "kk"
+                        ? inspectStudent.urlKk
+                        : docTab === "akta"
+                          ? inspectStudent.urlAktaKtp
+                          : docTab === "ijazah"
+                            ? inspectStudent.urlIjazah
+                            : inspectStudent.urlSuratPindah;
+                    return (
+                      <div className="mt-3">
+                        <DocumentPreviewFrame
+                          url={u}
+                          title="Pratinjau Berkas"
+                          heightClass="h-64"
+                          emptyText="Berkas belum diunggah."
+                        />
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               <label className="block font-bold text-slate-800">
-                Catatan Pemeriksaan Dinas (Wajib diisi jika Minta Perbaikan)
+                Catatan Pemeriksaan Dinas (Wajib diisi jika Perlu Perbaikan)
                 <textarea
                   rows={2}
                   maxLength={500}
                   value={catatanInput}
                   onChange={(e) => setCatatanInput(e.target.value)}
-                  placeholder="Contoh: Scan KK buram, mohon unggah ulang yang lebih jelas."
+                  placeholder={
+                    inspectStudent.sumberVerval === "MANUAL_DINAS"
+                      ? "Contoh: Fotokopi ijazah fisik belum dilegalisir, mohon dilengkapi saat verifikasi lanjutan."
+                      : "Contoh: Scan KK buram, mohon unggah ulang yang lebih jelas."
+                  }
                   className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-950 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
                 />
               </label>
@@ -2968,17 +3618,191 @@ export function DinasHome() {
                   onClick={() => void submitDinasDecision("PERLU_PERBAIKAN")}
                   className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
                 >
-                  Minta Perbaikan
+                  Perlu Perbaikan
                 </button>
                 <button
                   type="button"
                   disabled={actionBusy}
                   onClick={() => void submitDinasDecision("LOLOS_VERVAL")}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-extrabold text-white transition hover:bg-emerald-700 disabled:opacity-50"
                 >
-                  Loloskan
+                  <CheckCircle2 size={14} /> Verifikasi
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Upload Manual Non-LMS (Data Siswa Saja, Berkas Manual/Fisik) */}
+      {activeMenu === "verifikasi" && manualUploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white bg-white text-slate-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-blue-50/70 px-6 py-4">
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-700">
+                  JALUR UPLOAD MANUAL NON-LMS · BERKAS FISIK MANUAL
+                </p>
+                <h3 className="text-lg font-extrabold tracking-tight text-slate-950">
+                  Unggah Data Peserta Didik Non-LMS
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={manualUploadBusy}
+                onClick={() => setManualUploadOpen(false)}
+                className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white hover:text-slate-900"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5 text-xs">
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4">
+                <p className="font-extrabold text-indigo-950">1. Impor Massal dari Excel (.xlsx / .csv)</p>
+                <p className="mt-1 text-[11px] leading-5 text-indigo-800">
+                  Cukup unggah daftar biodata siswa (kolom: <strong>Nama</strong>, <strong>NISN</strong>, <strong>NIK</strong>, <strong>No KK</strong>, <strong>Ibu Kandung</strong>, <strong>Paket</strong>, <strong>Nama PKBM</strong>) tanpa perlu mengunggah scan berkas. Status otomatis ditandai <strong>Berkas Manual</strong>.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-extrabold text-white transition hover:bg-indigo-700">
+                    <FileSpreadsheet size={14} />
+                    <span>{manualUploadBusy ? "Memproses File..." : "Pilih File Excel / CSV"}</span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      disabled={manualUploadBusy}
+                      onChange={(e) => {
+                        void handleManualExcelUpload(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                  <span className="text-[11px] font-medium text-indigo-700">
+                    Tips: Isi Nama PKBM di bawah jika file Excel belum memiliki kolom Nama PKBM.
+                  </span>
+                </div>
+              </div>
+
+              <form onSubmit={handleManualQuickAdd} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                <p className="font-extrabold text-slate-900">2. Atau Input Cepat 1 Peserta Didik</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block font-bold text-slate-800">
+                    Nama PKBM (Non-LMS) *
+                    <input
+                      type="text"
+                      required
+                      value={manualForm.pkbmNama}
+                      onChange={(e) => setManualForm({ ...manualForm, pkbmNama: e.target.value })}
+                      placeholder="Contoh: PKBM Harapan Mulia"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    NPSN PKBM (Opsional)
+                    <input
+                      type="text"
+                      value={manualForm.pkbmNpsn}
+                      onChange={(e) => setManualForm({ ...manualForm, pkbmNpsn: e.target.value })}
+                      placeholder="Contoh: P2029911"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    Nama Lengkap Siswa *
+                    <input
+                      type="text"
+                      required
+                      value={manualForm.nama}
+                      onChange={(e) => setManualForm({ ...manualForm, nama: e.target.value })}
+                      placeholder="Nama sesuai KK / Ijazah"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    NISN
+                    <input
+                      type="text"
+                      value={manualForm.nisn}
+                      onChange={(e) => setManualForm({ ...manualForm, nisn: e.target.value })}
+                      placeholder="10 digit NISN"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    NIK
+                    <input
+                      type="text"
+                      value={manualForm.nik}
+                      onChange={(e) => setManualForm({ ...manualForm, nik: e.target.value })}
+                      placeholder="16 digit NIK"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    No. KK
+                    <input
+                      type="text"
+                      value={manualForm.noKk}
+                      onChange={(e) => setManualForm({ ...manualForm, noKk: e.target.value })}
+                      placeholder="16 digit Nomor KK"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    Nama Ibu Kandung
+                    <input
+                      type="text"
+                      value={manualForm.namaIbuKandung}
+                      onChange={(e) => setManualForm({ ...manualForm, namaIbuKandung: e.target.value })}
+                      placeholder="Nama ibu kandung"
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    />
+                  </label>
+                  <label className="block font-bold text-slate-800">
+                    Program Kesetaraan
+                    <select
+                      value={manualForm.paketKategori}
+                      onChange={(e) =>
+                        setManualForm({
+                          ...manualForm,
+                          paketKategori: e.target.value as "Paket A" | "Paket B" | "Paket C",
+                        })
+                      }
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-950 focus:border-indigo-600 focus:outline-none"
+                    >
+                      <option value="Paket A">Paket A (Setara SD)</option>
+                      <option value="Paket B">Paket B (Setara SMP)</option>
+                      <option value="Paket C">Paket C (Setara SMA)</option>
+                    </select>
+                  </label>
+                </div>
+
+                {manualUploadError && (
+                  <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 font-bold text-rose-700">
+                    {manualUploadError}
+                  </p>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={manualUploadBusy}
+                    onClick={() => setManualUploadOpen(false)}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={manualUploadBusy}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2 text-xs font-extrabold text-white shadow-sm hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50"
+                  >
+                    <Save size={14} />
+                    {manualUploadBusy ? "Menyimpan..." : "Simpan Siswa Manual"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

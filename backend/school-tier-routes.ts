@@ -286,6 +286,7 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
         return res.status(400).json({ error: "Payload identitas tidak valid." });
       }
       const primaryColor = typeof body.primary_color === "string" ? body.primary_color.trim() : "#4f46e5";
+      const hasLogoField = Object.prototype.hasOwnProperty.call(body, "logo_url");
       const logoUrl = typeof body.logo_url === "string" ? body.logo_url.trim() : "";
       const heroTitle = typeof body.hero_title === "string" ? body.hero_title.trim() : "";
       const heroSubtitle = typeof body.hero_subtitle === "string" ? body.hero_subtitle.trim() : "";
@@ -296,7 +297,7 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
       if (!/^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
         return res.status(400).json({ error: "Format warna utama harus hex 6 digit (contoh: #4f46e5)." });
       }
-      if (logoUrl.length > 500 || !isSafeLogoUrl(logoUrl)) {
+      if (hasLogoField && (logoUrl.length > 500 || !isSafeLogoUrl(logoUrl))) {
         return res.status(400).json({ error: "URL logo harus menggunakan http://, https://, atau path relatif yang valid." });
       }
       if (heroTitle.length > 150 || heroSubtitle.length > 400 || footerText.length > 300) {
@@ -308,7 +309,7 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
         create: {
           school_id: gate.sekolahId,
           primary_color: primaryColor,
-          logo_url: logoUrl || null,
+          logo_url: hasLogoField ? logoUrl || null : null,
           hero_title: heroTitle || null,
           hero_subtitle: heroSubtitle || null,
           show_gallery: showGallery,
@@ -317,7 +318,7 @@ export function schoolTierRoutes(schoolForRequest: (req: Request) => Promise<str
         },
         update: {
           primary_color: primaryColor,
-          logo_url: logoUrl || null,
+          ...(hasLogoField ? { logo_url: logoUrl || null } : {}),
           hero_title: heroTitle || null,
           hero_subtitle: heroSubtitle || null,
           show_gallery: showGallery,

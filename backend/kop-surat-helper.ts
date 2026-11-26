@@ -14,6 +14,7 @@ export type SchoolKopSuratProfile = {
   emailSekolah: string | null;
   websiteSekolah: string | null;
   logoUrl: string | null;
+  logoYayasanUrl: string | null;
   namaKetuaPkbm: string | null;
 };
 
@@ -24,6 +25,7 @@ type StoredKopExtra = {
   teleponWa?: string | null;
   emailSekolah?: string | null;
   websiteSekolah?: string | null;
+  logoYayasanUrl?: string | null;
 };
 
 function kopSettingKey(sekolahId: string): string {
@@ -105,6 +107,7 @@ export async function readSchoolKopSurat(sekolahId: string): Promise<SchoolKopSu
     emailSekolah: cleanText(extra.emailSekolah, 254) || null,
     websiteSekolah: cleanText(extra.websiteSekolah, 300) || null,
     logoUrl: webSettings?.logo_url ?? null,
+    logoYayasanUrl: typeof extra.logoYayasanUrl === "string" && extra.logoYayasanUrl.trim() ? extra.logoYayasanUrl.trim() : null,
     namaKetuaPkbm: school?.namaKepalaSekolah ?? null,
   };
 }
@@ -123,6 +126,7 @@ export async function saveSchoolKopSurat(
   const websiteSekolahRaw = cleanText(body.websiteSekolah, 300);
   const namaKetuaPkbm = cleanText(body.namaKetuaPkbm, 200) || null;
   const logoUrlRaw = typeof body.logoUrl === "string" ? body.logoUrl.trim() : "";
+  const logoYayasanUrlRaw = typeof body.logoYayasanUrl === "string" ? body.logoYayasanUrl.trim() : "";
 
   if (emailSekolah && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailSekolah)) {
     return { ok: false, status: 400, error: "Format email lembaga tidak valid." };
@@ -133,6 +137,9 @@ export async function saveSchoolKopSurat(
   if (logoUrlRaw && !isSafeKopLogoUrl(logoUrlRaw)) {
     return { ok: false, status: 400, error: "Logo harus berupa URL https:// valid atau unggahan PNG/JPG/WebP maksimal 1 MB." };
   }
+  if (logoYayasanUrlRaw && !isSafeKopLogoUrl(logoYayasanUrlRaw)) {
+    return { ok: false, status: 400, error: "Logo yayasan harus berupa URL https:// valid atau unggahan PNG/JPG/WebP maksimal 1 MB." };
+  }
 
   const extraPayload: StoredKopExtra = {
     namaYayasan,
@@ -141,6 +148,7 @@ export async function saveSchoolKopSurat(
     teleponWa,
     emailSekolah,
     websiteSekolah: websiteSekolahRaw || null,
+    logoYayasanUrl: logoYayasanUrlRaw || null,
   };
 
   await prisma.sekolah.update({

@@ -991,6 +991,22 @@ export function SchoolThemeIdentityView({
     reader.readAsDataURL(file);
   }
 
+  function handleKopYayasanLogoUpload(file: File | undefined) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
+      setError("Logo yayasan harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 1 MB.");
+      return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setKopForm((prev) => ({ ...prev, logoYayasanUrl: reader.result as string }));
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
   async function saveKopSurat(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (kopBusy) return;
@@ -1392,9 +1408,9 @@ export function SchoolThemeIdentityView({
                   placeholder="https://lembaga.pkbm.siput.id"
                 />
               </label>
-              <div className="sm:col-span-2">
+              <div>
                 <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                  Unggah Logo Kop Surat (PNG / JPG / WebP, maks. 250 KB)
+                  Logo Lembaga / PKBM (Kiri · PNG/JPG/WebP, maks. 1 MB)
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
@@ -1408,7 +1424,27 @@ export function SchoolThemeIdentityView({
                     onClick={() => setKopForm({ ...kopForm, logoUrl: null })}
                     className="mt-2 text-xs font-bold text-rose-600 underline"
                   >
-                    Hapus logo kop surat
+                    Hapus logo lembaga
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                  Logo Yayasan (Kanan · Opsional, PNG/JPG/WebP, maks. 1 MB)
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => handleKopYayasanLogoUpload(e.target.files?.[0])}
+                    className={inputClass}
+                  />
+                </label>
+                {kopForm.logoYayasanUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setKopForm({ ...kopForm, logoYayasanUrl: null })}
+                    className="mt-2 text-xs font-bold text-rose-600 underline"
+                  >
+                    Hapus logo yayasan
                   </button>
                 )}
               </div>

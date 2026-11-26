@@ -10,6 +10,7 @@ export type SchoolProfile = {
   emailSekolah: string | null;
   websiteSekolah: string | null;
   logoUrl: string | null;
+  logoYayasanUrl?: string | null;
   namaKetuaPkbm: string | null;
 };
 
@@ -24,6 +25,7 @@ const OPTIONAL_PROFILE_KEYS: Array<Exclude<keyof SchoolProfile, "nama">> = [
   "emailSekolah",
   "websiteSekolah",
   "logoUrl",
+  "logoYayasanUrl",
   "namaKetuaPkbm",
 ];
 

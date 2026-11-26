@@ -99,7 +99,7 @@ app.use("/api", httpSecurity({ production, origin: production ? productionOrigin
 app.use("/api/verval", express.json({ limit: "20mb" }));
 app.use("/api/sekolah/siswa/import", express.json({ limit: "2mb" }));
 app.use("/api/sekolah/identitas", express.json({ limit: "5mb" }));
-app.use("/api/sekolah/kop-surat", express.json({ limit: "2mb" }));
+app.use("/api/sekolah/kop-surat", express.json({ limit: "4mb" }));
 app.use("/api/master/pustaka-konten", express.json({ limit: "2mb" }));
 app.use("/api/school", express.json({ limit: "2mb" }));
 app.use("/api/sekolah/ai-assistant", express.json({ limit: "256kb" }));

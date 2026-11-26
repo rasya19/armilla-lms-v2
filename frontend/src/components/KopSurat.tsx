@@ -54,19 +54,19 @@ export function renderKopSuratHtml(profile: SchoolProfile): string {
   ].filter(Boolean);
 
   const logoMarkup = profile.logoUrl
-    ? `<img src="${escapeHtmlText(profile.logoUrl)}" alt="Logo ${escapeHtmlText(profile.nama)}" style="width:74px;height:74px;object-fit:contain;" />`
-    : `<div style="width:64px;height:64px;border-radius:999px;border:2px solid #1e293b;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:#0f172a;">${escapeHtmlText(profile.nama.charAt(0).toUpperCase())}</div>`;
+    ? `<img src="${escapeHtmlText(profile.logoUrl)}" alt="Logo ${escapeHtmlText(profile.nama)}" style="width:84px;height:84px;object-fit:contain;" />`
+    : `<div style="width:72px;height:72px;border-radius:999px;border:2px solid #1e293b;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:#0f172a;">${escapeHtmlText(profile.nama.charAt(0).toUpperCase())}</div>`;
 
   const rightLogoMarkup = profile.logoYayasanUrl
-    ? `<div style="width:78px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><img src="${escapeHtmlText(profile.logoYayasanUrl)}" alt="Logo Yayasan" style="width:74px;height:74px;object-fit:contain;" /></div>`
-    : `<div style="width:78px;flex-shrink:0;"></div>`;
+    ? `<div style="width:92px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><img src="${escapeHtmlText(profile.logoYayasanUrl)}" alt="Logo Yayasan" style="width:84px;height:84px;object-fit:contain;" /></div>`
+    : `<div style="width:92px;flex-shrink:0;"></div>`;
 
-  return `<div style="border-bottom:4px double #0f172a;padding-bottom:12px;margin-bottom:16px;">
-    <div style="max-width:680px;margin:0 auto;display:flex;align-items:center;justify-content:center;gap:16px;">
-      <div style="width:78px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">${logoMarkup}</div>
-      <div style="flex:1;text-align:center;min-width:0;">
+  return `<div style="border-bottom:4px double #0f172a;padding:0 6px 12px 6px;margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:92px 1fr 92px;align-items:center;gap:18px;width:100%;">
+      <div style="width:92px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">${logoMarkup}</div>
+      <div style="text-align:center;min-width:0;">
         ${profile.namaYayasan ? `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#334155;">${escapeHtmlText(profile.namaYayasan)}</div>` : ""}
-        <div style="font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;margin-top:2px;">${escapeHtmlText(profile.nama)}</div>
+        <div style="font-size:19px;font-weight:900;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;margin-top:2px;">${escapeHtmlText(profile.nama)}</div>
         ${metaParts.length > 0 ? `<div style="font-size:11px;color:#334155;margin-top:2px;">${escapeHtmlText(metaParts.join(" | "))}</div>` : ""}
         ${address ? `<div style="font-size:11px;color:#334155;margin-top:1px;">${escapeHtmlText(address)}</div>` : ""}
         ${contacts ? `<div style="font-size:10.5px;color:#475569;margin-top:1px;">${escapeHtmlText(contacts)}</div>` : ""}
@@ -93,18 +93,18 @@ export function KopSurat({ profile }: { profile: SchoolProfile }) {
     .join(" | ");
 
   return (
-    <div className="kop-surat border-b-4 border-double border-slate-900 bg-white pb-3.5 text-slate-900">
-      <div className="mx-auto flex max-w-2xl items-center justify-center gap-4 sm:gap-6">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center">
+    <div className="kop-surat w-full border-b-4 border-double border-slate-900 bg-white px-2 pb-3.5 text-slate-900">
+      <div className="grid w-full grid-cols-[80px_1fr_80px] items-center gap-4 sm:grid-cols-[96px_1fr_96px] sm:gap-6">
+        <div className="flex h-20 w-20 items-center justify-center sm:h-24 sm:w-24">
           {profile.logoUrl ? (
             <img
               src={profile.logoUrl}
               alt={`Logo ${profile.nama}`}
-              className="h-20 w-20 object-contain"
+              className="h-20 w-20 object-contain sm:h-24 sm:w-24"
               referrerPolicy="no-referrer"
             />
           ) : (
-            <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-slate-700 text-2xl font-black text-slate-900">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-slate-700 text-2xl font-black text-slate-900 sm:h-20 sm:w-20">
               {profile.nama.charAt(0).toUpperCase()}
             </span>
           )}
@@ -122,16 +122,18 @@ export function KopSurat({ profile }: { profile: SchoolProfile }) {
           {address && <p className="text-[11px] text-slate-700">{address}</p>}
           {contacts && <p className="break-words text-[10.5px] text-slate-600">{contacts}</p>}
         </div>
-        {profile.logoYayasanUrl && (
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center">
+        <div className="flex h-20 w-20 items-center justify-center justify-self-end sm:h-24 sm:w-24">
+          {profile.logoYayasanUrl ? (
             <img
               src={profile.logoYayasanUrl}
               alt={`Logo ${profile.namaYayasan || "Yayasan"}`}
-              className="h-20 w-20 object-contain"
+              className="h-20 w-20 object-contain sm:h-24 sm:w-24"
               referrerPolicy="no-referrer"
             />
-          </div>
-        )}
+          ) : (
+            <span aria-hidden="true" className="block h-full w-full" />
+          )}
+        </div>
       </div>
     </div>
   );

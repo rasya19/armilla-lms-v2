@@ -1408,45 +1408,51 @@ export function SchoolThemeIdentityView({
                   placeholder="https://lembaga.pkbm.siput.id"
                 />
               </label>
-              <div>
-                <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                  Logo Lembaga / PKBM (Kiri · PNG/JPG/WebP, maks. 1 MB)
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => handleKopLogoUpload(e.target.files?.[0])}
-                    className={inputClass}
-                  />
-                </label>
-                {kopForm.logoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setKopForm({ ...kopForm, logoUrl: null })}
-                    className="mt-2 text-xs font-bold text-rose-600 underline"
-                  >
-                    Hapus logo lembaga
-                  </button>
-                )}
-              </div>
-              <div>
-                <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                  Logo Yayasan (Kanan · Opsional, PNG/JPG/WebP, maks. 1 MB)
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => handleKopYayasanLogoUpload(e.target.files?.[0])}
-                    className={inputClass}
-                  />
-                </label>
-                {kopForm.logoYayasanUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setKopForm({ ...kopForm, logoYayasanUrl: null })}
-                    className="mt-2 text-xs font-bold text-rose-600 underline"
-                  >
-                    Hapus logo yayasan
-                  </button>
-                )}
+              <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+                <div className="flex flex-col">
+                  <label className={`flex flex-1 flex-col justify-end text-sm font-semibold leading-snug ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                    <span className="break-words">Logo PKBM (Maks. 1 MB)</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => handleKopLogoUpload(e.target.files?.[0])}
+                      className={inputClass}
+                    />
+                  </label>
+                  <div className="mt-1.5 min-h-[1rem]">
+                    {kopForm.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setKopForm({ ...kopForm, logoUrl: null })}
+                        className="text-xs font-bold text-rose-600 underline"
+                      >
+                        Hapus logo PKBM
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`flex flex-1 flex-col justify-end text-sm font-semibold leading-snug ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                    <span className="break-words">Logo Yayasan (Opsional, Maks. 1 MB)</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => handleKopYayasanLogoUpload(e.target.files?.[0])}
+                      className={inputClass}
+                    />
+                  </label>
+                  <div className="mt-1.5 min-h-[1rem]">
+                    {kopForm.logoYayasanUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setKopForm({ ...kopForm, logoYayasanUrl: null })}
+                        className="text-xs font-bold text-rose-600 underline"
+                      >
+                        Hapus logo yayasan
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { PWAInstallButton } from './PWAInstallButton';
-import { SUBSCRIPTION_PLANS } from './subscriptionPlans';
+import { ADMIN_WA_DISPLAY, buildAdminWhatsappUrl, SUBSCRIPTION_PLANS } from './subscriptionPlans';
 import { fetchWithTimeout, isCallerAborted } from './fetchWithTimeout';
 import {
   getPreferredTheme,
@@ -677,9 +677,36 @@ export const LandingPage: React.FC = () => {
                     >
                       Atau coba gratis 14 hari dulu
                     </Link>
+                    <a
+                      href={buildAdminWhatsappUrl(`Halo Admin SIPUT PKBM, saya tertarik memesan ${plan.name} (${plan.annualPriceLabel}). Mohon info lebih lanjut.`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-center text-xs font-bold text-emerald-700 underline-offset-4 transition hover:underline"
+                    >
+                      Tanya / Pesan via WA Admin ({ADMIN_WA_DISPLAY})
+                    </a>
                   </div>
                 </article>
               ))}
+            </div>
+
+            <div className="glass-panel mt-8 flex flex-col items-start justify-between gap-4 rounded-2xl px-6 py-5 sm:flex-row sm:items-center">
+              <div>
+                <p className={`text-sm font-extrabold ${palette.heading}`}>
+                  Butuh konsultasi, demo langsung, atau pemesanan paket lembaga?
+                </p>
+                <p className={`mt-1 text-xs ${palette.bodyText}`}>
+                  Hubungi Admin SIPUT PKBM melalui WhatsApp <strong>{ADMIN_WA_DISPLAY}</strong> untuk informasi paket, bantuan migrasi data, maupun top-up kuota AI.
+                </p>
+              </div>
+              <a
+                href={buildAdminWhatsappUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex shrink-0 items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-xs font-extrabold text-white shadow-sm transition hover:bg-emerald-500"
+              >
+                Hubungi Admin ({ADMIN_WA_DISPLAY}) <ArrowRight size={15} />
+              </a>
             </div>
           </div>
         </section>

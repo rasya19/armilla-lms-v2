@@ -957,10 +957,28 @@ export function SchoolThemeIdentityView({
     }
   }
 
+  function handleIdentityLogoUpload(file: File | undefined) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
+      setError("Logo lembaga harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 1 MB.");
+      return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        const dataUrl = reader.result;
+        setForm((prev) => ({ ...prev, logo_url: dataUrl }));
+        setKopForm((prev) => ({ ...prev, logoUrl: dataUrl }));
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
   function handleKopLogoUpload(file: File | undefined) {
     if (!file) return;
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 250 * 1024) {
-      setError("Logo kop surat harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 250 KB.");
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 1024 * 1024) {
+      setError("Logo kop surat harus berformat PNG, JPG, atau WebP dengan ukuran maksimal 1 MB.");
       return;
     }
     setError("");
@@ -1169,17 +1187,51 @@ export function SchoolThemeIdentityView({
                 />
               </label>
 
-              <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
-                URL Logo Lembaga (opsional)
-                <input
-                  type="text"
-                  maxLength={500}
-                  value={form.logo_url}
-                  onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
-                  className={inputClass}
-                  placeholder="https://..."
-                />
-              </label>
+              <div className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
+                <span>Logo Lembaga (Upload PNG/JPG/WebP maks. 1 MB atau Link URL)</span>
+                <div className="mt-1.5 flex items-center gap-3">
+                  {form.logo_url.trim() && (
+                    <img
+                      src={form.logo_url}
+                      alt="Pratinjau Logo Lembaga"
+                      className="h-12 w-12 shrink-0 rounded-xl border border-slate-300 bg-white object-contain p-1"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <input
+                      type="text"
+                      maxLength={500}
+                      value={form.logo_url.startsWith("data:") ? "[Logo Terunggah]" : form.logo_url}
+                      onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
+                      className={`${inputClass} mt-0`}
+                      placeholder="https://... atau klik Upload Logo di bawah"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-800 hover:bg-indigo-100">
+                        Upload File Logo (Maks. 1 MB)
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => {
+                            handleIdentityLogoUpload(e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                          className="sr-only"
+                        />
+                      </label>
+                      {form.logo_url.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, logo_url: "" })}
+                          className="text-xs font-bold text-rose-600 hover:underline"
+                        >
+                          Hapus Logo
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <label className={`block text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-800"}`}>
                 Teks Footer Lembaga

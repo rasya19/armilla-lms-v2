@@ -34,7 +34,7 @@ function isSafeKopLogoUrl(value: string): boolean {
   if (!value) return true;
   if (value.startsWith("/")) return value.length <= 500;
   if (/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/i.test(value)) {
-    return value.length <= 350_000;
+    return value.length <= 1_450_000;
   }
   try {
     const parsed = new URL(value);
@@ -131,7 +131,7 @@ export async function saveSchoolKopSurat(
     return { ok: false, status: 400, error: "Format website lembaga harus berupa URL valid (https://...)." };
   }
   if (logoUrlRaw && !isSafeKopLogoUrl(logoUrlRaw)) {
-    return { ok: false, status: 400, error: "Logo harus berupa URL https:// valid atau unggahan PNG/JPG/WebP maksimal 250 KB." };
+    return { ok: false, status: 400, error: "Logo harus berupa URL https:// valid atau unggahan PNG/JPG/WebP maksimal 1 MB." };
   }
 
   const extraPayload: StoredKopExtra = {

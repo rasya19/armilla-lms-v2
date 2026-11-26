@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Check, CreditCard, ExternalLink, Loader2, MessageCircle, Printer } from "lucide-react";
 import { SchoolModal } from "./SchoolModal";
-import { SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
+import { ADMIN_WA_DISPLAY, ADMIN_WA_NUMBER, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
 import { describeFetchError, fetchWithTimeout } from "./fetchWithTimeout";
 import type { PlanTier } from "../utils/planAccess";
 
-const SALES_WA = (import.meta.env.VITE_SALES_WA as string | undefined)?.replace(/[^0-9]/g, "") || "6281918226387";
+const SALES_WA = (import.meta.env.VITE_SALES_WA as string | undefined)?.replace(/[^0-9]/g, "") || ADMIN_WA_NUMBER;
 
 export function UpgradePlanModal({
   feature,
@@ -178,7 +178,7 @@ export function UpgradePlanModal({
             rel="noopener noreferrer"
           >
             <MessageCircle size={14} />
-            Konfirmasi via WhatsApp
+            Hubungi Admin ({ADMIN_WA_DISPLAY})
           </a>
         </div>
       </div>

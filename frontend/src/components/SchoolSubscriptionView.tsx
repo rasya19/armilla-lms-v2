@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, TableSkeleton } from "./DashboardUI";
 import { useTenantTheme } from "./TenantThemeProvider";
-import { SUBSCRIPTION_PLANS, getPlanBySlug, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
+import { ADMIN_WA_DISPLAY, buildAdminWhatsappUrl, SUBSCRIPTION_PLANS, getPlanBySlug, resolvePlanSlug, type PlanSlug } from "./subscriptionPlans";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import { sanitizeHttpUrl } from "../utils/safeUrl";
 
@@ -504,15 +504,27 @@ export function SchoolSubscriptionView({ onRefreshPlan }: { onRefreshPlan?: () =
             Paket terpilih: <strong>{getPlanBySlug(selectedPlan).name}</strong> (
             <strong>{getPlanBySlug(selectedPlan).annualPriceLabel}</strong>)
           </p>
-          <button
-            type="button"
-            disabled={checkoutBusy}
-            onClick={() => void handleCheckout()}
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={buildAdminWhatsappUrl(
+                `Halo Admin SIPUT PKBM, saya dari ${data?.sekolah.nama || "PKBM"} ingin info lebih lanjut / pemesanan ${getPlanBySlug(selectedPlan).name} (${getPlanBySlug(selectedPlan).annualPriceLabel}).`,
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100"
+            >
+              Hubungi Admin ({ADMIN_WA_DISPLAY})
+            </a>
+            <button
+              type="button"
+              disabled={checkoutBusy}
+              onClick={() => void handleCheckout()}
             className="master-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs font-extrabold disabled:opacity-50"
           >
             {checkoutBusy ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
             {checkoutBusy ? "Membuat Tagihan Duitku..." : "Bayar / Perpanjang via Duitku"}
           </button>
+          </div>
         </div>
       </section>
 

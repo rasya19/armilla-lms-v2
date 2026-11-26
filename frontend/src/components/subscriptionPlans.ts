@@ -1,3 +1,13 @@
+export const ADMIN_WA_NUMBER = '6287713737477';
+export const ADMIN_WA_DISPLAY = '0877-1373-7477';
+
+export function buildAdminWhatsappUrl(message?: string): string {
+  const text =
+    message ||
+    'Halo Admin SIPUT PKBM, saya ingin mendapatkan informasi lebih lanjut mengenai pemesanan paket langganan.';
+  return `https://wa.me/${ADMIN_WA_NUMBER}?text=${encodeURIComponent(text)}`;
+}
+
 export type PlanSlug = 'basic' | 'reguler' | 'pro';
 
 export type SubscriptionPlan = {
@@ -31,14 +41,14 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Website Profil PKBM + Subdomain khusus lembaga',
       'PPDB Online & Verval Siswa / Dapodik (+ Pas Foto Ijazah 4×6)',
       'Master Data lengkap (Siswa, Guru/Tutor, Kelas, Mapel & Bobot SKK)',
-      'Ruang KBM (Materi, Tugas, Presensi, Diskusi & Bank Modul 102 Kemendikdasmen)',
+      'Portal LMS Guru & Warga Belajar (Materi, Tugas, Presensi, Diskusi & Bank Modul 102 Kemendikdasmen)',
     ],
   },
   {
     slug: 'reguler',
     planValue: 'Reguler',
     name: 'Paket Reguler',
-    tagline: 'Skala penuh untuk evaluasi resmi CBT, E-Raport Kurikulum Merdeka, Transkrip & layanan QR (tanpa fitur AI).',
+    tagline: 'Skala penuh untuk evaluasi resmi CBT, E-Raport Kurikulum Merdeka, Transkrip, Agenda Surat & layanan QR (tanpa fitur AI).',
     price: 'Rp 175.000',
     period: '/ bulan',
     annualPrice: 1750000,
@@ -50,6 +60,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Seluruh fitur Paket Basic + Impor Siswa Excel & Kenaikan Kelas Massal',
       'Ujian Online CBT (Bank Soal, Impor Word/Excel, Jadwal & Token, Cetak Naskah, Monitoring)',
       'E-Raport Kurikulum Merdeka, Leger 1–6, Transkrip Nilai & Terbitkan ke Siswa',
+      'Agenda Surat (Masuk & Keluar) terintegrasi penomoran otomatis Transkrip Nilai',
       'Kop Surat Resmi Lembaga, Kartu Pelajar Digital QR & Buku Tamu Digital QR',
     ],
   },

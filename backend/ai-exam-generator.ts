@@ -36,7 +36,7 @@ export type AiGenerateResult =
   | {
       ok: true;
       draft: GeneratedExamDraft;
-      provider: "gemini" | "openrouter";
+      provider: "zai" | "gemini" | "openrouter";
       model: string;
     }
   | {
@@ -48,7 +48,19 @@ export type AiGenerateResult =
     };
 
 export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-export const GEMINI_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"] as const;
+export const GEMINI_FALLBACK_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+] as const;
+
+export const DEFAULT_ZAI_MODEL = "glm-4.5-flash";
+export const ZAI_FALLBACK_MODELS = [
+  "glm-4.5-flash",
+  "glm-4.5-air",
+  "glm-4-flash",
+] as const;
+export const DEFAULT_ZAI_ENDPOINT = "https://api.z.ai/api/paas/v4/chat/completions";
 
 /**
  * Safely trims whitespace and accidental surrounding quotes from environment variables.
@@ -67,6 +79,34 @@ export function sanitizeEnvValue(raw: string | undefined): string {
 
 export function resolveGeminiApiKey(env: NodeJS.ProcessEnv = process.env): string {
   return sanitizeEnvValue(env.GEMINI_API_KEY);
+}
+
+export function resolveZaiApiKey(env: NodeJS.ProcessEnv = process.env): string {
+  return (
+    sanitizeEnvValue(env.ZAI_API_KEY) ||
+    sanitizeEnvValue(env.Z_API_KEY) ||
+    sanitizeEnvValue(env.ZHIPU_API_KEY)
+  );
+}
+
+export function resolveZaiEndpoint(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = sanitizeEnvValue(env.ZAI_BASE_URL) || sanitizeEnvValue(env.ZAI_API_URL);
+  if (!raw) return DEFAULT_ZAI_ENDPOINT;
+  const trimmed = raw.replace(/\/+$/, "");
+  return trimmed.endsWith("/chat/completions") ? trimmed : `${trimmed}/chat/completions`;
+}
+
+export function resolveZaiModel(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = sanitizeEnvValue(env.ZAI_MODEL) || sanitizeEnvValue(env.Z_MODEL);
+  if (!configured || !/^[a-zA-Z0-9._-]+$/.test(configured)) {
+    return DEFAULT_ZAI_MODEL;
+  }
+  return configured;
+}
+
+export function buildZaiModelCandidates(env: NodeJS.ProcessEnv = process.env): string[] {
+  const primary = resolveZaiModel(env);
+  return Array.from(new Set([primary, ...ZAI_FALLBACK_MODELS]));
 }
 
 export function resolveGeminiModel(env: NodeJS.ProcessEnv = process.env): string {
@@ -236,20 +276,21 @@ export async function generateExamDraftWithAi(
   const env = deps?.env ?? process.env;
   const fetchImpl = deps?.fetchImpl ?? fetch;
   const timeoutMs = deps?.timeoutMs ?? 45_000;
-  const retryDelayMs = deps?.retryDelayMs ?? 600;
+  const retryDelayMs = deps?.retryDelayMs ?? 1200;
   const logger = deps?.logger ?? console;
 
   const overrideKey = sanitizeEnvValue(deps?.apiKeyOverride);
+  const zaiKey = overrideKey ? "" : resolveZaiApiKey(env);
   const geminiKey = overrideKey || resolveGeminiApiKey(env);
   const openRouterKey = overrideKey ? "" : sanitizeEnvValue(env.OPENROUTER_API_KEY);
 
-  if (!geminiKey && !openRouterKey) {
-    logger.error("[CBT AI] GEMINI_API_KEY dan OPENROUTER_API_KEY kosong pada environment server.");
+  if (!zaiKey && !geminiKey && !openRouterKey) {
+    logger.error("[CBT AI] ZAI_API_KEY, GEMINI_API_KEY, dan OPENROUTER_API_KEY kosong pada environment server.");
     return {
       ok: false,
       status: 500,
       code: "AI_NOT_CONFIGURED",
-      error: "GEMINI_API_KEY belum dikonfigurasi pada server. Atur kunci API Google AI Studio di Environment Variables untuk mengaktifkan Generator Soal AI.",
+      error: "Kunci API AI belum dikonfigurasi pada server. Atur ZAI_API_KEY (atau GEMINI_API_KEY) di Environment Variables untuk mengaktifkan Generator Soal AI.",
     };
   }
 
@@ -278,11 +319,149 @@ export async function generateExamDraftWithAi(
     .join("\n");
 
   let rawText = "";
-  let provider: "gemini" | "openrouter" = "gemini";
-  let usedModel = resolveGeminiModel(env);
+  let provider: "zai" | "gemini" | "openrouter" = zaiKey ? "zai" : "gemini";
+  let usedModel = zaiKey ? resolveZaiModel(env) : resolveGeminiModel(env);
   let lastFailure: Extract<AiGenerateResult, { ok: false }> | null = null;
 
-  if (geminiKey) {
+  // 1. Prioritas utama: Z.ai (GLM) jika ZAI_API_KEY / Z_API_KEY / ZHIPU_API_KEY dikonfigurasi
+  if (zaiKey) {
+    const zaiEndpoint = resolveZaiEndpoint(env);
+    const zaiModels = buildZaiModelCandidates(env);
+
+    for (const model of zaiModels) {
+      usedModel = model;
+      let tryNextModel = false;
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await fetchImpl(zaiEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${zaiKey}`,
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemInstruction },
+                { role: "user", content: userPrompt },
+              ],
+              temperature: 0.4,
+              max_tokens: 8192,
+              stream: false,
+            }),
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+
+          if (response.ok) {
+            const json = (await response.json()) as {
+              choices?: Array<{ message?: { content?: string } }>;
+            };
+            const text = json.choices?.[0]?.message?.content?.trim() ?? "";
+            if (text) {
+              rawText = text;
+              provider = "zai";
+              usedModel = model;
+              break;
+            }
+            lastFailure = {
+              ok: false,
+              status: 502,
+              code: "GEMINI_EMPTY_RESPONSE",
+              error: `Z.ai (${model}) mengembalikan respons kosong. Silakan coba lagi.`,
+              detail: "EMPTY_CHOICES",
+            };
+            tryNextModel = true;
+            break;
+          }
+
+          const detail = await readUpstreamErrorDetail(response);
+          logger.error("[CBT AI] Z.ai API gagal", {
+            model,
+            attempt,
+            status: response.status,
+            detail,
+          });
+
+          if (response.status === 401 || response.status === 403) {
+            lastFailure = {
+              ok: false,
+              status: 502,
+              code: "GEMINI_AUTH_ERROR",
+              error: "Kunci ZAI_API_KEY tidak valid, kedaluwarsa, atau saldo/kuota akun Z.ai tidak mencukupi.",
+              detail,
+            };
+            break;
+          }
+
+          if (response.status === 429) {
+            lastFailure = {
+              ok: false,
+              status: 429,
+              code: "GEMINI_RATE_LIMIT",
+              error: "Batas permintaan (rate limit) Z.ai sedang penuh. Tunggu beberapa saat lalu coba lagi.",
+              detail,
+            };
+            if (attempt < 2) {
+              await delayMs(retryDelayMs * attempt);
+              continue;
+            }
+            tryNextModel = true;
+            break;
+          }
+
+          if (response.status === 404 || response.status === 400) {
+            lastFailure = {
+              ok: false,
+              status: response.status === 400 ? 400 : 502,
+              code: response.status === 400 ? "GEMINI_BAD_REQUEST" : "GEMINI_MODEL_NOT_FOUND",
+              error: `Model Z.ai "${model}" menolak permintaan (${detail}).`,
+              detail,
+            };
+            tryNextModel = true;
+            break;
+          }
+
+          lastFailure = {
+            ok: false,
+            status: response.status === 503 ? 503 : 502,
+            code: "GEMINI_UPSTREAM_ERROR",
+            error: `Layanan Z.ai (${model}) sedang mengalami gangguan (HTTP ${response.status}). Kuota AI sekolah tidak terpotong; coba lagi sebentar.`,
+            detail,
+          };
+          if (isRetryableStatus(response.status) && attempt < 2) {
+            await delayMs(retryDelayMs * attempt);
+            continue;
+          }
+          tryNextModel = isRetryableStatus(response.status);
+          break;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const timedOut = isTimeoutError(error);
+          logger.error("[CBT AI] Gagal menghubungi endpoint Z.ai", { model, attempt, timedOut, error: message });
+          lastFailure = {
+            ok: false,
+            status: timedOut ? 504 : 502,
+            code: timedOut ? "GEMINI_TIMEOUT" : "GEMINI_UPSTREAM_ERROR",
+            error: timedOut
+              ? "Permintaan ke Z.ai melewati batas waktu (timeout). Coba kurangi jumlah soal atau ulangi lagi."
+              : `Gagal terhubung ke layanan Z.ai: ${message}`,
+            detail: message,
+          };
+          if (attempt < 2) {
+            await delayMs(retryDelayMs * attempt);
+            continue;
+          }
+          tryNextModel = true;
+        }
+      }
+
+      if (rawText) break;
+      if (!tryNextModel) break;
+    }
+  }
+
+  if (!rawText && geminiKey) {
     const modelCandidates = buildGeminiModelCandidates(env);
 
     for (const model of modelCandidates) {
@@ -303,7 +482,7 @@ export async function generateExamDraftWithAi(
                 temperature: 0.4,
                 maxOutputTokens: 8192,
                 responseMimeType: "application/json",
-                ...(model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+                ...(model.startsWith("gemini-2.5-flash") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
               },
             }),
             signal: AbortSignal.timeout(timeoutMs),
@@ -410,14 +589,17 @@ export async function generateExamDraftWithAi(
 
           lastFailure = {
             ok: false,
-            status: 502,
+            status: response.status === 503 ? 503 : 502,
             code: "GEMINI_UPSTREAM_ERROR",
-            error: `Layanan Gemini (${model}) sedang mengalami gangguan (HTTP ${response.status}). Silakan coba lagi beberapa saat.`,
+            error:
+              response.status === 503
+                ? `Server Google Gemini (${model}) sedang sangat padat (HTTP 503). Kuota AI sekolah Anda TIDAK terpotong — silakan klik Generate lagi dalam 10–30 detik.`
+                : `Layanan Gemini (${model}) sedang mengalami gangguan (HTTP ${response.status}). Kuota AI Anda tidak terpotong; silakan coba lagi beberapa saat.`,
             detail,
           };
 
           if (isRetryableStatus(response.status) && attempt < 2) {
-            await delayMs(retryDelayMs);
+            await delayMs(retryDelayMs * attempt);
             continue;
           }
           tryNextModel = isRetryableStatus(response.status);

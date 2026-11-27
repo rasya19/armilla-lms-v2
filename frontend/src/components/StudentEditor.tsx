@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Calendar } from "lucide-react";
-import { classMatchesPackage, ensureStandardClasses } from "./standardClasses";
+import { classMatchesPackage } from "./standardClasses";
 import { TableSkeleton } from "./DashboardUI";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 
@@ -170,7 +170,7 @@ export function StudentEditor({ id, onCancel, onSaved, onBusyChange }: { id?: st
 
   useEffect(() => {
     const controller = new AbortController();
-    ensureStandardClasses(controller.signal).then(() => fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal })).then(async (response) => {
+    fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw new Error("Daftar kelas belum dapat dimuat. Data siswa tetap dapat disimpan tanpa mengubah kelas.");
       const value: unknown = await response.json();
       if (!value || typeof value !== "object" || !("kelas" in value) || !Array.isArray(value.kelas) || !value.kelas.every((item: unknown) => item !== null && typeof item === "object" && "id" in item && typeof item.id === "string" && "nama" in item && typeof item.nama === "string")) throw new Error("Respons daftar kelas tidak valid.");

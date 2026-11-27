@@ -29,7 +29,6 @@ import { SchoolAttendance } from "./SchoolAttendance";
 import { StudentImport, type StudentImportResult } from "./StudentImport";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
-import { ensureStandardClasses } from "./standardClasses";
 import { getPlanBySlug, SUBSCRIPTION_PLANS, type PlanSlug } from "./subscriptionPlans";
 import { deriveTenantSlugFromHost, saveCachedTenantProfile } from "./authSessionCache";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
@@ -358,8 +357,7 @@ export function SchoolBulkPlacementView() {
     const controller = new AbortController();
     const cached = getCached<ClassData>("/api/sekolah/kelas");
     if (cached) setData(cached);
-    ensureStandardClasses(controller.signal)
-      .then(() => fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal }))
+    fetchWithTimeout("/api/sekolah/kelas", { signal: controller.signal })
       .then(async (res) => {
         const body: unknown = await res.json();
         if (!res.ok) {
@@ -1403,10 +1401,7 @@ export function SchoolAdvancedSettingsView({
     getCached<AdvancedSettingsData>("/api/sekolah/pengaturan")
   );
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [copiedPpdb, setCopiedPpdb] = useState(false);
-  const [classBusy, setClassBusy] = useState(false);
-  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1432,31 +1427,7 @@ export function SchoolAdvancedSettingsView({
         }
       });
     return () => controller.abort();
-  }, [version]);
-
-  async function ensureClasses() {
-    setClassBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const res = await fetchWithTimeout("/api/sekolah/kelas-standar", { method: "POST" });
-      const body: unknown = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
-            ? body.error
-            : "Kelas standar belum dapat diproses."
-        );
-      }
-      invalidateCache(["/api/sekolah/kelas", "/api/sekolah/pengaturan", "/api/sekolah/ringkasan"]);
-      setNotice("Verifikasi kelas standar PKBM (Paket A Kelas 1–6, B Kelas 7–9, C Kelas 10–12) berhasil.");
-      setVersion((v) => v + 1);
-    } catch (failure: unknown) {
-      setError(describeFetchError(failure, "Kelas standar belum dapat diproses."));
-    } finally {
-      setClassBusy(false);
-    }
-  }
+  }, []);
 
   const ppdbUrl = data ? `${window.location.origin}/ppdb/${encodeURIComponent(data.sekolah.slug)}` : "";
   const activePlanInfo = data ? getPlanBySlug(data.sekolah.normalizedPlan) : SUBSCRIPTION_PLANS[2];
@@ -1471,7 +1442,7 @@ export function SchoolAdvancedSettingsView({
     <section className="dashboard-glass space-y-6 rounded-2xl p-6">
       <DashboardHero
         title="Pengaturan Lanjutan"
-        description="Informasi langganan lembaga, status aktivasi akun LMS, tautan subdomain, dan utilitas kelas standar."
+        description="Informasi langganan lembaga, status aktivasi akun LMS, tautan subdomain, dan ringkasan struktur kelas."
         badge="Paket Pro"
         action={
           <button type="button" onClick={onOpenTheme} className="dashboard-hero-action">
@@ -1484,11 +1455,6 @@ export function SchoolAdvancedSettingsView({
       {error && (
         <p role="alert" className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${isDark ? "border-rose-500/35 bg-rose-950/50 text-rose-200" : "border-transparent bg-rose-50 text-rose-800"}`}>
           {error}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className={`mt-4 rounded-xl border p-4 text-sm font-semibold ${isDark ? "border-emerald-500/35 bg-emerald-950/50 text-emerald-200" : "border-transparent bg-emerald-50 text-emerald-900"}`}>
-          {notice}
         </p>
       )}
 
@@ -1605,31 +1571,19 @@ export function SchoolAdvancedSettingsView({
                 <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>{data.statistik.tahunAjaranTotal} Tahun Ajaran</p>
               </div>
               <div className={subBoxClass}>
-                <p className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kelas Standar PKBM</p>
+                <p className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Struktur Program</p>
                 <p className={`mt-1 text-sm font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-                  {data.sekolah.kelasStandarDibuat ? "Sudah Disiapkan (12 Kelas)" : "Belum Lengkap"}
+                  Mandiri per Sekolah
                 </p>
-                <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Paket A (1–6), B (7–9), C (10–12)</p>
+                <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>Paket A, Paket B, Paket C</p>
               </div>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={classBusy}
-                onClick={ensureClasses}
-                className="master-primary px-4 py-2.5 disabled:opacity-50"
-              >
-                {classBusy ? "Memproses..." : "Verifikasi Kelas Standar PKBM"}
-              </button>
-              <button
-                type="button"
                 onClick={onOpenClasses}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold transition ${
-                  isDark
-                    ? "border-slate-700/80 bg-slate-800/80 text-slate-200 hover:border-amber-400/40 hover:text-amber-300"
-                    : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                }`}
+                className="master-primary inline-flex items-center gap-1.5 px-4 py-2.5 text-xs"
               >
                 Kelola Kelas
                 <ArrowUpRight size={14} aria-hidden="true" />

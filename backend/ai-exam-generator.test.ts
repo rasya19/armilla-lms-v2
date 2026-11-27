@@ -71,7 +71,7 @@ test("sanitizes GEMINI_API_KEY and GEMINI_MODEL quotes, whitespace, and models/ 
     "gemini-custom",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
-    "gemini-flash-latest",
+    "gemini-2.5-pro",
   ]);
 });
 
@@ -154,6 +154,55 @@ test("generateExamDraftWithAi falls back to stable model when configured GEMINI_
     assert.equal(res.draft.butirSoal[0].kunciJawaban, "B");
   }
   assert.deepEqual(calledModels, ["gemini-retired-model", "gemini-2.5-flash"]);
+});
+
+test("generateExamDraftWithAi uses Z.ai (GLM) as primary provider when ZAI_API_KEY or Z_API_KEY is configured", async () => {
+  const calledUrls: string[] = [];
+  const res = await generateExamDraftWithAi(
+    {
+      kategori: "UTS",
+      kelasNama: "Paket C Kelas 10",
+      mapelNama: "Bahasa Indonesia",
+      topik: "Teks Laporan Hasil Observasi",
+      jumlahSoal: 3,
+    },
+    {
+      env: { Z_API_KEY: "test-zai-key.secret", ZAI_MODEL: "glm-4.5-flash" },
+      retryDelayMs: 1,
+      logger: silentLogger,
+      fetchImpl: (async (url: string | URL | Request) => {
+        calledUrls.push(String(url));
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    judulPaket: "UTS Bahasa Indonesia Kelas 10",
+                    deskripsiPaket: "Soal UTS via Z.ai GLM",
+                    butirSoal: [
+                      { teks: "Soal 1?", opsiA: "A1", opsiB: "B1", opsiC: "C1", opsiD: "D1", kunciJawaban: "A" },
+                      { teks: "Soal 2?", opsiA: "A2", opsiB: "B2", opsiC: "C2", opsiD: "D2", kunciJawaban: "B" },
+                      { teks: "Soal 3?", opsiA: "A3", opsiB: "B3", opsiC: "C3", opsiD: "D3", kunciJawaban: "C" },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }) as typeof fetch,
+    },
+  );
+
+  assert.equal(res.ok, true);
+  if (res.ok) {
+    assert.equal(res.provider, "zai");
+    assert.equal(res.model, "glm-4.5-flash");
+    assert.equal(res.draft.butirSoal.length, 3);
+  }
+  assert.equal(calledUrls[0], "https://api.z.ai/api/paas/v4/chat/completions");
 });
 
 test("generateExamDraftWithAi returns specific status/code for auth error, rate limit, and invalid JSON", async () => {

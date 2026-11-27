@@ -59,6 +59,12 @@ import { hasPlanAccess, type PlanSlug } from "./subscriptionPlans";
 import { ModuleBankView } from "./ModuleBankView";
 import { isSafeSubmissionPhotoSrc, SubmissionPhotoModal } from "./LmsLearning";
 import { compressPasFoto4x6 } from "./StudentVervalForm";
+import {
+  buildStudentReminderMessage,
+  buildStudentReminderWaUrl,
+  formatLoginTimestamp,
+  type StudentLoginStatus,
+} from "../utils/studentLoginStatus";
 
 export type TeacherView =
   | "beranda"
@@ -144,11 +150,14 @@ type TeacherStudentRow = {
   id: string;
   nama: string;
   nisn: string;
+  telepon?: string;
   kelasId: string | null;
   kelasNama: string;
   status: string;
   punyaAkun: boolean;
   username: string;
+  statusLogin?: StudentLoginStatus;
+  lastLoginAt?: string | null;
 };
 
 type TeacherStudentsPayload = {
@@ -1213,6 +1222,8 @@ function TeacherBerandaSection({
 function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
   const isDark = useTenantTheme() === "dark";
   const [kelasFilter, setKelasFilter] = useState("");
+  const [loginFilter, setLoginFilter] = useState<"semua" | "aktif" | "pernah" | "belum">("semua");
+  const [reminderNotice, setReminderNotice] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [data, setData] = useState<TeacherStudentsPayload | null>(null);
@@ -1339,7 +1350,7 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
         }
       />
 
-      {/* Filter Kelas & Pencarian */}
+      {/* Filter Kelas, Status Login & Pencarian */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
         <label className="relative block">
           <span className="sr-only">Cari nama atau NISN siswa</span>
@@ -1368,6 +1379,55 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
           ))}
         </select>
       </div>
+
+      {data && data.siswa.length > 0 && (() => {
+        const aktifCount = data.siswa.filter((s) => s.statusLogin === "AKTIF").length;
+        const pernahCount = data.siswa.filter((s) => s.statusLogin === "PERNAH").length;
+        const belumCount = data.siswa.filter((s) => (s.statusLogin ?? "BELUM") === "BELUM").length;
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Monitoring Login:</span>
+            {([
+              ["semua", "Semua", data.siswa.length, "slate"],
+              ["aktif", "Sedang Login", aktifCount, "emerald"],
+              ["pernah", "Pernah Login", pernahCount, "sky"],
+              ["belum", "Belum Pernah Login", belumCount, "amber"],
+            ] as const).map(([value, label, count, tone]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={loginFilter === value}
+                onClick={() => setLoginFilter(value)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                  loginFilter === value
+                    ? tone === "emerald"
+                      ? "border-emerald-500 bg-emerald-600 text-white"
+                      : tone === "amber"
+                        ? "border-amber-500 bg-amber-500 text-slate-950"
+                        : tone === "sky"
+                          ? "border-sky-500 bg-sky-600 text-white"
+                          : isDark
+                            ? "border-amber-400 bg-amber-400 text-slate-950"
+                            : "border-indigo-600 bg-indigo-600 text-white"
+                    : isDark
+                      ? "border-slate-700/70 bg-slate-900/70 text-slate-300 hover:border-slate-500"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {value === "aktif" && <span className={`h-2 w-2 rounded-full ${loginFilter === value ? "bg-white" : "bg-emerald-500"}`} />}
+                <span>{label}</span>
+                <span className="tabular-nums opacity-85">({count})</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
+      {reminderNotice && (
+        <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-900">
+          {reminderNotice}
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
@@ -1472,12 +1532,31 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
                 <th className="px-4 py-3">Warga Belajar</th>
                 <th className="px-4 py-3">NISN / Username</th>
                 <th className="px-4 py-3">Kelas</th>
+                <th className="px-4 py-3">Status Login</th>
                 <th className="px-4 py-3">Status Akun</th>
-                <th className="px-4 py-3 text-right">Aksi Akun</th>
+                <th className="px-4 py-3 text-right">Aksi &amp; Tegur</th>
               </tr>
             </thead>
             <tbody className={isDark ? "divide-y divide-slate-800/80" : "divide-y divide-slate-200/70"}>
-              {data.siswa.map((student) => (
+              {data.siswa
+                .filter((student) => {
+                  const st = student.statusLogin ?? "BELUM";
+                  if (loginFilter === "aktif") return st === "AKTIF";
+                  if (loginFilter === "pernah") return st === "PERNAH";
+                  if (loginFilter === "belum") return st === "BELUM";
+                  return true;
+                })
+                .map((student) => {
+                  const loginStatus = student.statusLogin ?? "BELUM";
+                  const reminderMsg = buildStudentReminderMessage({
+                    nama: student.nama,
+                    kelasNama: student.kelasNama,
+                    statusLogin: loginStatus,
+                    senderRole: "Guru",
+                    portalUrl: `${window.location.origin}/lms`,
+                  });
+                  const reminderWaUrl = buildStudentReminderWaUrl(student.telepon, reminderMsg);
+                  return (
                 <tr key={student.id} className={isDark ? "hover:bg-slate-800/45" : "hover:bg-sky-50/40"}>
                   <td className={`px-4 py-3 font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{student.nama}</td>
                   <td className={`px-4 py-3 font-mono text-xs tabular-nums ${isDark ? "text-slate-300" : "text-slate-700"}`}>
@@ -1491,6 +1570,36 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
                     >
                       {student.kelasNama || "Tanpa Kelas"}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {loginStatus === "AKTIF" ? (
+                      <div className="space-y-0.5">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${isDark ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>
+                          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                          Sedang Login
+                        </span>
+                        {student.lastLoginAt && (
+                          <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                            {formatLoginTimestamp(student.lastLoginAt)}
+                          </p>
+                        )}
+                      </div>
+                    ) : loginStatus === "PERNAH" ? (
+                      <div className="space-y-0.5">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${isDark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-700"}`}>
+                          Pernah Login
+                        </span>
+                        {student.lastLoginAt && (
+                          <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                            Terakhir: {formatLoginTimestamp(student.lastLoginAt)}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${isDark ? "bg-amber-500/20 text-amber-300" : "bg-amber-50 text-amber-800"}`}>
+                        Belum Login
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {student.punyaAkun ? (
@@ -1513,6 +1622,38 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
+                    <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                      {loginStatus !== "AKTIF" &&
+                        (reminderWaUrl ? (
+                          <a
+                            href={reminderWaUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                          >
+                            <MessageSquare size={12} aria-hidden="true" />
+                            Tegur WA
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (navigator.clipboard?.writeText) {
+                                void navigator.clipboard
+                                  .writeText(reminderMsg)
+                                  .then(() => {
+                                    setReminderNotice(`Pesan teguran untuk ${student.nama} disalin — silakan tempel ke WA/grup kelas.`);
+                                    window.setTimeout(() => setReminderNotice(""), 4500);
+                                  })
+                                  .catch(() => {});
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+                          >
+                            <MessageSquare size={12} aria-hidden="true" />
+                            Salin Teguran
+                          </button>
+                        ))}
                     {student.punyaAkun ? (
                       <button
                         type="button"
@@ -1540,9 +1681,11 @@ function TeacherStudentsSection({ sandboxRole }: { sandboxRole?: "GURU" }) {
                         Buat Akun
                       </button>
                     )}
+                    </div>
                   </td>
                 </tr>
-              ))}
+                  );
+                })}
             </tbody>
           </table>
         </div>

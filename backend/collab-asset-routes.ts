@@ -2,7 +2,12 @@ import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { randomBytes } from "crypto";
 import { prisma } from "./db.js";
-import { buildGeminiModelCandidates } from "./ai-exam-generator.js";
+import {
+  buildGeminiModelCandidates,
+  buildZaiModelCandidates,
+  resolveZaiApiKey,
+  resolveZaiEndpoint,
+} from "./ai-exam-generator.js";
 import {
   checkSchoolAiQuota,
   getSchoolAiQuotaSummary,
@@ -104,8 +109,47 @@ function buildStructuredAiFallback(params: {
 }
 
 async function callExternalAiProvider(prompt: string, apiKeyOverride?: string): Promise<string | null> {
+  const zaiKey = apiKeyOverride ? "" : resolveZaiApiKey();
   const openRouterKey = apiKeyOverride ? "" : process.env.OPENROUTER_API_KEY?.trim();
   const geminiKey = apiKeyOverride?.trim() || process.env.GEMINI_API_KEY?.trim();
+
+  if (zaiKey) {
+    const zaiEndpoint = resolveZaiEndpoint();
+    const zaiModels = buildZaiModelCandidates();
+    for (const model of zaiModels) {
+      try {
+        const response = await fetch(zaiEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${zaiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: "Anda adalah Asisten Tutor Pendidikan Kesetaraan PKBM (Paket A, B, C) berbahasa Indonesia yang jelas, ramah, terstruktur, dan praktis.",
+              },
+              { role: "user", content: prompt },
+            ],
+            temperature: 0.5,
+            max_tokens: 1024,
+            stream: false,
+          }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (response.ok) {
+          const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+          const text = json.choices?.[0]?.message?.content?.trim();
+          if (text) return text;
+        }
+        if (response.status === 401 || response.status === 403) break;
+      } catch {
+        // Try next model or fallback provider
+      }
+    }
+  }
 
   if (openRouterKey) {
     try {
@@ -162,7 +206,7 @@ async function callExternalAiProvider(prompt: string, apiKeyOverride?: string): 
               generationConfig: {
                 maxOutputTokens: 1024,
                 temperature: 0.5,
-                ...(model.startsWith("gemini-2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+                ...(model.startsWith("gemini-2.5-flash") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
               },
             }),
             signal: AbortSignal.timeout(25000),

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useGlassConfirm } from "./GlassConfirm";
 import { SchoolModal } from "./SchoolModal";
 import { CardGridSkeleton, EmptyState, TableSkeleton } from "./DashboardUI";
-import { ensureStandardClasses } from "./standardClasses";
 import { getCached, invalidateCache, setCached } from "./schoolCache";
 import type { PlanSlug } from "./subscriptionPlans";
 import { ArrowLeft, ArrowRight, BookOpen, GraduationCap, Layers, Pencil, Search, Trash2, UserMinus, Users } from "lucide-react";
@@ -249,7 +248,7 @@ export function SchoolClasses(_props: {
     const controller = new AbortController();
     const cached = getCached<ClassData>("/api/sekolah/kelas");
     if (cached) setData(cached);
-    ensureStandardClasses(controller.signal).then(() => request("/api/sekolah/kelas", "GET", undefined, controller.signal)).then((value) => {
+    request("/api/sekolah/kelas", "GET", undefined, controller.signal).then((value) => {
       if (!isClassData(value)) throw new Error("Respons kelas tidak valid.");
       setCached("/api/sekolah/kelas", value);
       if (!controller.signal.aborted) { setData(value); setError(""); }
@@ -269,6 +268,21 @@ export function SchoolClasses(_props: {
       setNama(""); setWali(""); setEditing(null); setClassOpen(false); setMessage("Kelas disimpan."); setVersion((value) => value + 1);
     } catch (failure) {
       setError(describeFetchError(failure, "Kelas belum dapat disimpan."));
+    } finally { setBusy(false); }
+  }
+
+  async function deleteEmptyClasses() {
+    const emptyCount = data?.kelas.filter((k) => k.jumlahSiswa === 0).length ?? 0;
+    if (!emptyCount) return;
+    if (!await confirm(`Hapus ${emptyCount} kelas kosong (tanpa siswa)? Kelas yang sudah berisi siswa atau data akademik tetap aman.`)) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const res = (await request("/api/sekolah/kelas-kosong", "DELETE")) as { message?: string };
+      invalidateCache(["/api/sekolah/kelas", "/api/sekolah/siswa", "/api/sekolah/akademik", "/api/sekolah/ringkasan"]);
+      setMessage(res?.message || "Kelas kosong berhasil dihapus.");
+      setVersion((value) => value + 1);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Kelas kosong belum dapat dihapus."));
     } finally { setBusy(false); }
   }
 
@@ -362,6 +376,16 @@ export function SchoolClasses(_props: {
               >
                 Total {data.kelas.length} rombel · {data.kelas.reduce((sum, item) => sum + item.jumlahSiswa, 0)} siswa aktif
               </span>
+              {data.kelas.some((item) => item.jumlahSiswa === 0) && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void deleteEmptyClasses()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                >
+                  Hapus Kelas Kosong ({data.kelas.filter((item) => item.jumlahSiswa === 0).length})
+                </button>
+              )}
               <button
                 type="button"
                 className="master-primary"

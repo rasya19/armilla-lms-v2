@@ -10,6 +10,8 @@ const future = "2099-12-31T23:59:59Z";
 const valid = { institutionName: "Sekolah Uji", npsn: "P1234567", subdomain: "sekolahuji", adminName: "Admin Sekolah", adminEmail: "ADMIN@example.invalid", adminPhone: "08123456789", plan: "Tahunan", expiresAt: future };
 
 test("internal provisioning authenticates, validates, and returns a usable temporary password", async () => {
+  const previousAppOrigin = process.env.APP_ORIGIN;
+  process.env.APP_ORIGIN = "https://rsch.my.id";
   let secret: string | undefined = "test-secret";
   let hash = "";
   let calls = 0;
@@ -56,12 +58,16 @@ test("internal provisioning authenticates, validates, and returns a usable tempo
     assert.equal((await send("/tenants/p1234567/status", "PATCH", { status: "SUSPENDED", expiresAt: future })).status, 200);
     assert.equal(calls, 2);
   } finally {
+    if (previousAppOrigin === undefined) delete process.env.APP_ORIGIN;
+    else process.env.APP_ORIGIN = previousAppOrigin;
     server.close();
     await once(server, "close");
   }
 });
 
 test("production provisioning requires credentials and returns a usable temporary password without a test flag", async () => {
+  const previousAppOrigin = process.env.APP_ORIGIN;
+  process.env.APP_ORIGIN = "https://rsch.my.id";
   let hash = "";
   const app = express();
   app.use(internalProvisionRouter({ provision: async (_data, passwordHash) => { hash = passwordHash; return "tenant-id"; }, updateStatus: async () => false, getTheme: async () => null, updateTheme: async () => 0 }, { secret: () => "secret" }));
@@ -87,6 +93,8 @@ test("production provisioning requires credentials and returns a usable temporar
     assert.ok(await verifyPassword(result.temporaryPassword, hash));
     assert.equal((await fetch(`http://127.0.0.1:${address.port}/health`, { headers })).status, 200);
   } finally {
+    if (previousAppOrigin === undefined) delete process.env.APP_ORIGIN;
+    else process.env.APP_ORIGIN = previousAppOrigin;
     server.close();
     await once(server, "close");
   }

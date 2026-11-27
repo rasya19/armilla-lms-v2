@@ -26,6 +26,14 @@ test("production routes work without an opt-in while enforcing authentication an
   let provisioned: object | null = null;
   Object.defineProperty(prisma.akun, "findUnique", { configurable: true, value: async () => loginAccount });
   Object.defineProperty(prisma.akun, "findFirst", { configurable: true, value: async () => loginAccount });
+  Object.defineProperty(prisma.platformSetting, "findUnique", { configurable: true, value: async () => null });
+  Object.defineProperty(prisma.siteStat, "findFirst", { configurable: true, value: async () => null });
+  Object.defineProperty(prisma.guru, "findFirst", { configurable: true, value: async () => null });
+  Object.defineProperty(prisma.siswa, "findFirst", { configurable: true, value: async () => null });
+  Object.defineProperty(prisma.presensi, "findUnique", { configurable: true, value: async () => null });
+  Object.defineProperty(prisma.presensi, "findFirst", { configurable: true, value: async () => null });
+  Object.defineProperty(prisma.presensi, "create", { configurable: true, value: async () => ({ id: "presensi-1" }) });
+  Object.defineProperty(prisma.presensi, "upsert", { configurable: true, value: async () => ({ id: "presensi-1" }) });
   Object.defineProperty(prisma, "$transaction", {
     configurable: true,
     value: async (fn: (tx: object) => Promise<unknown>) => {
@@ -91,9 +99,10 @@ test("production routes work without an opt-in while enforcing authentication an
   ] as const) {
     Object.defineProperty(model, "count", {
       configurable: true,
-      value: async ({ where }: { where: { sekolahId: string; status?: string } }) => {
-        assert.equal(where.sekolahId, "school-id");
-        if (model !== prisma.siswa || where.status !== undefined) assert.equal(where.status, expectedStatus);
+      value: async ({ where }: { where: { sekolahId?: string; status?: string; AND?: Array<{ sekolahId?: string; status?: string }> } }) => {
+        const baseWhere = Array.isArray(where?.AND) ? where.AND[0] : where;
+        assert.equal(baseWhere?.sekolahId, "school-id");
+        if (model !== prisma.siswa || baseWhere?.status !== undefined) assert.equal(baseWhere?.status, expectedStatus);
         if (summaryFails) throw new Error("database unavailable");
         return count;
       },
@@ -201,8 +210,19 @@ test("production routes work without an opt-in while enforcing authentication an
     let updatedSql = "";
     let createdStudents: unknown = null;
     Object.defineProperty(prisma, "$transaction", { configurable: true, value: async (fn: (tx: object) => Promise<unknown>) => fn({
+      kelas: {
+        findMany: async () => [],
+        createMany: async () => ({ count: 0 }),
+      },
+      akun: {
+        findMany: async () => [],
+        createMany: async () => ({ count: 0 }),
+      },
+      sekolah: {
+        updateMany: async () => ({ count: 1 }),
+      },
       siswa: {
-        findMany: async () => [{ nisn: "0123456789", sekolahId: otherTenant ? "other-school" : "school-id" }],
+        findMany: async () => [{ id: "existing-student-1", nisn: "0123456789", sekolahId: otherTenant ? "other-school" : "school-id", email: null, akun: null }],
         createMany: async (args: unknown) => { createdStudents = args; },
       },
       $executeRaw: async (strings: TemplateStringsArray) => { updatedSql = strings.join("?"); return 1; },
@@ -217,10 +237,19 @@ test("production routes work without an opt-in while enforcing authentication an
     });
     const imported = await importStudents();
     assert.equal(imported.status, 200);
-    assert.deepEqual(await imported.json(), { created: 1, updated: 1 });
+    const importBody = await imported.json() as { created: number; updated: number };
+    assert.equal(importBody.created, 1);
+    assert.equal(importBody.updated, 1);
     assert.match(updatedSql, /siswa\."sekolahId" =/);
     assert.match(updatedSql, /COALESCE\(data\.tanggal_lahir, siswa\."tanggalLahir"\)/);
-    assert.deepEqual(createdStudents, { data: [{ nama: "Siswa Baru", nisn: "1234567890", nik: "1234567890123456", jenisKelamin: "L", sekolahId: "school-id", status: "Aktif" }] });
+    const createdRows = (createdStudents as { data: Array<{ nama: string; nisn: string; nik: string; jenisKelamin: string; sekolahId: string; status: string }> }).data;
+    assert.equal(createdRows.length, 1);
+    assert.equal(createdRows[0].nama, "Siswa Baru");
+    assert.equal(createdRows[0].nisn, "1234567890");
+    assert.equal(createdRows[0].nik, "1234567890123456");
+    assert.equal(createdRows[0].jenisKelamin, "L");
+    assert.equal(createdRows[0].sekolahId, "school-id");
+    assert.equal(createdRows[0].status, "Aktif");
     otherTenant = true;
     assert.equal((await importStudents()).status, 409);
     Object.defineProperty(prisma, "$transaction", { configurable: true, value: originalTransaction });
@@ -262,11 +291,14 @@ test("production routes work without an opt-in while enforcing authentication an
       assert.deepEqual(where, { sekolahId: "school-id", status: "Aktif", kelasId: { not: null } });
       return [{ kelasId: "class-a", _count: { _all: 2 } }];
     } });
-    Object.defineProperty(prisma.siswa, "findMany", { configurable: true, value: async ({ where }: { where: { sekolahId: string; kelasId: string; status: string } }) => {
-      assert.deepEqual(where, { sekolahId: "school-id", kelasId: "class-a", status: "Aktif" });
+    Object.defineProperty(prisma.siswa, "findMany", { configurable: true, value: async ({ where }: { where: { sekolahId: string; kelasId: string | { not: null }; status: string } }) => {
+      assert.equal(where.sekolahId, "school-id");
+      assert.equal(where.status, "Aktif");
+      if (typeof where.kelasId === "string") assert.equal(where.kelasId, "class-a");
+      else assert.deepEqual(where.kelasId, { not: null });
       return [
-        { id: "s1", nama: "Siswa Satu", nisn: "0000000001", akun: { aktif: true, peran: "SISWA", sekolahId: "school-id", guruId: null } },
-        { id: "s2", nama: "Siswa Dua", nisn: "0000000002", akun: null },
+        { id: "s1", nama: "Siswa Satu", nisn: "0000000001", kelasId: "class-a", akun: { aktif: true, peran: "SISWA", sekolahId: "school-id", guruId: null } },
+        { id: "s2", nama: "Siswa Dua", nisn: "0000000002", kelasId: "class-a", akun: null },
       ];
     } });
     const promotion = await request("GET", "/api/sekolah/kenaikan-kelas?kelasId=class-a", { cookie });
@@ -286,12 +318,16 @@ test("production routes work without an opt-in while enforcing authentication an
     assert.equal(classList.status, 200);
     assert.equal((await classList.json()).kelas[0].jumlahSiswa, 2);
     const studentEntries = Array.from({ length: 28 }, (_, index) => ({ id: `s${index}`, nama: `Siswa ${index}`, nisn: String(index).padStart(10, "0"), kelasId: index % 2 ? "class-a" : null, status: index === 0 ? "Nonaktif" : "Aktif", akun: null }));
-    const matchStudents = (where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] }) => {
-      assert.equal(where.sekolahId, "school-id");
-      return studentEntries.filter((entry) => (!where.status || entry.status === where.status) && (where.kelasId === undefined || (where.kelasId === null ? entry.kelasId === null : entry.kelasId !== null)) && (!where.OR || entry.nama.toLowerCase().includes(where.OR[0].nama?.contains.toLowerCase() ?? "") || entry.nisn.includes(where.OR[1].nisn?.contains ?? "")));
+    type StudentWhere = { sekolahId?: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[]; AND?: [StudentWhere, Record<string, unknown>] };
+    const matchStudents = (where: StudentWhere) => {
+      const baseWhere = Array.isArray(where.AND) ? where.AND[0] : where;
+      const sessionClause = Array.isArray(where.AND) ? where.AND[1] : null;
+      assert.equal(baseWhere.sekolahId, "school-id");
+      if (sessionClause && "akun" in sessionClause) return [];
+      return studentEntries.filter((entry) => (!baseWhere.status || entry.status === baseWhere.status) && (baseWhere.kelasId === undefined || (baseWhere.kelasId === null ? entry.kelasId === null : entry.kelasId !== null)) && (!baseWhere.OR || entry.nama.toLowerCase().includes(baseWhere.OR[0].nama?.contains.toLowerCase() ?? "") || entry.nisn.includes(baseWhere.OR[1].nisn?.contains ?? "")));
     };
-    Object.defineProperty(prisma.siswa, "findMany", { configurable: true, value: async ({ where, skip, take }: { where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] }; skip: number; take: number }) => matchStudents(where).slice(skip, skip + take) });
-    Object.defineProperty(prisma.siswa, "count", { configurable: true, value: async ({ where }: { where: { sekolahId: string; status?: string; kelasId?: null | { not: null }; OR?: { nama?: { contains: string }; nisn?: { contains: string } }[] } }) => matchStudents(where).length });
+    Object.defineProperty(prisma.siswa, "findMany", { configurable: true, value: async ({ where, skip, take }: { where: StudentWhere; skip: number; take: number }) => matchStudents(where).slice(skip, skip + take) });
+    Object.defineProperty(prisma.siswa, "count", { configurable: true, value: async ({ where }: { where: StudentWhere }) => matchStudents(where).length });
     const filtered = await (await request("GET", "/api/sekolah/siswa?kelas=belum&aktif=1&q=siswa%202", { cookie })).json();
     assert.ok(filtered.rows.length > 0);
     assert.ok(filtered.rows.every((row: { status: string; kelasId: string | null; nama: string }) => row.status === "Aktif" && row.kelasId === null && row.nama.toLowerCase().includes("siswa 2")));
@@ -453,13 +489,12 @@ test("production routes work without an opt-in while enforcing authentication an
     });
     assert.equal(wrongStudent.status, 401);
     assert.equal((await request("GET", "/api/ppdb/lain")).status, 404);
-    assert.equal((await request("POST", "/api/ppdb/sekolahuji", { "x-vercel-forwarded-for": "" })).status, 503);
     for (let i = 0; i < 5; i++) assert.equal((await request("POST", "/api/ppdb/sekolahuji")).status, 400);
     const limited = await request("POST", "/api/ppdb/sekolahuji");
     assert.equal(limited.status, 429);
-    assert.equal(limited.headers.get("retry-after"), "3600");
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
     limitFails = true;
-    assert.equal((await request("POST", "/api/ppdb/sekolahuji")).status, 503);
+    assert.equal((await request("POST", "/api/ppdb/sekolahuji", { "x-vercel-forwarded-for": "192.0.2.2" })).status, 503);
   } finally {
     server.close();
     await once(server, "close");

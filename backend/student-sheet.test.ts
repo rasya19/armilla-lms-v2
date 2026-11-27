@@ -34,11 +34,14 @@ test("Dapodik grouped headers map and preserve row numbers when NISN is missing"
   assert.equal(data.mapping.namaIbu, "9");
   assert.equal(data.mapping.telepon, "5");
   const mapped = mappedStudentRows(data.rows, data.mapping);
-  assert.equal(mapped.ready.length, 1);
+  assert.equal(mapped.ready.length, 2);
   assert.equal(mapped.ready[0].nisn, "0123456789");
   assert.equal(mapped.ready[0].namaAyah, "Ayah Uji");
-  assert.deepEqual(mapped.readyNumbers, [7]);
-  assert.deepEqual(mapped.skipped, [{ number: 8, nama: "Siswa Tanpa NISN" }]);
+  assert.equal(mapped.ready[1].nama, "Siswa Tanpa NISN");
+  assert.equal(mapped.ready[1].nisn, "");
+  assert.equal(mapped.ready[1].jenisKelamin, "L");
+  assert.deepEqual(mapped.readyNumbers, [7, 8]);
+  assert.deepEqual(mapped.skipped, []);
 });
 
 test("simple first-row import remains supported", () => {

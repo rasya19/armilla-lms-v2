@@ -186,6 +186,60 @@ test("theme webhook requires server credentials and an unambiguous valid target"
   } finally { server.close(); await once(server, "close"); }
 });
 
+test("GET /api/internal/tenants requires Bearer MASTER_PROVISION_SECRET and returns { success: true, tenants }", async () => {
+  const sampleTenants = [
+    {
+      id: "tenant-1",
+      tenantId: "tenant-1",
+      nama: "PKBM Armilla Nusa",
+      institutionName: "PKBM Armilla Nusa",
+      npsn: "P2964285",
+      slug: "armillanusa",
+      subdomain: "armillanusa",
+      status: "ACTIVE",
+      plan: "pro",
+      planTier: "pro" as const,
+      expiresAt: future,
+      themeKey: "ocean",
+      adminName: "Admin PKBM",
+      adminEmail: "admin@armilla.invalid",
+      adminPhone: "08123456789",
+      kabupatenKota: "Kabupaten Kuningan",
+      totalSiswa: 120,
+      totalGuru: 12,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+  const app = express();
+  app.use("/api/internal", internalProvisionRouter({
+    provision: async () => "unused",
+    updateStatus: async () => false,
+    getTheme: async () => null,
+    updateTheme: async () => 0,
+    listTenants: async () => sampleTenants,
+  }, { secret: () => "master-secret-123" }));
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const url = `http://127.0.0.1:${address.port}/api/internal/tenants`;
+    assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(url, { headers: { authorization: "Bearer wrong-secret" } })).status, 401);
+    assert.equal((await fetch(url, { headers: { authorization: "Bearer master-secret-123", origin: "https://example.invalid" } })).status, 403);
+    const res = await fetch(url, { headers: { authorization: "Bearer master-secret-123" } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await res.json(), { success: true, tenants: sampleTenants });
+    const filtered = await fetch(`${url}?npsn=P2964285`, { headers: { authorization: "Bearer master-secret-123" } });
+    assert.equal(filtered.status, 200);
+    assert.equal((await filtered.json()).tenants.length, 1);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
 test("theme updates target active schools or only the specified school", async () => {
   if (!process.env.DATABASE_URL) process.env.DATABASE_URL = "postgresql://test:test@127.0.0.1:5432/test";
   const { prisma } = await import("./db.js");

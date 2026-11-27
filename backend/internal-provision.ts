@@ -13,12 +13,34 @@ type ThemeKey = GlobalThemeKey;
 type Provision = { institutionName: string; npsn: string; subdomain: string; adminName: string; adminEmail: string; adminPhone: string; plan: string; expiresAt: Date; isiKontenSiapPakai?: boolean };
 type PlanUpdate = { sekolahId?: string | null; npsn: string | null; slug: string | null; plan: TenantPlan };
 type UpdatedTenantPlan = { id: string; nama: string; slug: string; npsn: string | null; plan: string | null };
+export type InternalTenantRecord = {
+  id: string;
+  tenantId: string;
+  nama: string;
+  institutionName: string;
+  npsn: string | null;
+  slug: string;
+  subdomain: string;
+  status: string;
+  plan: string | null;
+  planTier: TenantPlan;
+  expiresAt: string | null;
+  themeKey: string;
+  adminName: string | null;
+  adminEmail: string | null;
+  adminPhone: string | null;
+  kabupatenKota: string | null;
+  totalSiswa: number;
+  totalGuru: number;
+  createdAt: string;
+};
 type InternalStore = {
   provision: (data: Provision, passwordHash: string) => Promise<string>;
   updateStatus: (npsn: string, status: Status, expiresAt: Date) => Promise<boolean>;
   getTheme: (npsn: string) => Promise<string | null>;
   updateTheme: (themeKey: ThemeKey, sekolahId: string | null, npsn?: string) => Promise<number>;
   updatePlan?: (data: PlanUpdate) => Promise<UpdatedTenantPlan | null>;
+  listTenants?: () => Promise<InternalTenantRecord[]>;
   seedMasterContent?: (sekolahId: string) => Promise<unknown>;
 };
 
@@ -128,6 +150,55 @@ export function prismaInternalStore(prisma: PrismaClient): InternalStore {
         select: { id: true, nama: true, slug: true, npsn: true, plan: true },
       });
     },
+    async listTenants() {
+      const schools = await prisma.sekolah.findMany({
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        take: 1000,
+        select: {
+          id: true,
+          nama: true,
+          npsn: true,
+          slug: true,
+          status: true,
+          plan: true,
+          expiresAt: true,
+          themeKey: true,
+          adminPhone: true,
+          kabupatenKota: true,
+          createdAt: true,
+          akun: {
+            where: { peran: "ADMIN" },
+            select: { nama: true, email: true },
+            orderBy: { createdAt: "asc" },
+            take: 1,
+          },
+          _count: {
+            select: { siswa: true, guru: true },
+          },
+        },
+      });
+      return schools.map((school) => ({
+        id: school.id,
+        tenantId: school.id,
+        nama: school.nama,
+        institutionName: school.nama,
+        npsn: school.npsn,
+        slug: school.slug,
+        subdomain: school.slug,
+        status: school.status,
+        plan: school.plan,
+        planTier: toCleanPlanCode(school.plan) ?? "basic",
+        expiresAt: school.expiresAt ? school.expiresAt.toISOString() : null,
+        themeKey: school.themeKey,
+        adminName: school.akun[0]?.nama ?? null,
+        adminEmail: school.akun[0]?.email ?? null,
+        adminPhone: school.adminPhone ?? null,
+        kabupatenKota: school.kabupatenKota ?? null,
+        totalSiswa: school._count.siswa,
+        totalGuru: school._count.guru,
+        createdAt: school.createdAt.toISOString(),
+      }));
+    },
     async seedMasterContent(sekolahId) {
       return cloneMasterContentToSchool(prisma, { sekolahId, copyAll: true });
     },
@@ -148,6 +219,30 @@ export function internalProvisionRouter(store: InternalStore, settings: { secret
   });
   router.use(express.json({ limit: "16kb" }));
   router.get("/health", (_req, res) => res.json({ success: true }));
+  router.get("/tenants", async (req, res) => {
+    if (!store.listTenants) {
+      return res.status(503).json({ error: "Daftar tenant belum tersedia." });
+    }
+    try {
+      let tenants = await store.listTenants();
+      const statusFilter = typeof req.query.status === "string" ? req.query.status.trim().toUpperCase() : "";
+      const npsnFilter = typeof req.query.npsn === "string" ? req.query.npsn.trim().toUpperCase() : "";
+      const slugFilter = typeof req.query.slug === "string" ? req.query.slug.trim().toLowerCase() : "";
+      if (statusFilter) {
+        tenants = tenants.filter((t) => t.status.toUpperCase() === statusFilter);
+      }
+      if (npsnFilter) {
+        tenants = tenants.filter((t) => (t.npsn ?? "").toUpperCase() === npsnFilter);
+      }
+      if (slugFilter) {
+        tenants = tenants.filter((t) => t.slug.toLowerCase() === slugFilter);
+      }
+      return res.json({ success: true, tenants });
+    } catch (error) {
+      console.error("Gagal memuat daftar tenant internal:", error);
+      return res.status(503).json({ error: "Daftar tenant belum dapat dimuat." });
+    }
+  });
   router.get("/tenant-theme/capabilities", (_req, res) => res.json({ success: true, bulkScope: "active-unexpired" }));
   router.get("/tenant-theme", async (req, res) => {
     const npsn = req.query.npsn;

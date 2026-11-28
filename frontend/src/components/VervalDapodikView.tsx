@@ -1670,7 +1670,11 @@ export function VervalDapodikView() {
                             : "Upload File / Foto"}
                         <input
                           type="file"
-                          accept={activeDocTab === "foto4x6" ? "image/jpeg,image/png,image/webp" : "image/*,application/pdf"}
+                          accept={
+                            activeDocTab === "foto4x6"
+                              ? ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                              : ".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                          }
                           disabled={modalBusy || uploadingDoc !== null}
                           onChange={(e) => {
                             void handleOperatorFileUpload(activeDocTab, fieldKey, e.target.files?.[0]);

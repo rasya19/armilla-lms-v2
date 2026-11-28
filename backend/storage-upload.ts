@@ -9,6 +9,7 @@ type ParsedDataUrl = {
 const ALLOWED_MIME_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/jpg": "jpg",
+  "image/pjpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
   "application/pdf": "pdf",
@@ -16,7 +17,7 @@ const ALLOWED_MIME_EXT: Record<string, string> = {
 
 function hasValidMagicBytes(mime: string, buf: Buffer): boolean {
   if (buf.length < 4) return false;
-  if (mime === "image/jpeg" || mime === "image/jpg") {
+  if (mime === "image/jpeg" || mime === "image/jpg" || mime === "image/pjpeg") {
     return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
   }
   if (mime === "image/png") {
@@ -33,15 +34,16 @@ function hasValidMagicBytes(mime: string, buf: Buffer): boolean {
 
 export function parseValidatedDataUrl(raw: string): ParsedDataUrl | null {
   const compact = raw.trim().replace(/\s+/g, "");
-  const match = compact.match(/^data:(image\/(?:jpeg|jpg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/i);
+  const match = compact.match(/^data:(image\/(?:jpeg|jpg|pjpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/i);
   if (!match) return null;
   const mime = match[1].toLowerCase();
   const ext = ALLOWED_MIME_EXT[mime];
   if (!ext) return null;
   const buffer = Buffer.from(match[2], "base64");
-  if (buffer.length === 0 || buffer.length > 2_500_000) return null;
+  const maxBytes = mime === "application/pdf" ? 15 * 1024 * 1024 : 3 * 1024 * 1024;
+  if (buffer.length === 0 || buffer.length > maxBytes) return null;
   if (!hasValidMagicBytes(mime, buffer)) return null;
-  return { mime: mime === "image/jpg" ? "image/jpeg" : mime, ext, buffer };
+  return { mime: mime === "image/jpg" || mime === "image/pjpeg" ? "image/jpeg" : mime, ext, buffer };
 }
 
 export function isSupabaseStorageConfigured(): boolean {

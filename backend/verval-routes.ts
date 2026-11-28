@@ -1049,11 +1049,15 @@ export function vervalRoutes(resolveContext: (req: Request) => Promise<VervalCon
         const rawVal = payload[fieldKey];
         if (rawVal === null || rawVal === "") {
           updateData[fieldKey] = null;
-        } else if (typeof rawVal !== "string" || !isSafeDocumentUrl(rawVal)) {
-          return res.status(400).json({ error: `${label} harus berupa tautan http/https atau file gambar/PDF yang valid (maks. 1.5 MB).` });
+        } else if (typeof rawVal !== "string") {
+          return res.status(400).json({ error: `${label} harus berupa tautan HTTPS atau file gambar (JPG/PNG/WebP) / PDF yang valid.` });
         } else {
+          const check = validateDocumentAttachment(rawVal, { allowRelative: true, allowHttp: false });
+          if ("error" in check) {
+            return res.status(400).json({ error: `${label}: ${check.error}` });
+          }
           updateData[fieldKey] = await offloadDataUrlToSupabaseStorage({
-            value: rawVal.trim(),
+            value: check.value ?? rawVal.trim(),
             sekolahId: ctx.sekolahId,
             category: "verval",
           });

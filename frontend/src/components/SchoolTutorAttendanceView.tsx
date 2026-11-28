@@ -5,6 +5,7 @@ import {
   Clock,
   FileSpreadsheet,
   Lock,
+  Pencil,
   Plus,
   Printer,
   RefreshCw,
@@ -160,6 +161,8 @@ export function SchoolTutorAttendanceView({
     perGuru: {},
   });
   const [honorBusy, setHonorBusy] = useState(false);
+  const [honorLocked, setHonorLocked] = useState(false);
+  const [hasSavedHonor, setHasSavedHonor] = useState(false);
 
   const loadData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -171,6 +174,10 @@ export function SchoolTutorAttendanceView({
       if (!res.ok || !body) throw new Error(body?.error || "Data absensi tutor belum dapat dimuat.");
       setData(body);
       setHonorDraft(body.honorConfig);
+      const alreadyConfigured =
+        body.honorConfig.mode !== "NONE" || Object.keys(body.honorConfig.perGuru ?? {}).length > 0;
+      setHasSavedHonor(alreadyConfigured);
+      setHonorLocked(alreadyConfigured);
       setError("");
     } catch (failure) {
       if (!isCallerAborted(failure, signal)) {
@@ -270,12 +277,21 @@ export function SchoolTutorAttendanceView({
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
       if (!res.ok) throw new Error(body?.error || "Skema honor gagal disimpan.");
       setNotice(body?.message || "Skema honor tutor berhasil disimpan.");
+      setHasSavedHonor(true);
       await loadData();
+      setHonorLocked(true);
     } catch (failure) {
       setError(describeFetchError(failure, "Skema honor gagal disimpan."));
     } finally {
       setHonorBusy(false);
     }
+  }
+
+  function cancelHonorEdit() {
+    if (data) {
+      setHonorDraft(data.honorConfig);
+    }
+    setHonorLocked(true);
   }
 
   async function handleExportExcel() {
@@ -761,11 +777,33 @@ export function SchoolTutorAttendanceView({
         </div>
       ) : (
         <form onSubmit={saveHonorConfig} className={`${panelClass} space-y-5`}>
-          <div>
-            <h3 className="text-base font-extrabold">Pengaturan Skema Honor Tutor (Paket Pro)</h3>
-            <p className="mt-0.5 text-xs opacity-75">
-              Pilih skema yang sesuai kebijakan lembaga Anda. Nominal honor hanya terlihat oleh Admin Sekolah dan tidak ditampilkan di Portal Guru.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-extrabold">Pengaturan Skema Honor Tutor (Paket Pro)</h3>
+                {honorLocked ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-600">
+                    <Lock size={11} /> Tersimpan · Terkunci
+                  </span>
+                ) : hasSavedHonor ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800">
+                    <Pencil size={11} /> Mode Edit
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 text-xs opacity-75">
+                Pilih skema yang sesuai kebijakan lembaga Anda. Nominal honor hanya terlihat oleh Admin Sekolah dan tidak ditampilkan di Portal Guru.
+              </p>
+            </div>
+            {honorLocked && (
+              <button
+                type="button"
+                onClick={() => setHonorLocked(false)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100"
+              >
+                <Pencil size={13} /> Edit Skema Honor
+              </button>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -780,13 +818,18 @@ export function SchoolTutorAttendanceView({
               <button
                 key={opt.id}
                 type="button"
+                disabled={honorLocked}
                 onClick={() => setHonorDraft({ ...honorDraft, mode: opt.id })}
                 className={`rounded-xl border p-3.5 text-left transition ${
-                  honorDraft.mode === opt.id
-                    ? "border-indigo-600 bg-indigo-50/80 ring-2 ring-indigo-500/25 text-slate-900"
-                    : isDark
-                      ? "border-slate-700 bg-slate-950/50 text-slate-200"
-                      : "border-slate-200 bg-slate-50/70 text-slate-800 hover:bg-white"
+                  honorLocked
+                    ? honorDraft.mode === opt.id
+                      ? "cursor-not-allowed border-slate-400 bg-slate-200/80 text-slate-700"
+                      : "cursor-not-allowed border-slate-200 bg-slate-100/70 text-slate-400 opacity-75"
+                    : honorDraft.mode === opt.id
+                      ? "border-indigo-600 bg-indigo-50/80 ring-2 ring-indigo-500/25 text-slate-900"
+                      : isDark
+                        ? "border-slate-700 bg-slate-950/50 text-slate-200"
+                        : "border-slate-200 bg-slate-50/70 text-slate-800 hover:bg-white"
                 }`}
               >
                 <p className="text-xs font-extrabold">{opt.title}</p>
@@ -804,9 +847,14 @@ export function SchoolTutorAttendanceView({
                     type="number"
                     min={0}
                     step={5000}
+                    disabled={honorLocked}
                     value={honorDraft.defaultTarifPertemuan}
                     onChange={(e) => setHonorDraft({ ...honorDraft, defaultTarifPertemuan: Number(e.target.value) || 0 })}
-                    className={inputClass}
+                    className={
+                      honorLocked
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
+                        : inputClass
+                    }
                   />
                 </label>
               )}
@@ -817,9 +865,14 @@ export function SchoolTutorAttendanceView({
                     type="number"
                     min={0}
                     step={25000}
+                    disabled={honorLocked}
                     value={honorDraft.defaultHonorBulanan}
                     onChange={(e) => setHonorDraft({ ...honorDraft, defaultHonorBulanan: Number(e.target.value) || 0 })}
-                    className={inputClass}
+                    className={
+                      honorLocked
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
+                        : inputClass
+                    }
                   />
                 </label>
               )}
@@ -830,9 +883,14 @@ export function SchoolTutorAttendanceView({
                     type="number"
                     min={0}
                     step={5000}
+                    disabled={honorLocked}
                     value={honorDraft.defaultTransportPertemuan}
                     onChange={(e) => setHonorDraft({ ...honorDraft, defaultTransportPertemuan: Number(e.target.value) || 0 })}
-                    className={inputClass}
+                    className={
+                      honorLocked
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
+                        : inputClass
+                    }
                   />
                 </label>
               )}
@@ -865,6 +923,9 @@ export function SchoolTutorAttendanceView({
                         nextPerGuru[g.id] = current;
                         setHonorDraft({ ...honorDraft, perGuru: nextPerGuru });
                       };
+                      const ovInputCls = honorLocked
+                        ? "w-40 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500"
+                        : "w-40 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900";
                       return (
                         <tr key={g.id}>
                           <td className="px-3 py-2 font-bold">{g.nama}</td>
@@ -873,10 +934,11 @@ export function SchoolTutorAttendanceView({
                               <input
                                 type="number"
                                 min={0}
+                                disabled={honorLocked}
                                 placeholder={String(honorDraft.defaultTarifPertemuan)}
                                 value={ov.tarifPertemuan ?? ""}
                                 onChange={(e) => updateOverride("tarifPertemuan", e.target.value)}
-                                className="w-40 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                                className={ovInputCls}
                               />
                             </td>
                           )}
@@ -885,10 +947,11 @@ export function SchoolTutorAttendanceView({
                               <input
                                 type="number"
                                 min={0}
+                                disabled={honorLocked}
                                 placeholder={String(honorDraft.defaultHonorBulanan)}
                                 value={ov.honorBulanan ?? ""}
                                 onChange={(e) => updateOverride("honorBulanan", e.target.value)}
-                                className="w-40 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                                className={ovInputCls}
                               />
                             </td>
                           )}
@@ -897,10 +960,11 @@ export function SchoolTutorAttendanceView({
                               <input
                                 type="number"
                                 min={0}
+                                disabled={honorLocked}
                                 placeholder={String(honorDraft.defaultTransportPertemuan)}
                                 value={ov.transportPertemuan ?? ""}
                                 onChange={(e) => updateOverride("transportPertemuan", e.target.value)}
-                                className="w-40 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-900"
+                                className={ovInputCls}
                               />
                             </td>
                           )}
@@ -913,10 +977,32 @@ export function SchoolTutorAttendanceView({
             </div>
           )}
 
-          <div className="flex justify-end">
-            <button type="submit" disabled={honorBusy} className="master-primary inline-flex items-center gap-1.5 px-5 py-2.5 text-xs disabled:opacity-50">
-              <Save size={14} /> {honorBusy ? "Menyimpan..." : "Simpan Skema Honor"}
-            </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            {honorLocked ? (
+              <button
+                type="button"
+                onClick={() => setHonorLocked(false)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-5 py-2.5 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100"
+              >
+                <Pencil size={14} /> Edit Skema Honor
+              </button>
+            ) : (
+              <>
+                {hasSavedHonor && (
+                  <button
+                    type="button"
+                    disabled={honorBusy}
+                    onClick={cancelHonorEdit}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                )}
+                <button type="submit" disabled={honorBusy} className="master-primary inline-flex items-center gap-1.5 px-5 py-2.5 text-xs disabled:opacity-50">
+                  <Save size={14} /> {honorBusy ? "Menyimpan..." : "Simpan Skema Honor"}
+                </button>
+              </>
+            )}
           </div>
         </form>
       )}

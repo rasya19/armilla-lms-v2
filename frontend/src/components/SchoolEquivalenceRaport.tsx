@@ -7,6 +7,8 @@ import {
   ClipboardCheck,
   FileText,
   Layers,
+  Lock,
+  Pencil,
   Plus,
   Printer,
   RefreshCw,
@@ -1010,6 +1012,10 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
   // Biodata tambahan, Mutasi Pindahan, P5, Ekstrakurikuler & Prestasi state
   const [raportExtra, setRaportExtra] = useState<RaportStudentExtra>(() => createEmptyRaportExtra());
+  const [gradesLocked, setGradesLocked] = useState(false);
+  const [hasSavedGrades, setHasSavedGrades] = useState(false);
+  const [p5EkskulLocked, setP5EkskulLocked] = useState(false);
+  const [hasSavedP5Ekskul, setHasSavedP5Ekskul] = useState(false);
 
   // Add Tahun Ajaran modal state
   const [addYearOpen, setAddYearOpen] = useState(false);
@@ -1087,9 +1093,12 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       };
     }
     setInlineGrades(next);
+    const alreadyHasGrades = studentNilaiRows.length > 0 || Boolean(activeCatatanObj?.catatanWali);
+    setHasSavedGrades(alreadyHasGrades);
+    setGradesLocked(alreadyHasGrades);
 
     const savedExtra = data.raportExtras?.[activeSiswa.id];
-    setRaportExtra({
+    const nextExtra: RaportStudentExtra = {
       biodata: buildDefaultStudentBiodata(activeSiswa, savedExtra?.biodata, hasTransferScores),
       p5: {
         judulTemaUtama: savedExtra?.p5?.judulTemaUtama ?? "",
@@ -1103,8 +1112,58 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       },
       ekstrakurikuler: savedExtra?.ekstrakurikuler ?? [],
       prestasi: savedExtra?.prestasi ?? [],
-    });
+    };
+    setRaportExtra(nextExtra);
+    const alreadyHasP5Ekskul = Boolean(
+      nextExtra.p5.judulTemaUtama.trim() ||
+        nextExtra.p5.catatanProses.trim() ||
+        nextExtra.p5.items.length > 0 ||
+        nextExtra.ekstrakurikuler.length > 0 ||
+        nextExtra.prestasi.length > 0,
+    );
+    setHasSavedP5Ekskul(alreadyHasP5Ekskul);
+    setP5EkskulLocked(alreadyHasP5Ekskul);
   }, [data, activeSiswa, activeCatatanObj]);
+
+  function cancelGradesEdit() {
+    if (!data || !activeSiswa) return;
+    setCatatanWali(activeCatatanObj?.catatanWali ?? "Terus tingkatkan ketekunan dalam pembelajaran mandiri dan tatap muka.");
+    setStatusKenaikan(activeCatatanObj?.statusKenaikan ?? "NAIK_KELAS");
+    const byMapel = new Map(data.nilai.filter((n) => n.siswaId === activeSiswa.id).map((n) => [n.mapelId, n]));
+    const next: Record<string, { mandiri: string; simulasi: string; catatan: string }> = {};
+    for (const m of data.mapel) {
+      const existing = byMapel.get(m.id);
+      const parsedNote = parseRaportCompetencyNote(existing?.catatanKompetensi, existing?.sumberNilai);
+      next[m.id] = {
+        mandiri: existing ? String(existing.nilaiMandiri) : "",
+        simulasi: existing ? String(existing.nilaiSimulasi) : "",
+        catatan: parsedNote.cleanNote ?? "",
+      };
+    }
+    setInlineGrades(next);
+    setGradesLocked(true);
+  }
+
+  function cancelP5EkskulEdit() {
+    if (!data || !activeSiswa) return;
+    const savedExtra = data.raportExtras?.[activeSiswa.id];
+    setRaportExtra((prev) => ({
+      ...prev,
+      p5: {
+        judulTemaUtama: savedExtra?.p5?.judulTemaUtama ?? "",
+        catatanProses: savedExtra?.p5?.catatanProses ?? "",
+        items: (savedExtra?.p5?.items ?? []).map((item) => ({
+          ...item,
+          tingkatCapaian: (["MB", "SB", "BSH", "SAB"].includes(item.tingkatCapaian)
+            ? item.tingkatCapaian
+            : "BSH") as P5AchievementLevel,
+        })),
+      },
+      ekstrakurikuler: savedExtra?.ekstrakurikuler ?? [],
+      prestasi: savedExtra?.prestasi ?? [],
+    }));
+    setP5EkskulLocked(true);
+  }
 
   async function handleCreateTahunAjaran(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1187,6 +1246,8 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
       if (!res.ok) throw new Error(body?.error || "Gagal menyimpan nilai raport.");
       setNotice(body?.message || "Semua nilai berhasil disimpan.");
+      setHasSavedGrades(true);
+      setGradesLocked(true);
       await loadRaport(kelasId, tahunId);
       if (goToReview) {
         setRaportSubTab("raport");
@@ -1223,6 +1284,8 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
       if (!res.ok) throw new Error(body?.error || "Gagal menyimpan capaian P5 dan ekstrakurikuler.");
       setNotice(body?.message || "Capaian P5, ekstrakurikuler, dan prestasi tersimpan.");
+      setHasSavedP5Ekskul(true);
+      setP5EkskulLocked(true);
       await loadRaport(kelasId, tahunId);
     } catch (failure) {
       setError(describeFetchError(failure, "Data tambahan rapor belum dapat disimpan."));
@@ -1434,6 +1497,8 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       const body = (await res.json()) as { message?: string; error?: string };
       if (!res.ok) throw new Error(body.error || "Gagal menyimpan catatan wali kelas.");
       setNotice(body.message || "Catatan wali kelas diperbarui.");
+      setHasSavedGrades(true);
+      setGradesLocked(true);
       await loadRaport(kelasId, tahunId);
     } catch (failure) {
       setError(describeFetchError(failure, "Catatan wali kelas belum dapat disimpan."));
@@ -1598,15 +1663,27 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                   <CheckCircle2 size={15} />
                   {busy ? "Menyinkronkan..." : "Sinkron Nilai Tugas & CBT"}
                 </button>
-                <button
-                  type="button"
-                  disabled={busy || !activeSiswa}
-                  onClick={() => void saveInlineGrades(true)}
-                  className="dashboard-hero-action"
-                >
-                  <Printer size={16} />
-                  Simpan &amp; Review Raport →
-                </button>
+                {gradesLocked ? (
+                  <button
+                    type="button"
+                    disabled={!activeSiswa}
+                    onClick={() => setRaportSubTab("raport")}
+                    className="dashboard-hero-action"
+                  >
+                    <Printer size={16} />
+                    Review Raport →
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || !activeSiswa}
+                    onClick={() => void saveInlineGrades(true)}
+                    className="dashboard-hero-action"
+                  >
+                    <Printer size={16} />
+                    Simpan &amp; Review Raport →
+                  </button>
+                )}
               </div>
             ) : raportSubTab === "raport" ? (
               <div className="flex flex-wrap gap-2">
@@ -1822,31 +1899,73 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             <div className={`rounded-2xl p-5 ${panelClass(isDark)}`}>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
-                    <Award size={17} className="text-sky-600" />
-                    Input Nilai Langsung Per Mata Pelajaran — {activeSiswa.nama}
-                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-extrabold">
+                      <Award size={17} className="text-sky-600" />
+                      Input Nilai Langsung Per Mata Pelajaran — {activeSiswa.nama}
+                    </h3>
+                    {gradesLocked ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-600">
+                        <Lock size={11} /> Tersimpan · Terkunci
+                      </span>
+                    ) : hasSavedGrades ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800">
+                        <Pencil size={11} /> Mode Edit
+                      </span>
+                    ) : null}
+                  </div>
                   <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                     Isi nilai Mandiri &amp; Simulasi/CBT langsung pada tabel di bawah. Jika kolom Deskripsi dikosongkan, narasi Capaian Kompetensi Kurikulum Merdeka terisi otomatis.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void saveInlineGrades(false)}
-                    className="rounded-xl border border-sky-300 bg-sky-50 px-3.5 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
-                  >
-                    {busy ? "Menyimpan..." : "Simpan Semua Nilai"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void saveInlineGrades(true)}
-                    className="master-primary px-4 py-2 text-xs disabled:opacity-50"
-                  >
-                    {busy ? "Menyimpan..." : "Simpan & Review Raport Cetak →"}
-                  </button>
+                  {gradesLocked ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setGradesLocked(false)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-3.5 py-2 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100"
+                      >
+                        <Pencil size={13} /> Edit Nilai
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRaportSubTab("raport")}
+                        className="master-primary px-4 py-2 text-xs"
+                      >
+                        Review Raport Cetak →
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {hasSavedGrades && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={cancelGradesEdit}
+                          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Batal
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void saveInlineGrades(false)}
+                        className="rounded-xl border border-sky-300 bg-sky-50 px-3.5 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                      >
+                        {busy ? "Menyimpan..." : "Simpan Semua Nilai"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void saveInlineGrades(true)}
+                        className="master-primary px-4 py-2 text-xs disabled:opacity-50"
+                      >
+                        {busy ? "Menyimpan..." : "Simpan & Review Raport Cetak →"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1916,11 +2035,16 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                                   type="number"
                                   min={0}
                                   max={100}
+                                  disabled={gradesLocked}
                                   aria-label={`Nilai Mandiri ${row.mapel.nama}`}
                                   value={cell.mandiri}
                                   onChange={(e) => updateInlineGrade(row.mapel.id, "mandiri", e.target.value)}
                                   placeholder="-"
-                                  className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
+                                  className={
+                                    gradesLocked
+                                      ? "w-16 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-500"
+                                      : "w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
+                                  }
                                 />
                               </td>
                               <td className="border border-slate-300 px-1.5 py-1 text-center">
@@ -1928,11 +2052,16 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                                   type="number"
                                   min={0}
                                   max={100}
+                                  disabled={gradesLocked}
                                   aria-label={`Nilai Simulasi ${row.mapel.nama}`}
                                   value={cell.simulasi}
                                   onChange={(e) => updateInlineGrade(row.mapel.id, "simulasi", e.target.value)}
                                   placeholder="-"
-                                  className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
+                                  className={
+                                    gradesLocked
+                                      ? "w-16 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-500"
+                                      : "w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
+                                  }
                                 />
                               </td>
                               <td className="border border-slate-300 px-2 py-1.5 text-center text-sm font-extrabold tabular-nums text-sky-800">
@@ -1941,11 +2070,16 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                               <td className="border border-slate-300 px-2 py-1">
                                 <input
                                   type="text"
+                                  disabled={gradesLocked}
                                   aria-label={`Deskripsi ${row.mapel.nama}`}
                                   value={cell.catatan}
                                   onChange={(e) => updateInlineGrade(row.mapel.id, "catatan", e.target.value)}
                                   placeholder="Kosongkan untuk narasi KKTP otomatis..."
-                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800 focus:border-sky-600 focus:outline-none"
+                                  className={
+                                    gradesLocked
+                                      ? "w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs text-slate-500"
+                                      : "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800 focus:border-sky-600 focus:outline-none"
+                                  }
                                 />
                               </td>
                             </tr>
@@ -1958,22 +2092,58 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               </div>
             </div>
 
-            {/* Info Pemisahan Biodata ke Menu Data Siswa */}
+            {/* Info Pemisahan Biodata + Kontrol Kunci P5 & Ekskul */}
             <div className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs ${isDark ? "border-sky-500/30 bg-sky-950/30 text-sky-200" : "border-sky-200 bg-sky-50/80 text-sky-900"}`}>
-              <span>
-                <strong>Biodata Lengkap, Pas Foto &amp; Riwayat Mutasi</strong> kini dikelola terpisah pada menu <strong>Data Siswa → tombol Biodata</strong> agar halaman rapor lebih ringkas.
-              </span>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void saveRaportExtraOnly()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
-              >
-                <Save size={13} />
-                Simpan P5 &amp; Ekskul
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <span>
+                  <strong>Biodata Lengkap, Pas Foto &amp; Riwayat Mutasi</strong> dikelola di <strong>Data Siswa → tombol Biodata</strong>.
+                </span>
+                {p5EkskulLocked ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-600">
+                    <Lock size={11} /> P5 &amp; Ekskul Tersimpan · Terkunci
+                  </span>
+                ) : hasSavedP5Ekskul ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800">
+                    <Pencil size={11} /> Mode Edit P5 &amp; Ekskul
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {p5EkskulLocked ? (
+                  <button
+                    type="button"
+                    onClick={() => setP5EkskulLocked(false)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100"
+                  >
+                    <Pencil size={13} /> Edit P5 &amp; Ekskul
+                  </button>
+                ) : (
+                  <>
+                    {hasSavedP5Ekskul && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={cancelP5EkskulEdit}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Batal
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void saveRaportExtraOnly()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                    >
+                      <Save size={13} />
+                      {busy ? "Menyimpan..." : "Simpan P5 & Ekskul"}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
+            <fieldset disabled={p5EkskulLocked} className={`space-y-5 ${p5EkskulLocked ? "opacity-80 [&_input]:cursor-not-allowed [&_input]:border-slate-200 [&_input]:bg-slate-100 [&_input]:text-slate-500 [&_select]:cursor-not-allowed [&_select]:border-slate-200 [&_select]:bg-slate-100 [&_select]:text-slate-500 [&_textarea]:cursor-not-allowed [&_textarea]:border-slate-200 [&_textarea]:bg-slate-100 [&_textarea]:text-slate-500 [&_button]:cursor-not-allowed [&_button]:opacity-50" : ""}`}>
             {/* Capaian Projek / Karakter (P5 / Pemberdayaan & Keterampilan) + Generator Narasi Otomatis */}
             <div className={`space-y-4 rounded-2xl p-5 ${panelClass(isDark)}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2270,15 +2440,33 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               </div>
             </div>
 
+            </fieldset>
+
             <form onSubmit={saveHomeroomNote} className={`space-y-3 rounded-2xl p-5 ${panelClass(isDark)}`}>
-              <h3 className="flex items-center gap-2 text-sm font-bold">
-                <UserCheck size={17} className="text-emerald-600" />
-                Catatan Wali Kelas &amp; Keputusan Semester
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold">
+                  <UserCheck size={17} className="text-emerald-600" />
+                  Catatan Wali Kelas &amp; Keputusan Semester
+                </h3>
+                {gradesLocked && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-600">
+                    <Lock size={11} /> Tersimpan · Terkunci
+                  </span>
+                )}
+              </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <label className="block text-xs font-bold">
                   Status Kenaikan / Kelulusan
-                  <select value={statusKenaikan} onChange={(e) => setStatusKenaikan(e.target.value)} className={inputClass(isDark)}>
+                  <select
+                    disabled={gradesLocked}
+                    value={statusKenaikan}
+                    onChange={(e) => setStatusKenaikan(e.target.value)}
+                    className={
+                      gradesLocked
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-500"
+                        : inputClass(isDark)
+                    }
+                  >
                     <option value="PROSES">Proses Penilaian Semester</option>
                     <option value="NAIK_KELAS">Naik ke Tingkat Berikutnya</option>
                     <option value="LULUS">Lulus Pendidikan Kesetaraan</option>
@@ -2287,26 +2475,67 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                 </label>
                 <label className="block text-xs font-bold md:col-span-2">
                   Catatan Wali Kelas / Tutor Pembimbing
-                  <textarea rows={2} value={catatanWali} onChange={(e) => setCatatanWali(e.target.value)} className={inputClass(isDark)} />
+                  <textarea
+                    rows={2}
+                    disabled={gradesLocked}
+                    value={catatanWali}
+                    onChange={(e) => setCatatanWali(e.target.value)}
+                    className={
+                      gradesLocked
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-500"
+                        : inputClass(isDark)
+                    }
+                  />
                 </label>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void saveInlineGrades(false)}
-                  className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
-                >
-                  {busy ? "Menyimpan..." : "Simpan Semua Nilai & Catatan"}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void saveInlineGrades(true)}
-                  className="master-primary px-5 py-2 text-xs disabled:opacity-50"
-                >
-                  {busy ? "Menyimpan..." : "Simpan & Review Raport Cetak →"}
-                </button>
+                {gradesLocked ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setGradesLocked(false)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100"
+                    >
+                      <Pencil size={13} /> Edit Nilai &amp; Catatan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRaportSubTab("raport")}
+                      className="master-primary px-5 py-2 text-xs"
+                    >
+                      Review Raport Cetak →
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {hasSavedGrades && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={cancelGradesEdit}
+                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Batal
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void saveInlineGrades(false)}
+                      className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                    >
+                      {busy ? "Menyimpan..." : "Simpan Semua Nilai & Catatan"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void saveInlineGrades(true)}
+                      className="master-primary px-5 py-2 text-xs disabled:opacity-50"
+                    >
+                      {busy ? "Menyimpan..." : "Simpan & Review Raport Cetak →"}
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>
@@ -2386,33 +2615,43 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             </p>
           </div>
 
-          {/* Identitas Pokok Rapor (Ringkas & Bersih — Biodata Lengkap di Menu Data Siswa) */}
-          <div className="print-avoid-break mt-4 grid gap-x-6 gap-y-1.5 rounded-xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-xs sm:grid-cols-2">
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">Nama Peserta Didik</span>
-              <span className="font-bold text-slate-950">: {activeSiswa.nama}</span>
+          {/* Identitas Pokok Rapor (Simetris & Presisi — Titik Dua Lurus Vertikal) */}
+          <div className="print-avoid-break mt-4 grid gap-x-8 gap-y-2 rounded-xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-xs sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-[132px_12px_minmax(0,1fr)] items-baseline">
+                <span className="text-slate-600">Nama Peserta Didik</span>
+                <span className="text-center font-semibold text-slate-600">:</span>
+                <span className="font-bold text-slate-950">{activeSiswa.nama.trim()}</span>
+              </div>
+              <div className="grid grid-cols-[132px_12px_minmax(0,1fr)] items-baseline">
+                <span className="text-slate-600">NISN / No. Induk</span>
+                <span className="text-center font-semibold text-slate-600">:</span>
+                <span className="font-mono font-bold text-slate-950">{(activeSiswa.nisn || "-").trim()}</span>
+              </div>
+              <div className="grid grid-cols-[132px_12px_minmax(0,1fr)] items-baseline">
+                <span className="text-slate-600">Satuan Pendidikan</span>
+                <span className="text-center font-semibold text-slate-600">:</span>
+                <span className="font-semibold text-slate-900">{schoolName.trim()}</span>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">Kelas / Fase</span>
-              <span className="font-bold text-slate-950">: {activeKelasName} / {phaseInfo.fase}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
-              <span className="font-mono font-bold text-slate-950">: {activeSiswa.nisn || "-"}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">Semester / TA</span>
-              <span className="font-semibold text-slate-900">
-                : {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">Satuan Pendidikan</span>
-              <span className="font-semibold text-slate-900">: {schoolName}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">NPSN</span>
-              <span className="font-mono font-semibold text-slate-900">: {schoolNpsn}</span>
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-[108px_12px_minmax(0,1fr)] items-baseline">
+                <span className="text-slate-600">Kelas / Fase</span>
+                <span className="text-center font-semibold text-slate-600">:</span>
+                <span className="font-bold text-slate-950">{`${activeKelasName} / ${phaseInfo.fase}`.trim()}</span>
+              </div>
+              <div className="grid grid-cols-[108px_12px_minmax(0,1fr)] items-baseline">
+                <span className="text-slate-600">Semester / TA</span>
+                <span className="text-center font-semibold text-slate-600">:</span>
+                <span className="font-semibold text-slate-900">
+                  {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
+                </span>
+              </div>
+              <div className="grid grid-cols-[108px_12px_minmax(0,1fr)] items-baseline">
+                <span className="text-slate-600">NPSN</span>
+                <span className="text-center font-semibold text-slate-600">:</span>
+                <span className="font-mono font-semibold text-slate-900">{schoolNpsn.trim()}</span>
+              </div>
             </div>
           </div>
 

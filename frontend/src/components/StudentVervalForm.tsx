@@ -94,8 +94,51 @@ function statusDinasBadge(status: VervalDinasStatus): { label: string; cls: stri
   }
 }
 
+const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp"]);
+const IMAGE_EXT_REGEX = /\.(jpe?g|png|webp)$/i;
+const PDF_EXT_REGEX = /\.pdf$/i;
+
+function isPdfDocumentFile(file: File): boolean {
+  const mime = (file.type || "").trim().toLowerCase();
+  return mime === "application/pdf" || (!mime && PDF_EXT_REGEX.test(file.name)) || PDF_EXT_REGEX.test(file.name);
+}
+
+function isImageDocumentFile(file: File): boolean {
+  const mime = (file.type || "").trim().toLowerCase();
+  if (ALLOWED_IMAGE_MIMES.has(mime)) return true;
+  if ((!mime || mime === "application/octet-stream") && IMAGE_EXT_REGEX.test(file.name)) return true;
+  return IMAGE_EXT_REGEX.test(file.name);
+}
+
+async function loadImageElement(file: File): Promise<HTMLImageElement> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("objectUrl-failed"));
+      el.src = objectUrl;
+    });
+  } catch {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Gagal membaca file gambar dari perangkat."));
+      reader.readAsDataURL(file);
+    });
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Gambar JPG/PNG tidak dapat dibaca atau file rusak. Coba pilih file lain."));
+      el.src = dataUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export async function compressOrEncodeDocument(file: File): Promise<string> {
-  if (file.type === "application/pdf") {
+  if (isPdfDocumentFile(file)) {
     if (file.size > 1_500_000) {
       throw new Error("Ukuran file PDF maksimal 1,5 MB. Silakan kompres PDF atau gunakan tautan URL.");
     }
@@ -106,98 +149,76 @@ export async function compressOrEncodeDocument(file: File): Promise<string> {
       reader.readAsDataURL(file);
     });
   }
-  const allowedImages = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
-  if (!allowedImages.has(file.type.toLowerCase())) {
-    throw new Error("Format berkas harus berupa gambar (JPG/PNG/WebP) atau PDF.");
+  if (!isImageDocumentFile(file)) {
+    throw new Error("Format berkas harus berupa gambar (JPG/JPEG/PNG/WebP) atau PDF.");
   }
   if (file.size > 15 * 1024 * 1024) {
     throw new Error("Ukuran file gambar maksimal 15 MB sebelum kompresi.");
   }
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Gambar tidak dapat dibaca. Coba pilih file lain."));
-      el.src = objectUrl;
-    });
-    const encodeAt = (maxDim: number, quality: number) => {
-      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
-      canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Browser tidak mendukung kompresi gambar.");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL("image/jpeg", quality);
-    };
-    let compressed = encodeAt(1280, 0.76);
-    if (compressed.length > 1_500_000) {
-      compressed = encodeAt(1024, 0.62);
-    }
-    if (compressed.length > 2_000_000) {
-      throw new Error("Ukuran gambar setelah kompresi masih terlalu besar. Pilih gambar resolusi lebih kecil.");
-    }
-    return compressed;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+  const img = await loadImageElement(file);
+  const encodeAt = (maxDim: number, quality: number) => {
+    const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+    canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Browser tidak mendukung kompresi gambar.");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", quality);
+  };
+  let compressed = encodeAt(1280, 0.76);
+  if (compressed.length > 1_500_000) {
+    compressed = encodeAt(1024, 0.62);
   }
+  if (compressed.length > 2_000_000) {
+    throw new Error("Ukuran gambar setelah kompresi masih terlalu besar. Pilih gambar resolusi lebih kecil.");
+  }
+  return compressed;
 }
 
 export async function compressPasFoto4x6(file: File): Promise<string> {
-  const allowedImages = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
-  if (!allowedImages.has(file.type.toLowerCase())) {
-    throw new Error("Pas Foto Ijazah 4x6 harus berupa file gambar (JPG, PNG, atau WebP).");
+  if (!isImageDocumentFile(file)) {
+    throw new Error("Pas Foto Ijazah 4x6 harus berupa file gambar (JPG, JPEG, PNG, atau WebP).");
   }
   if (file.size > 15 * 1024 * 1024) {
     throw new Error("Ukuran file foto maksimal 15 MB sebelum diproses.");
   }
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Foto tidak dapat dibaca. Coba pilih file gambar lain."));
-      el.src = objectUrl;
-    });
-    const srcW = img.naturalWidth || img.width;
-    const srcH = img.naturalHeight || img.height;
-    const targetRatio = 4 / 6; // 2:3 portrait
-    const srcRatio = srcW / srcH;
+  const img = await loadImageElement(file);
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  const targetRatio = 4 / 6; // 2:3 portrait
+  const srcRatio = srcW / srcH;
 
-    let cropW = srcW;
-    let cropH = srcH;
-    let cropX = 0;
-    let cropY = 0;
+  let cropW = srcW;
+  let cropH = srcH;
+  let cropX = 0;
+  let cropY = 0;
 
-    if (srcRatio > targetRatio) {
-      cropW = Math.round(srcH * targetRatio);
-      cropX = Math.round((srcW - cropW) / 2);
-    } else if (srcRatio < targetRatio) {
-      cropH = Math.round(srcW / targetRatio);
-      // Slight upward bias (35%) so face/head stays centered on portrait photos
-      cropY = Math.round((srcH - cropH) * 0.35);
-    }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = 480; // 4 cm @ ~300 DPI
-    canvas.height = 720; // 6 cm @ ~300 DPI
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Browser tidak mendukung pemrosesan pas foto 4x6.");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-
-    let encoded = canvas.toDataURL("image/jpeg", 0.88);
-    if (encoded.length > 1_200_000) {
-      encoded = canvas.toDataURL("image/jpeg", 0.72);
-    }
-    return encoded;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+  if (srcRatio > targetRatio) {
+    cropW = Math.round(srcH * targetRatio);
+    cropX = Math.round((srcW - cropW) / 2);
+  } else if (srcRatio < targetRatio) {
+    cropH = Math.round(srcW / targetRatio);
+    // Slight upward bias (35%) so face/head stays centered on portrait photos
+    cropY = Math.round((srcH - cropH) * 0.35);
   }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 480; // 4 cm @ ~300 DPI
+  canvas.height = 720; // 6 cm @ ~300 DPI
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Browser tidak mendukung pemrosesan pas foto 4x6.");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+  let encoded = canvas.toDataURL("image/jpeg", 0.88);
+  if (encoded.length > 1_200_000) {
+    encoded = canvas.toDataURL("image/jpeg", 0.72);
+  }
+  return encoded;
 }
 
 type FormState = {
@@ -681,7 +702,7 @@ export function StudentVervalForm({
                 {uploadingField === "urlFotoIjazah" ? "Memproses 4×6..." : "Unggah Foto 4×6"}
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                   disabled={busy || lockedByDapodik || uploadingField !== null}
                   onChange={(e) => {
                     void handleFileSelect("urlFotoIjazah", e.target.files?.[0]);
@@ -765,7 +786,7 @@ export function StudentVervalForm({
                     {uploadingField === key ? "Memproses..." : "Pilih File"}
                     <input
                       type="file"
-                      accept="image/*,application/pdf"
+                      accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
                       disabled={busy || lockedByDapodik || uploadingField !== null}
                       onChange={(e) => {
                         void handleFileSelect(key, e.target.files?.[0]);

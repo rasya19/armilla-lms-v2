@@ -4,6 +4,8 @@ import {
   CheckCircle2,
   Eraser,
   FileText,
+  Lock,
+  Pencil,
   PenTool,
   Printer,
   Save,
@@ -101,11 +103,13 @@ function formatJk(raw?: string | null): string {
 }
 
 async function compressImageFile(file: File, maxWidth: number, maxHeight: number, format: "jpeg" | "png"): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("File harus berupa gambar (JPG, PNG, atau WebP).");
+  const mime = (file.type || "").trim().toLowerCase();
+  const isImageByExt = /\.(jpe?g|png|webp)$/i.test(file.name);
+  if (!mime.startsWith("image/") && !isImageByExt) {
+    throw new Error("File harus berupa gambar (JPG, JPEG, PNG, atau WebP).");
   }
-  if (file.size > 5 * 1024 * 1024) {
-    throw new Error("Ukuran file gambar maksimal 5 MB.");
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error("Ukuran file gambar maksimal 10 MB.");
   }
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -154,6 +158,9 @@ export function StudentBiodataModal({
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [hasSavedBiodata, setHasSavedBiodata] = useState(false);
+  const savedSnapshotRef = useRef<BiodataPayload | null>(null);
   const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -216,7 +223,7 @@ export function StudentBiodataModal({
               Boolean(b.keteranganPindah?.trim())),
         );
 
-        setForm({
+        const loadedForm: BiodataPayload = {
           anakKe: b.anakKe ?? "",
           tempatLahir: b.tempatLahir ?? (s.tempatLahir ?? ""),
           tanggalLahir: b.tanggalLahir ?? toDateInput(s.tanggalLahir),
@@ -232,7 +239,22 @@ export function StudentBiodataModal({
           pasFotoUrl: b.pasFotoUrl ?? (s.urlFotoIjazah ?? ""),
           tandaTanganUrl: b.tandaTanganUrl ?? "",
           tandaTanganTanggal: b.tandaTanganTanggal ?? new Date().toISOString().slice(0, 10),
-        });
+        };
+        setForm(loadedForm);
+        savedSnapshotRef.current = loadedForm;
+        const hasExisting = Boolean(
+          b.anakKe ||
+            b.tempatLahir ||
+            b.alamat ||
+            b.namaOrangTuaWali ||
+            b.pasFotoUrl ||
+            b.tandaTanganUrl ||
+            s.tempatLahir ||
+            s.alamatLengkap ||
+            s.urlFotoIjazah,
+        );
+        setHasSavedBiodata(hasExisting);
+        setLocked(hasExisting);
       })
       .catch((failure: unknown) => {
         if (!isCallerAborted(failure, controller.signal)) {
@@ -342,6 +364,10 @@ export function StudentBiodataModal({
       });
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
       if (!res.ok) throw new Error(body?.error || "Biodata siswa belum dapat disimpan.");
+      savedSnapshotRef.current = form;
+      setHasSavedBiodata(true);
+      setLocked(true);
+      setShowCanvasPad(false);
       setNotice(body?.message || "Biodata lengkap siswa berhasil disimpan.");
       onSaved?.();
     } catch (failure) {
@@ -349,6 +375,14 @@ export function StudentBiodataModal({
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleCancelEdit() {
+    if (savedSnapshotRef.current) {
+      setForm(savedSnapshotRef.current);
+    }
+    setShowCanvasPad(false);
+    setLocked(true);
   }
 
   if (loading) {
@@ -422,6 +456,30 @@ export function StudentBiodataModal({
 
       {tab === "edit" ? (
         <form onSubmit={handleSave} className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {locked ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2.5 py-0.5 text-[11px] font-extrabold text-slate-600">
+                  <Lock size={11} /> Tersimpan · Terkunci
+                </span>
+              ) : hasSavedBiodata ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-800">
+                  <Pencil size={11} /> Mode Edit
+                </span>
+              ) : null}
+            </div>
+            {locked && (
+              <button
+                type="button"
+                onClick={() => setLocked(false)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-300 bg-sky-50 px-3.5 py-1.5 text-xs font-extrabold text-sky-900 hover:bg-sky-100"
+              >
+                <Pencil size={13} /> Edit Biodata
+              </button>
+            )}
+          </div>
+
+          <fieldset disabled={locked} className={`space-y-4 ${locked ? "opacity-80 [&_.bg-white]:bg-slate-100 [&_input]:cursor-not-allowed [&_input]:border-slate-200 [&_input]:bg-slate-100 [&_input]:text-slate-500 [&_select]:cursor-not-allowed [&_select]:border-slate-200 [&_select]:bg-slate-100 [&_select]:text-slate-500" : ""}`}>
           {/* Ringkasan Identitas Pokok */}
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
             <div className="grid gap-2 sm:grid-cols-3">
@@ -469,7 +527,7 @@ export function StudentBiodataModal({
                       {form.pasFotoUrl ? "Ganti Foto" : "Upload Foto"}
                       <input
                         type="file"
-                        accept="image/png,image/jpeg,image/webp"
+                        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                         className="hidden"
                         onChange={(e) => {
                           void handlePhotoUpload(e.target.files?.[0]);
@@ -513,7 +571,7 @@ export function StudentBiodataModal({
                   Upload TTD
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={(e) => {
                       void handleSignatureUpload(e.target.files?.[0]);
@@ -704,7 +762,6 @@ export function StudentBiodataModal({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-200 pt-3">
             <label className="block text-xs font-bold text-slate-800">
               Tanggal Pengesahan Biodata
               <input
@@ -714,23 +771,46 @@ export function StudentBiodataModal({
                 className={inputCls}
               />
             </label>
-            <div className="flex flex-wrap gap-2">
+          </fieldset>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-3">
+            <button
+              type="button"
+              onClick={() => setTab("preview")}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Lihat Pratinjau Cetak
+            </button>
+            {locked ? (
               <button
                 type="button"
-                onClick={() => setTab("preview")}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                onClick={() => setLocked(false)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-300 bg-sky-50 px-5 py-2 text-xs font-extrabold text-sky-900 hover:bg-sky-100"
               >
-                Lihat Pratinjau Cetak
+                <Pencil size={14} /> Edit Biodata
               </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-700 px-5 py-2 text-xs font-extrabold text-white hover:bg-sky-600 disabled:opacity-50"
-              >
-                <Save size={14} />
-                {saving ? "Menyimpan..." : "Simpan Biodata Lengkap"}
-              </button>
-            </div>
+            ) : (
+              <>
+                {hasSavedBiodata && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={handleCancelEdit}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-sky-700 px-5 py-2 text-xs font-extrabold text-white hover:bg-sky-600 disabled:opacity-50"
+                >
+                  <Save size={14} />
+                  {saving ? "Menyimpan..." : "Simpan Biodata Lengkap"}
+                </button>
+              </>
+            )}
           </div>
         </form>
       ) : (

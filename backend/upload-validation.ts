@@ -1,10 +1,10 @@
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3 MB
 export const MAX_PDF_BYTES = 15 * 1024 * 1024; // 15 MB
 
-export const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+export const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/jpg", "image/pjpeg", "image/png", "image/webp"]);
 export const ALLOWED_PDF_MIMES = new Set(["application/pdf"]);
 
-const IMAGE_DATA_URL_REGEX = /^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i;
+const IMAGE_DATA_URL_REGEX = /^data:(image\/(?:jpeg|jpg|pjpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/i;
 const PDF_DATA_URL_REGEX = /^data:(application\/pdf);base64,([A-Za-z0-9+/=]+)$/i;
 
 export function estimateBase64ByteLength(base64: string): number {

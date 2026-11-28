@@ -1249,11 +1249,11 @@ export function RuangDiskusiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISW
                   <option value="PENGUMUMAN">Pengumuman Lembaga</option>
                 </select>
               </label>
-              {kategori === "KELAS" && (
+              {(kategori === "KELAS" || kategori === "PENGUMUMAN") && (
                 <label className="block text-sm font-semibold">
-                  Kelas Target
+                  {kategori === "PENGUMUMAN" ? "Target Pengumuman" : "Kelas Target"}
                   <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={inputClass(false)}>
-                    <option value="">-- Pilih Kelas --</option>
+                    <option value="">{kategori === "PENGUMUMAN" ? "Seluruh Siswa PKBM" : "-- Pilih Kelas --"}</option>
                     {kelasList.map((k) => (
                       <option key={k.id} value={k.id}>
                         {k.nama}
@@ -1263,6 +1263,11 @@ export function RuangDiskusiView({ sandboxRole }: { sandboxRole?: "GURU" | "SISW
                 </label>
               )}
             </div>
+            {kategori === "PENGUMUMAN" && (
+              <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs font-semibold text-emerald-900">
+                Pengumuman ini akan <strong>otomatis muncul sebagai popup</strong> saat siswa login ke Portal Siswa, dan baru dapat ditutup setelah dibaca.
+              </p>
+            )}
             <label className="block text-sm font-semibold">
               Isi Pesan / Pembuka Diskusi
               <textarea required rows={4} value={isi} onChange={(e) => setIsi(e.target.value)} className={inputClass(false)} />

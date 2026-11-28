@@ -24,6 +24,21 @@ import type { SchoolProfile } from "./schoolProfile";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
 import {
+  buildEkskulDescription,
+  buildP5DimensionNarrative,
+  buildP5ProcessNote,
+  buildRaportCompetencyNarrative,
+  computeOverallP5Level,
+  EKSKUL_PREDIKAT_OPTIONS,
+  getP5DimensionMeta,
+  getP5LevelLabel,
+  P5_DIMENSION_OPTIONS,
+  P5_LEVEL_OPTIONS,
+  parseRaportCompetencyNote,
+  type P5AchievementLevel,
+  type RaportScoreSource,
+} from "../utils/raportNarrative";
+import {
   detectDefaultPaketCTrack,
   detectKesetaraanProgram,
   filterItemsByKesetaraanTrack,
@@ -763,6 +778,78 @@ export function AgendaMengajarView() {
 // ==========================================
 // 3. CEK & CETAK E-RAPORT (REGULER+)
 // ==========================================
+type RaportExtraBiodata = {
+  anakKe?: string;
+  tempatLahir?: string;
+  tanggalLahir?: string;
+  jenisKelamin?: string;
+  alamat?: string;
+  namaOrangTuaWali?: string;
+  pekerjaanOrangTuaWali?: string;
+  asalLembaga?: string;
+  tanggalMasuk?: string;
+  semesterMasuk?: string;
+  keteranganPindah?: string;
+  isSiswaPindahan?: boolean;
+};
+
+type RaportP5Item = {
+  id: string;
+  dimensi: string;
+  judulProjek: string;
+  tingkatCapaian: P5AchievementLevel;
+  deskripsi: string;
+};
+
+type RaportEkskulItem = {
+  id: string;
+  kegiatan: string;
+  predikat: string;
+  keterangan: string;
+};
+
+type RaportPrestasiItem = {
+  id: string;
+  jenis: string;
+  keterangan: string;
+};
+
+type RaportStudentExtra = {
+  biodata: RaportExtraBiodata;
+  p5: {
+    judulTemaUtama: string;
+    catatanProses: string;
+    items: RaportP5Item[];
+  };
+  ekstrakurikuler: RaportEkskulItem[];
+  prestasi: RaportPrestasiItem[];
+};
+
+type RaportSiswaItem = {
+  id: string;
+  nama: string;
+  nisn: string;
+  jenjang: string | null;
+  tempatLahir?: string | null;
+  tanggalLahir?: string | null;
+  jenisKelamin?: string | null;
+  alamatLengkap?: string | null;
+  desaKelurahan?: string | null;
+  kecamatan?: string | null;
+  namaAyah?: string | null;
+  pekerjaanAyah?: string | null;
+  namaIbu?: string | null;
+  namaIbuKandung?: string | null;
+  pekerjaanIbu?: string | null;
+  namaWali?: string | null;
+  pekerjaanWali?: string | null;
+  sekolahAsal?: string | null;
+  npsnAsal?: string | null;
+  tanggalMasuk?: string | null;
+  jalurPendaftaran?: string | null;
+  urlSuratPindah?: string | null;
+};
+
 type RaportPayload = {
   sekolah: { nama: string; npsn: string | null; alamat: string | null; kabupatenKota: string | null; kepalaSekolah: string | null; logoUrl: string | null };
   kopSurat?: SchoolProfile;
@@ -772,8 +859,17 @@ type RaportPayload = {
   selectedTahunId: string;
   waliKelasNama: string | null;
   mapel: Array<MapelOpt & { skk: number }>;
-  siswa: Array<{ id: string; nama: string; nisn: string; jenjang: string | null }>;
-  nilai: Array<{ id: string; siswaId: string; mapelId: string; nilaiMandiri: number; nilaiSimulasi: number; nilaiAkhir: number; catatanKompetensi: string | null }>;
+  siswa: RaportSiswaItem[];
+  nilai: Array<{
+    id: string;
+    siswaId: string;
+    mapelId: string;
+    nilaiMandiri: number;
+    nilaiSimulasi: number;
+    nilaiAkhir: number;
+    catatanKompetensi: string | null;
+    sumberNilai?: RaportScoreSource;
+  }>;
   catatan: Array<{
     siswaId: string;
     catatanWali: string | null;
@@ -781,7 +877,76 @@ type RaportPayload = {
     raportDiterbitkan?: boolean;
     raportDiterbitkanPada?: string | null;
   }>;
+  raportExtras?: Record<string, RaportStudentExtra>;
 };
+
+function createEmptyRaportExtra(): RaportStudentExtra {
+  return {
+    biodata: {},
+    p5: { judulTemaUtama: "", catatanProses: "", items: [] },
+    ekstrakurikuler: [],
+    prestasi: [],
+  };
+}
+
+function formatDateInputValue(raw?: string | null): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function formatTanggalIndo(raw?: string | null): string {
+  if (!raw || !raw.trim()) return "";
+  const parsed = new Date(raw.trim());
+  if (Number.isNaN(parsed.getTime())) return raw.trim();
+  return parsed.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function formatJenisKelaminLabel(raw?: string | null): string {
+  const val = (raw ?? "").trim().toLowerCase();
+  if (!val) return "-";
+  if (val === "l" || val.startsWith("laki")) return "Laki-laki";
+  if (val === "p" || val.startsWith("perempuan") || val.startsWith("wanita")) return "Perempuan";
+  return raw!.trim();
+}
+
+function buildDefaultStudentBiodata(siswa: RaportSiswaItem, saved?: RaportExtraBiodata, hasTransferScores = false): RaportExtraBiodata {
+  const alamatParts = [siswa.alamatLengkap, siswa.desaKelurahan, siswa.kecamatan]
+    .map((p) => (p ?? "").trim())
+    .filter(Boolean);
+  const parentNames = [siswa.namaWali, siswa.namaAyah, siswa.namaIbu || siswa.namaIbuKandung]
+    .map((p) => (p ?? "").trim())
+    .filter(Boolean);
+  const defaultParentName = siswa.namaWali?.trim()
+    ? siswa.namaWali.trim()
+    : [siswa.namaAyah?.trim(), (siswa.namaIbu || siswa.namaIbuKandung)?.trim()].filter(Boolean).join(" / ") || parentNames[0] || "";
+  const defaultParentJob = siswa.pekerjaanWali?.trim()
+    ? siswa.pekerjaanWali.trim()
+    : [siswa.pekerjaanAyah?.trim(), siswa.pekerjaanIbu?.trim()].filter(Boolean).join(" / ") || "";
+  const jalurTransfer = /pindah|mutasi/i.test(siswa.jalurPendaftaran ?? "");
+  const inferredTransfer = Boolean(
+    saved?.isSiswaPindahan ??
+      (hasTransferScores || jalurTransfer || Boolean(siswa.urlSuratPindah) || Boolean(saved?.keteranganPindah?.trim())),
+  );
+
+  return {
+    anakKe: saved?.anakKe ?? "",
+    tempatLahir: saved?.tempatLahir ?? (siswa.tempatLahir ?? ""),
+    tanggalLahir: saved?.tanggalLahir ?? formatDateInputValue(siswa.tanggalLahir),
+    jenisKelamin: saved?.jenisKelamin ?? (siswa.jenisKelamin ?? ""),
+    alamat: saved?.alamat ?? alamatParts.join(", "),
+    namaOrangTuaWali: saved?.namaOrangTuaWali ?? defaultParentName,
+    pekerjaanOrangTuaWali: saved?.pekerjaanOrangTuaWali ?? defaultParentJob,
+    asalLembaga: saved?.asalLembaga ?? (siswa.sekolahAsal ?? ""),
+    tanggalMasuk: saved?.tanggalMasuk ?? formatDateInputValue(siswa.tanggalMasuk),
+    semesterMasuk: saved?.semesterMasuk ?? "",
+    keteranganPindah: saved?.keteranganPindah ?? "",
+    isSiswaPindahan: inferredTransfer,
+  };
+}
 
 const STATUS_KENAIKAN_LABELS: Record<string, string> = {
   PROSES: "Proses Penilaian Semester",
@@ -823,26 +988,18 @@ function isPemberdayaanKeterampilanMapel(mapelNama: string): boolean {
   );
 }
 
-function buildKurikulumMerdekaDescription(mapelNama: string, nilaiAkhir: number | null, customNote: string | null): string {
-  if (customNote && customNote.trim()) {
-    return customNote.trim();
-  }
-  if (nilaiAkhir === null) {
-    return `Belum terdapat capaian nilai akhir pada mata pelajaran ${mapelNama} semester ini.`;
-  }
-  if (nilaiAkhir >= 86) {
-    return `Menunjukkan penguasaan yang sangat baik dalam memahami dan menerapkan seluruh kompetensi esensial pada mata pelajaran ${mapelNama}. Perlu diberikan pengayaan untuk mengembangkan keterampilan berpikir tingkat lanjut secara mandiri.`;
-  }
-  if (nilaiAkhir >= 76) {
-    return `Menunjukkan penguasaan yang baik dalam memahami konsep dan penerapan materi ${mapelNama}. Perlu penguatan pada latihan analisis dan konsistensi penyelesaian tugas mandiri.`;
-  }
-  if (nilaiAkhir >= 70) {
-    return `Menunjukkan penguasaan yang cukup pada kompetensi dasar mata pelajaran ${mapelNama}. Perlu bimbingan lanjutan dalam memahami materi yang lebih kompleks serta peningkatan ketelitian dalam pembelajaran tutorial dan mandiri.`;
-  }
-  if (nilaiAkhir >= 50) {
-    return `Mulai memahami sebagian konsep dasar ${mapelNama}. Perlu pendampingan tutor dan remedial pada bagian materi yang belum tuntas.`;
-  }
-  return `Belum mencapai ketuntasan pada kompetensi esensial ${mapelNama}. Perlu bimbingan intensif dan pengulangan modul mandiri secara menyeluruh.`;
+function buildKurikulumMerdekaDescription(
+  mapelNama: string,
+  nilaiAkhir: number | null,
+  customNote: string | null,
+  source?: RaportScoreSource | null,
+): string {
+  return buildRaportCompetencyNarrative({
+    mapelNama,
+    nilaiAkhir,
+    customNote,
+    source,
+  });
 }
 
 export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" } = {}) {
@@ -866,6 +1023,9 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   // Edit homeroom note & decision state
   const [catatanWali, setCatatanWali] = useState("");
   const [statusKenaikan, setStatusKenaikan] = useState("NAIK_KELAS");
+
+  // Biodata tambahan, Mutasi Pindahan, P5, Ekstrakurikuler & Prestasi state
+  const [raportExtra, setRaportExtra] = useState<RaportStudentExtra>(() => createEmptyRaportExtra());
 
   // Add Tahun Ajaran modal state
   const [addYearOpen, setAddYearOpen] = useState(false);
@@ -927,17 +1087,39 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     setCatatanWali(activeCatatanObj?.catatanWali ?? "Terus tingkatkan ketekunan dalam pembelajaran mandiri dan tatap muka.");
     setStatusKenaikan(activeCatatanObj?.statusKenaikan ?? "NAIK_KELAS");
 
-    const byMapel = new Map(data.nilai.filter((n) => n.siswaId === activeSiswa.id).map((n) => [n.mapelId, n]));
+    const studentNilaiRows = data.nilai.filter((n) => n.siswaId === activeSiswa.id);
+    const byMapel = new Map(studentNilaiRows.map((n) => [n.mapelId, n]));
+    const hasTransferScores = studentNilaiRows.some(
+      (n) => parseRaportCompetencyNote(n.catatanKompetensi, n.sumberNilai).isTransferLeger,
+    );
     const next: Record<string, { mandiri: string; simulasi: string; catatan: string }> = {};
     for (const m of data.mapel) {
       const existing = byMapel.get(m.id);
+      const parsedNote = parseRaportCompetencyNote(existing?.catatanKompetensi, existing?.sumberNilai);
       next[m.id] = {
         mandiri: existing ? String(existing.nilaiMandiri) : "",
         simulasi: existing ? String(existing.nilaiSimulasi) : "",
-        catatan: existing?.catatanKompetensi ?? "",
+        catatan: parsedNote.cleanNote ?? "",
       };
     }
     setInlineGrades(next);
+
+    const savedExtra = data.raportExtras?.[activeSiswa.id];
+    setRaportExtra({
+      biodata: buildDefaultStudentBiodata(activeSiswa, savedExtra?.biodata, hasTransferScores),
+      p5: {
+        judulTemaUtama: savedExtra?.p5?.judulTemaUtama ?? "",
+        catatanProses: savedExtra?.p5?.catatanProses ?? "",
+        items: (savedExtra?.p5?.items ?? []).map((item) => ({
+          ...item,
+          tingkatCapaian: (["MB", "SB", "BSH", "SAB"].includes(item.tingkatCapaian)
+            ? item.tingkatCapaian
+            : "BSH") as P5AchievementLevel,
+        })),
+      },
+      ekstrakurikuler: savedExtra?.ekstrakurikuler ?? [],
+      prestasi: savedExtra?.prestasi ?? [],
+    });
   }, [data, activeSiswa, activeCatatanObj]);
 
   async function handleCreateTahunAjaran(event: React.FormEvent<HTMLFormElement>) {
@@ -1011,6 +1193,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           entries,
           catatanWali,
           statusKenaikan,
+          raportExtra,
         }),
       });
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
@@ -1025,6 +1208,165 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     } finally {
       setBusy(false);
     }
+  }
+
+  async function saveRaportExtraOnly() {
+    if (!activeSiswa || busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/raport/extra", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({
+          siswaId: activeSiswa.id,
+          tahunAjaranId: tahunId || undefined,
+          raportExtra,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal menyimpan biodata, P5, dan ekstrakurikuler.");
+      setNotice(body?.message || "Biodata, P5, ekstrakurikuler, dan prestasi tersimpan.");
+      await loadRaport(kelasId, tahunId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Data tambahan rapor belum dapat disimpan."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateExtraBiodata<K extends keyof RaportExtraBiodata>(field: K, value: RaportExtraBiodata[K]) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      biodata: { ...prev.biodata, [field]: value },
+    }));
+  }
+
+  function addP5Item() {
+    const usedKeys = new Set(raportExtra.p5.items.map((item) => item.dimensi));
+    const nextDim = P5_DIMENSION_OPTIONS.find((d) => !usedKeys.has(d.key)) ?? P5_DIMENSION_OPTIONS[0];
+    const newItem: RaportP5Item = {
+      id: `p5-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      dimensi: nextDim.key,
+      judulProjek: raportExtra.p5.judulTemaUtama,
+      tingkatCapaian: "BSH",
+      deskripsi: buildP5DimensionNarrative({
+        dimensi: nextDim.key,
+        judulProjek: raportExtra.p5.judulTemaUtama,
+        tingkatCapaian: "BSH",
+      }),
+    };
+    setRaportExtra((prev) => ({
+      ...prev,
+      p5: { ...prev.p5, items: [...prev.p5.items, newItem] },
+    }));
+  }
+
+  function updateP5Item(id: string, patch: Partial<RaportP5Item>, regenerateNarrative = false) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      p5: {
+        ...prev.p5,
+        items: prev.p5.items.map((item) => {
+          if (item.id !== id) return item;
+          const next = { ...item, ...patch };
+          if (regenerateNarrative) {
+            next.deskripsi = buildP5DimensionNarrative({
+              dimensi: next.dimensi,
+              judulProjek: next.judulProjek || prev.p5.judulTemaUtama,
+              tingkatCapaian: next.tingkatCapaian,
+            });
+          }
+          return next;
+        }),
+      },
+    }));
+  }
+
+  function removeP5Item(id: string) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      p5: { ...prev.p5, items: prev.p5.items.filter((item) => item.id !== id) },
+    }));
+  }
+
+  function regenerateP5ProcessNote() {
+    const overall = computeOverallP5Level(raportExtra.p5.items.map((item) => item.tingkatCapaian));
+    const generated = buildP5ProcessNote({
+      tingkatKeseluruhan: overall,
+      judulProjek: raportExtra.p5.judulTemaUtama || raportExtra.p5.items[0]?.judulProjek,
+    });
+    setRaportExtra((prev) => ({
+      ...prev,
+      p5: { ...prev.p5, catatanProses: generated },
+    }));
+  }
+
+  function addEkskulItem() {
+    const newItem: RaportEkskulItem = {
+      id: `eks-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      kegiatan: "",
+      predikat: "Baik",
+      keterangan: "",
+    };
+    setRaportExtra((prev) => ({
+      ...prev,
+      ekstrakurikuler: [...prev.ekstrakurikuler, newItem],
+    }));
+  }
+
+  function updateEkskulItem(id: string, patch: Partial<RaportEkskulItem>, regenerateNote = false) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      ekstrakurikuler: prev.ekstrakurikuler.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, ...patch };
+        if (regenerateNote) {
+          next.keterangan = buildEkskulDescription({
+            kegiatan: next.kegiatan,
+            predikat: next.predikat,
+          });
+        }
+        return next;
+      }),
+    }));
+  }
+
+  function removeEkskulItem(id: string) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      ekstrakurikuler: prev.ekstrakurikuler.filter((item) => item.id !== id),
+    }));
+  }
+
+  function addPrestasiItem() {
+    const newItem: RaportPrestasiItem = {
+      id: `prs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      jenis: "",
+      keterangan: "",
+    };
+    setRaportExtra((prev) => ({
+      ...prev,
+      prestasi: [...prev.prestasi, newItem],
+    }));
+  }
+
+  function updatePrestasiItem(id: string, patch: Partial<RaportPrestasiItem>) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      prestasi: prev.prestasi.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    }));
+  }
+
+  function removePrestasiItem(id: string) {
+    setRaportExtra((prev) => ({
+      ...prev,
+      prestasi: prev.prestasi.filter((item) => item.id !== id),
+    }));
   }
 
   async function togglePublishRaport(diterbitkan: boolean, publishAllInClass = false) {
@@ -1212,12 +1554,14 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     const byMapel = new Map(data.nilai.filter((n) => n.siswaId === activeSiswa.id).map((n) => [n.mapelId, n]));
     return filteredMapels.map((m) => {
       const row = byMapel.get(m.id);
+      const parsedNote = parseRaportCompetencyNote(row?.catatanKompetensi, row?.sumberNilai);
       return {
         mapel: m,
         nilaiMandiri: row?.nilaiMandiri ?? null,
         nilaiSimulasi: row?.nilaiSimulasi ?? null,
         nilaiAkhir: row?.nilaiAkhir ?? null,
-        catatan: row?.catatanKompetensi ?? null,
+        catatan: parsedNote.cleanNote,
+        sumberNilai: (parsedNote.isTransferLeger ? "pindahan" : "raport") as RaportScoreSource,
       };
     });
   }, [data, activeSiswa, filteredMapels]);
@@ -1236,6 +1580,18 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
   const totalSkkRaport = useMemo(
     () => studentScores.reduce((sum, row) => sum + (row.mapel.skk || 0), 0),
     [studentScores],
+  );
+  const filledStudentScores = useMemo(
+    () => studentScores.filter((row) => row.nilaiAkhir !== null),
+    [studentScores],
+  );
+  const hasTransferScoresInSemester = useMemo(
+    () => filledStudentScores.some((row) => row.sumberNilai === "pindahan"),
+    [filledStudentScores],
+  );
+  const isAllTransferSemester = useMemo(
+    () => filledStudentScores.length > 0 && filledStudentScores.every((row) => row.sumberNilai === "pindahan"),
+    [filledStudentScores],
   );
 
   return (
@@ -1269,20 +1625,22 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               </div>
             ) : raportSubTab === "raport" ? (
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy || !activeSiswa || !tahunId}
-                  onClick={() => void togglePublishRaport(!isRaportPublished, false)}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white shadow-xs transition disabled:opacity-50 ${
-                    isRaportPublished ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"
-                  }`}
-                >
-                  <CheckCircle2 size={15} />
-                  {isRaportPublished ? "Tarik Terbitan Raport" : "Terbitkan Raport Digital"}
-                </button>
+                {(!isAllTransferSemester || isRaportPublished) && (
+                  <button
+                    type="button"
+                    disabled={busy || !activeSiswa || !tahunId}
+                    onClick={() => void togglePublishRaport(!isRaportPublished, false)}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-extrabold text-white shadow-xs transition disabled:opacity-50 ${
+                      isRaportPublished ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"
+                    }`}
+                  >
+                    <CheckCircle2 size={15} />
+                    {isRaportPublished ? "Tarik Terbitan Raport" : "Terbitkan Raport Digital"}
+                  </button>
+                )}
                 <button type="button" onClick={() => window.print()} disabled={!activeSiswa} className="dashboard-hero-action">
                   <Printer size={16} />
-                  Cetak / PDF E-Raport
+                  {isAllTransferSemester ? "Cetak / PDF Rekap Pindahan" : "Cetak / PDF E-Raport"}
                 </button>
               </div>
             ) : undefined
@@ -1420,35 +1778,45 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4 ${panelClass(isDark)}`}>
             <div className="flex flex-wrap items-center gap-2.5 text-xs">
               <span className="font-bold">Status Akses Siswa (Raport Digital):</span>
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold ${
-                  isRaportPublished
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-amber-100 text-amber-900"
-                }`}
-              >
-                {isRaportPublished ? "Sudah Diterbitkan ke Siswa" : "Belum Diterbitkan (Disembunyikan dari Siswa)"}
-              </span>
+              {isAllTransferSemester && !isRaportPublished ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-extrabold text-amber-900">
+                  Semester Leger Pindahan — Arsip Internal (Tidak Diterbitkan sebagai Rapor Asli)
+                </span>
+              ) : (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold ${
+                    isRaportPublished
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-900"
+                  }`}
+                >
+                  {isRaportPublished ? "Sudah Diterbitkan ke Siswa" : "Belum Diterbitkan (Disembunyikan dari Siswa)"}
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={busy || !tahunId}
-                onClick={() => void togglePublishRaport(!isRaportPublished, false)}
-                className={`rounded-xl px-3.5 py-2 text-xs font-extrabold text-white transition disabled:opacity-50 ${
-                  isRaportPublished ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"
-                }`}
-              >
-                {isRaportPublished ? "Tarik Terbitan Siswa Ini" : "Terbitkan Raport Siswa Ini"}
-              </button>
-              <button
-                type="button"
-                disabled={busy || !tahunId || !kelasId}
-                onClick={() => void togglePublishRaport(true, true)}
-                className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
-              >
-                Terbitkan 1 Kelas
-              </button>
+              {(!isAllTransferSemester || isRaportPublished) && (
+                <button
+                  type="button"
+                  disabled={busy || !tahunId}
+                  onClick={() => void togglePublishRaport(!isRaportPublished, false)}
+                  className={`rounded-xl px-3.5 py-2 text-xs font-extrabold text-white transition disabled:opacity-50 ${
+                    isRaportPublished ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"
+                  }`}
+                >
+                  {isRaportPublished ? "Tarik Terbitan Siswa Ini" : "Terbitkan Raport Siswa Ini"}
+                </button>
+              )}
+              {!isAllTransferSemester && (
+                <button
+                  type="button"
+                  disabled={busy || !tahunId || !kelasId}
+                  onClick={() => void togglePublishRaport(true, true)}
+                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  Terbitkan 1 Kelas
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setRaportSubTab("input")}
@@ -1605,6 +1973,453 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               </div>
             </div>
 
+            {/* Biodata Lengkap Peserta Didik, Orang Tua/Wali & Mutasi Pindahan */}
+            <div className={`space-y-4 rounded-2xl p-5 ${panelClass(isDark)}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
+                    <FileText size={17} className="text-indigo-600" />
+                    Biodata Peserta Didik, Orang Tua/Wali &amp; Mutasi Pindahan
+                  </h3>
+                  <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    Terisi otomatis dari data induk peserta didik bila tersedia. Lengkapi atau sesuaikan untuk ditampilkan rapi pada halaman identitas rapor cetak.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void saveRaportExtraOnly()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <Save size={13} />
+                  Simpan Biodata, P5 &amp; Ekskul
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="block text-xs font-bold">
+                  Tempat Lahir
+                  <input
+                    type="text"
+                    value={raportExtra.biodata.tempatLahir ?? ""}
+                    onChange={(e) => updateExtraBiodata("tempatLahir", e.target.value)}
+                    placeholder="Contoh: Bandung"
+                    className={inputClass(isDark)}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Tanggal Lahir
+                  <input
+                    type="date"
+                    value={raportExtra.biodata.tanggalLahir ?? ""}
+                    onChange={(e) => updateExtraBiodata("tanggalLahir", e.target.value)}
+                    className={inputClass(isDark)}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Jenis Kelamin
+                  <select
+                    value={raportExtra.biodata.jenisKelamin ?? ""}
+                    onChange={(e) => updateExtraBiodata("jenisKelamin", e.target.value)}
+                    className={inputClass(isDark)}
+                  >
+                    <option value="">-- Pilih --</option>
+                    <option value="Laki-laki">Laki-laki</option>
+                    <option value="Perempuan">Perempuan</option>
+                  </select>
+                </label>
+                <label className="block text-xs font-bold">
+                  Anak ke-berapa
+                  <input
+                    type="text"
+                    value={raportExtra.biodata.anakKe ?? ""}
+                    onChange={(e) => updateExtraBiodata("anakKe", e.target.value)}
+                    placeholder="Contoh: 2 (Kedua)"
+                    className={inputClass(isDark)}
+                  />
+                </label>
+                <label className="block text-xs font-bold sm:col-span-2">
+                  Alamat Peserta Didik
+                  <input
+                    type="text"
+                    value={raportExtra.biodata.alamat ?? ""}
+                    onChange={(e) => updateExtraBiodata("alamat", e.target.value)}
+                    placeholder="Alamat domisili peserta didik"
+                    className={inputClass(isDark)}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Nama Orang Tua / Wali
+                  <input
+                    type="text"
+                    value={raportExtra.biodata.namaOrangTuaWali ?? ""}
+                    onChange={(e) => updateExtraBiodata("namaOrangTuaWali", e.target.value)}
+                    placeholder="Nama Ayah / Ibu / Wali"
+                    className={inputClass(isDark)}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Pekerjaan Orang Tua / Wali
+                  <input
+                    type="text"
+                    value={raportExtra.biodata.pekerjaanOrangTuaWali ?? ""}
+                    onChange={(e) => updateExtraBiodata("pekerjaanOrangTuaWali", e.target.value)}
+                    placeholder="Contoh: Wiraswasta / Petani / Karyawan"
+                    className={inputClass(isDark)}
+                  />
+                </label>
+              </div>
+
+              <div className={`space-y-3 rounded-xl border p-3.5 ${isDark ? "border-slate-700 bg-slate-950/50" : "border-slate-200 bg-slate-50/80"}`}>
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-extrabold">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(raportExtra.biodata.isSiswaPindahan)}
+                    onChange={(e) => updateExtraBiodata("isSiswaPindahan", e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                  />
+                  Peserta Didik Pindahan / Mutasi (tampilkan informasi lembaga asal &amp; keterangan pindah pada rapor)
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="block text-xs font-bold">
+                    Asal Satuan Pendidikan / Lembaga
+                    <input
+                      type="text"
+                      value={raportExtra.biodata.asalLembaga ?? ""}
+                      onChange={(e) => updateExtraBiodata("asalLembaga", e.target.value)}
+                      placeholder="Contoh: SMPN 1 ... / PKBM ..."
+                      className={inputClass(isDark)}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold">
+                    Tanggal Masuk
+                    <input
+                      type="date"
+                      value={raportExtra.biodata.tanggalMasuk ?? ""}
+                      onChange={(e) => updateExtraBiodata("tanggalMasuk", e.target.value)}
+                      className={inputClass(isDark)}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold">
+                    Semester / Tingkat Masuk
+                    <input
+                      type="text"
+                      value={raportExtra.biodata.semesterMasuk ?? ""}
+                      onChange={(e) => updateExtraBiodata("semesterMasuk", e.target.value)}
+                      placeholder="Contoh: Kelas 8 / Semester Ganjil"
+                      className={inputClass(isDark)}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold">
+                    Keterangan Pindah / Leger Pindahan
+                    <input
+                      type="text"
+                      value={raportExtra.biodata.keteranganPindah ?? ""}
+                      onChange={(e) => updateExtraBiodata("keteranganPindah", e.target.value)}
+                      placeholder="Contoh: Pindahan semester 3, nilai dikonversi dari leger asal"
+                      className={inputClass(isDark)}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Capaian Projek / Karakter (P5 / Pemberdayaan & Keterampilan) + Generator Narasi Otomatis */}
+            <div className={`space-y-4 rounded-2xl p-5 ${panelClass(isDark)}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
+                    <Sparkles size={17} className="text-amber-500" />
+                    Capaian Projek / Karakter (P5 / Pemberdayaan &amp; Keterampilan)
+                  </h3>
+                  <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    Pilih Dimensi/Elemen P5 dan Tingkat Capaian (MB, SB, BSH, SAB) untuk menghasilkan narasi otomatis yang tetap dapat disesuaikan secara manual.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addP5Item}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-extrabold text-amber-900 hover:bg-amber-100"
+                >
+                  <Plus size={14} />
+                  Tambah Dimensi P5
+                </button>
+              </div>
+
+              <label className="block text-xs font-bold">
+                Judul / Tema Projek Utama Semester Ini (Opsional)
+                <input
+                  type="text"
+                  value={raportExtra.p5.judulTemaUtama}
+                  onChange={(e) =>
+                    setRaportExtra((prev) => ({
+                      ...prev,
+                      p5: { ...prev.p5, judulTemaUtama: e.target.value },
+                    }))
+                  }
+                  placeholder="Contoh: Kewirausahaan Produk Lokal Berkelanjutan / Gaya Hidup Berkelanjutan"
+                  className={inputClass(isDark)}
+                />
+              </label>
+
+              {raportExtra.p5.items.length === 0 ? (
+                <div className={`rounded-xl border border-dashed p-4 text-xs ${isDark ? "border-slate-700 text-slate-400" : "border-slate-300 bg-slate-50/70 text-slate-600"}`}>
+                  Belum ada dimensi projek P5 yang ditambahkan untuk semester ini. Klik <strong>+ Tambah Dimensi P5</strong> jika ingin menyertakan capaian projek pada rapor, atau biarkan kosong untuk menampilkan fallback bersih secara otomatis.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {raportExtra.p5.items.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className={`space-y-2.5 rounded-xl border p-3.5 ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50/80"}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold text-amber-700">Dimensi Projek #{idx + 1}</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => updateP5Item(item.id, {}, true)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-900 hover:bg-sky-100"
+                          >
+                            <RefreshCw size={11} />
+                            Generate Narasi Otomatis
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeP5Item(item.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-50"
+                          >
+                            <Trash2 size={11} />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <label className="block text-xs font-bold">
+                          Dimensi / Elemen P5
+                          <select
+                            value={item.dimensi}
+                            onChange={(e) => updateP5Item(item.id, { dimensi: e.target.value }, true)}
+                            className={inputClass(isDark)}
+                          >
+                            {P5_DIMENSION_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block text-xs font-bold">
+                          Judul / Sub-Tema Projek
+                          <input
+                            type="text"
+                            value={item.judulProjek}
+                            onChange={(e) => updateP5Item(item.id, { judulProjek: e.target.value })}
+                            placeholder={raportExtra.p5.judulTemaUtama || "Judul projek spesifik"}
+                            className={inputClass(isDark)}
+                          />
+                        </label>
+                        <label className="block text-xs font-bold">
+                          Tingkat Capaian
+                          <select
+                            value={item.tingkatCapaian}
+                            onChange={(e) =>
+                              updateP5Item(item.id, { tingkatCapaian: e.target.value as P5AchievementLevel }, true)
+                            }
+                            className={inputClass(isDark)}
+                          >
+                            {P5_LEVEL_OPTIONS.map((lvl) => (
+                              <option key={lvl.code} value={lvl.code}>
+                                {lvl.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <label className="block text-xs font-bold">
+                        Deskripsi Capaian (Otomatis / Dapat Diedit Manual)
+                        <textarea
+                          rows={2}
+                          value={item.deskripsi}
+                          onChange={(e) => updateP5Item(item.id, { deskripsi: e.target.value })}
+                          placeholder="Kosongkan untuk mengisi narasi otomatis sesuai dimensi & tingkat capaian..."
+                          className={inputClass(isDark)}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold">Catatan Umum Projek (Catatan Proses)</label>
+                  <button
+                    type="button"
+                    onClick={regenerateP5ProcessNote}
+                    className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-900 hover:bg-sky-100"
+                  >
+                    <Sparkles size={11} />
+                    Generate Catatan Proses Otomatis
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  value={raportExtra.p5.catatanProses}
+                  onChange={(e) =>
+                    setRaportExtra((prev) => ({
+                      ...prev,
+                      p5: { ...prev.p5, catatanProses: e.target.value },
+                    }))
+                  }
+                  placeholder="Kosongkan untuk template otomatis sesuai predikat keseluruhan dimensi P5..."
+                  className={inputClass(isDark)}
+                />
+              </div>
+            </div>
+
+            {/* Kegiatan Ekstrakurikuler / Pengembangan Diri & Prestasi */}
+            <div className={`space-y-4 rounded-2xl p-5 ${panelClass(isDark)}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
+                    <Layers size={17} className="text-emerald-600" />
+                    Kegiatan Ekstrakurikuler / Pengembangan Diri &amp; Prestasi
+                  </h3>
+                  <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    Catat keikutsertaan kegiatan pengembangan diri (pramuka, kewirausahaan, komputer, olahraga, seni, dll.) beserta prestasi bila ada.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={addEkskulItem}
+                    className="inline-flex items-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-900 hover:bg-emerald-100"
+                  >
+                    <Plus size={14} />
+                    Tambah Ekskul
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addPrestasiItem}
+                    className="inline-flex items-center gap-1 rounded-xl border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-extrabold text-sky-900 hover:bg-sky-100"
+                  >
+                    <Plus size={14} />
+                    Tambah Prestasi
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-2.5">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-emerald-700">
+                    1. Ekstrakurikuler / Pengembangan Diri
+                  </p>
+                  {raportExtra.ekstrakurikuler.length === 0 ? (
+                    <p className={`rounded-xl border border-dashed p-3 text-xs ${isDark ? "border-slate-700 text-slate-400" : "border-slate-300 bg-slate-50/70 text-slate-600"}`}>
+                      Belum ada kegiatan ekstrakurikuler tercatat. Klik <strong>+ Tambah Ekskul</strong> bila peserta didik mengikuti kegiatan pengembangan diri.
+                    </p>
+                  ) : (
+                    raportExtra.ekstrakurikuler.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`space-y-2 rounded-xl border p-3 ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50/80"}`}
+                      >
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <input
+                            type="text"
+                            value={item.kegiatan}
+                            onChange={(e) => updateEkskulItem(item.id, { kegiatan: e.target.value })}
+                            placeholder="Nama kegiatan (misal: Pramuka)"
+                            className={`sm:col-span-2 ${inputClass(isDark)}`}
+                          />
+                          <select
+                            value={item.predikat}
+                            onChange={(e) => updateEkskulItem(item.id, { predikat: e.target.value }, true)}
+                            className={inputClass(isDark)}
+                          >
+                            {EKSKUL_PREDIKAT_OPTIONS.map((pred) => (
+                              <option key={pred} value={pred}>
+                                {pred}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={item.keterangan}
+                          onChange={(e) => updateEkskulItem(item.id, { keterangan: e.target.value })}
+                          placeholder="Kosongkan untuk deskripsi otomatis berdasarkan predikat..."
+                          className={inputClass(isDark)}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => updateEkskulItem(item.id, {}, true)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] font-bold text-sky-900 hover:bg-sky-100"
+                          >
+                            <RefreshCw size={11} />
+                            Isi Template
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeEkskulItem(item.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-50"
+                          >
+                            <Trash2 size={11} />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="space-y-2.5">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-sky-700">
+                    2. Prestasi yang Diraih
+                  </p>
+                  {raportExtra.prestasi.length === 0 ? (
+                    <p className={`rounded-xl border border-dashed p-3 text-xs ${isDark ? "border-slate-700 text-slate-400" : "border-slate-300 bg-slate-50/70 text-slate-600"}`}>
+                      Belum ada catatan prestasi. Klik <strong>+ Tambah Prestasi</strong> bila peserta didik meraih prestasi akademik atau non-akademik.
+                    </p>
+                  ) : (
+                    raportExtra.prestasi.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`space-y-2 rounded-xl border p-3 ${isDark ? "border-slate-700 bg-slate-950/60" : "border-slate-200 bg-slate-50/80"}`}
+                      >
+                        <input
+                          type="text"
+                          value={item.jenis}
+                          onChange={(e) => updatePrestasiItem(item.id, { jenis: e.target.value })}
+                          placeholder="Jenis / Nama Prestasi (misal: Juara 2 Lomba Keterampilan PKBM)"
+                          className={inputClass(isDark)}
+                        />
+                        <input
+                          type="text"
+                          value={item.keterangan}
+                          onChange={(e) => updatePrestasiItem(item.id, { keterangan: e.target.value })}
+                          placeholder="Keterangan / Tingkat (misal: Tingkat Kabupaten, Tahun 2026)"
+                          className={inputClass(isDark)}
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => removePrestasiItem(item.id)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-50"
+                          >
+                            <Trash2 size={11} />
+                            Hapus
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
             <form onSubmit={saveHomeroomNote} className={`space-y-3 rounded-2xl p-5 ${panelClass(isDark)}`}>
               <h3 className="flex items-center gap-2 text-sm font-bold">
                 <UserCheck size={17} className="text-emerald-600" />
@@ -1682,48 +2497,138 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         />
       )}
 
-      {raportSubTab === "raport" && activeSiswa && data && (
+      {raportSubTab === "raport" && activeSiswa && data && (() => {
+        const schoolName = data.kopSurat?.nama || data.sekolah.nama || "-";
+        const schoolNpsn = data.kopSurat?.npsn || data.sekolah.npsn || "-";
+        const schoolAddress = data.kopSurat?.alamatLengkap || data.sekolah.alamat || "-";
+        const bio = raportExtra.biodata;
+        const ttlText = [bio.tempatLahir?.trim(), formatTanggalIndo(bio.tanggalLahir)].filter(Boolean).join(", ") || "-";
+        const hasTransferScores = studentScores.some((row) => row.sumberNilai === "pindahan");
+        const showTransferBlock = Boolean(
+          bio.isSiswaPindahan ||
+            hasTransferScores ||
+            bio.asalLembaga?.trim() ||
+            bio.keteranganPindah?.trim() ||
+            bio.semesterMasuk?.trim(),
+        );
+        const overallP5Level = computeOverallP5Level(raportExtra.p5.items.map((item) => item.tingkatCapaian));
+        const p5ProcessText =
+          raportExtra.p5.items.length > 0 || raportExtra.p5.catatanProses.trim()
+            ? buildP5ProcessNote({
+                tingkatKeseluruhan: overallP5Level,
+                judulProjek: raportExtra.p5.judulTemaUtama || raportExtra.p5.items[0]?.judulProjek,
+                customNote: raportExtra.p5.catatanProses,
+              })
+            : "";
+
+        return (
         <article className="print-sheet rounded-2xl border border-slate-300 bg-white p-6 text-slate-900 shadow-sm sm:p-8">
           {/* Kop Surat Resmi Lembaga (Konfigurasi di Profil & Identitas Sekolah) */}
           <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
 
           <div className="mt-4 text-center">
             <h3 className="text-sm font-black uppercase tracking-wide text-slate-950 sm:text-base">
-              Laporan Hasil Belajar (Rapor) Pendidikan Kesetaraan
+              {isAllTransferSemester
+                ? "Rekap Konversi Nilai Leger Pindahan Pendidikan Kesetaraan"
+                : "Laporan Hasil Belajar (Rapor) Pendidikan Kesetaraan"}
             </h3>
-            <p className="text-xs font-semibold text-slate-700">
+            {isAllTransferSemester && (
+              <p className="mt-1 inline-block rounded-md border border-amber-400 bg-amber-50 px-2.5 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-amber-900">
+                Salinan Konversi Nilai Sekolah Asal · Arsip Kelengkapan Transkrip
+              </p>
+            )}
+            {!isAllTransferSemester && hasTransferScoresInSemester && (
+              <p className="mt-1 text-[11px] font-semibold text-amber-800">
+                * Memuat sebagian mata pelajaran hasil konversi nilai leger pindahan
+              </p>
+            )}
+            <p className="mt-1 text-xs font-semibold text-slate-700">
               Kurikulum Merdeka · {programDisplayLabel} · Tahun Pelajaran {activeTahunObj ? `${activeTahunObj.nama} (${activeTahunObj.semester})` : "2026/2027"}
             </p>
           </div>
 
-          {/* Identitas Peserta Didik */}
-          <div className="mt-4 grid gap-x-6 gap-y-1.5 rounded-xl border border-slate-300 bg-slate-50/80 px-4 py-3 text-xs sm:grid-cols-2">
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">Nama Peserta Didik</span>
-              <span className="font-bold text-slate-950">: {activeSiswa.nama}</span>
+          {/* Identitas Satuan Pendidikan, Biodata Lengkap Peserta Didik, Orang Tua/Wali & Mutasi Pindahan */}
+          <div className="print-avoid-break mt-4 space-y-2.5 rounded-xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-xs">
+            <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Satuan Pendidikan</span>
+                <span className="font-bold text-slate-950">: {schoolName}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">NPSN</span>
+                <span className="font-mono font-semibold text-slate-900">: {schoolNpsn}</span>
+              </div>
+              <div className="flex gap-2 sm:col-span-2">
+                <span className="w-36 shrink-0 text-slate-600">Alamat Lembaga</span>
+                <span className="font-medium text-slate-900">: {schoolAddress}</span>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <span className="w-32 shrink-0 text-slate-600">Kelas / Rombel</span>
-              <span className="font-bold text-slate-950">: {activeKelasName}</span>
+
+            <div className="grid gap-x-6 gap-y-1.5 border-t border-slate-200 pt-2 sm:grid-cols-2">
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Nama Peserta Didik</span>
+                <span className="font-bold text-slate-950">: {activeSiswa.nama}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Kelas / Fase</span>
+                <span className="font-bold text-slate-950">: {activeKelasName} / {phaseInfo.fase}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
+                <span className="font-mono font-bold text-slate-950">: {activeSiswa.nisn || "-"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Semester / TA</span>
+                <span className="font-semibold text-slate-900">
+                  : {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Tempat, Tgl Lahir</span>
+                <span className="font-medium text-slate-900">: {ttlText}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Jenis Kelamin</span>
+                <span className="font-medium text-slate-900">: {formatJenisKelaminLabel(bio.jenisKelamin)}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Anak ke-berapa</span>
+                <span className="font-medium text-slate-900">: {bio.anakKe?.trim() || "-"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Alamat Peserta Didik</span>
+                <span className="font-medium text-slate-900">: {bio.alamat?.trim() || "-"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Nama Orang Tua / Wali</span>
+                <span className="font-medium text-slate-900">: {bio.namaOrangTuaWali?.trim() || "-"}</span>
+              </div>
+              <div className="flex gap-2">
+                <span className="w-36 shrink-0 text-slate-600">Pekerjaan Ortu / Wali</span>
+                <span className="font-medium text-slate-900">: {bio.pekerjaanOrangTuaWali?.trim() || "-"}</span>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
-              <span className="font-mono font-bold text-slate-950">: {activeSiswa.nisn}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-32 shrink-0 text-slate-600">Fase</span>
-              <span className="font-bold text-slate-950">: {phaseInfo.fase}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-36 shrink-0 text-slate-600">Satuan Pendidikan</span>
-              <span className="font-semibold text-slate-900">: {data.sekolah.nama}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="w-32 shrink-0 text-slate-600">Semester / TA</span>
-              <span className="font-semibold text-slate-900">
-                : {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
-              </span>
-            </div>
+
+            {showTransferBlock && (
+              <div className="grid gap-x-6 gap-y-1.5 border-t border-slate-200 pt-2 sm:grid-cols-2">
+                <div className="flex gap-2">
+                  <span className="w-36 shrink-0 text-slate-600">Asal Lembaga / Sekolah</span>
+                  <span className="font-semibold text-slate-900">: {bio.asalLembaga?.trim() || "-"}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="w-36 shrink-0 text-slate-600">Tgl / Semester Masuk</span>
+                  <span className="font-medium text-slate-900">
+                    : {[formatTanggalIndo(bio.tanggalMasuk), bio.semesterMasuk?.trim()].filter(Boolean).join(" · ") || "-"}
+                  </span>
+                </div>
+                <div className="flex gap-2 sm:col-span-2">
+                  <span className="w-36 shrink-0 text-slate-600">Keterangan Pindahan</span>
+                  <span className="font-medium text-slate-900">
+                    : {bio.keteranganPindah?.trim() || (hasTransferScores ? "Peserta didik pindahan dengan konversi nilai leger pindahan dari satuan pendidikan asal." : "-")}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tabel Capaian Intrakurikuler Kurikulum Merdeka Kesetaraan */}
@@ -1753,7 +2658,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                       {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
                     </td>
                     <td className="border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
-                      {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan)}
+                      {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan, row.sumberNilai)}
                     </td>
                   </tr>
                 ))}
@@ -1774,7 +2679,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                           {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
                         </td>
                         <td className="border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
-                          {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan)}
+                          {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan, row.sumberNilai)}
                         </td>
                       </tr>
                     ))}
@@ -1793,6 +2698,156 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                 </tr>
               </tfoot>
             </table>
+          </div>
+
+          {/* C. Capaian Projek / Karakter (P5 / Pemberdayaan & Keterampilan) */}
+          <div className="print-avoid-break mt-4 space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-900">
+                C. Capaian Projek / Karakter (P5 / Pemberdayaan &amp; Keterampilan)
+              </h4>
+              {raportExtra.p5.judulTemaUtama.trim() && (
+                <span className="text-[11px] font-semibold text-slate-700">
+                  Tema / Judul Projek: <strong className="text-slate-950">{raportExtra.p5.judulTemaUtama.trim()}</strong>
+                </span>
+              )}
+            </div>
+            <table className="w-full border-collapse border border-slate-400 text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100 font-extrabold text-slate-900">
+                  <th className="w-10 border border-slate-400 px-2 py-1.5 text-center">No</th>
+                  <th className="w-56 border border-slate-400 px-3 py-1.5">Dimensi / Elemen &amp; Projek</th>
+                  <th className="w-36 border border-slate-400 px-2.5 py-1.5 text-center">Tingkat Capaian</th>
+                  <th className="border border-slate-400 px-3 py-1.5">Deskripsi Capaian</th>
+                </tr>
+              </thead>
+              <tbody>
+                {raportExtra.p5.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
+                      Belum ada catatan capaian projek P5 / pemberdayaan &amp; keterampilan pada semester berjalan.
+                    </td>
+                  </tr>
+                ) : (
+                  raportExtra.p5.items.map((item, idx) => {
+                    const dimMeta = getP5DimensionMeta(item.dimensi);
+                    const projekTitle = item.judulProjek.trim() || raportExtra.p5.judulTemaUtama.trim();
+                    const narrative = buildP5DimensionNarrative({
+                      dimensi: item.dimensi,
+                      judulProjek: projekTitle,
+                      tingkatCapaian: item.tingkatCapaian,
+                      customNote: item.deskripsi,
+                    });
+                    return (
+                      <tr key={item.id}>
+                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
+                        <td className="border border-slate-400 px-3 py-1.5 align-top">
+                          <p className="font-semibold text-slate-900">{dimMeta.label}</p>
+                          {projekTitle && (
+                            <p className="mt-0.5 text-[11px] text-slate-600">Projek: {projekTitle}</p>
+                          )}
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top font-bold text-slate-900">
+                          {getP5LevelLabel(item.tingkatCapaian)}
+                        </td>
+                        <td className="border border-slate-400 px-3 py-1.5 align-top leading-relaxed text-slate-700">
+                          {narrative}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+            {p5ProcessText && (
+              <div className="rounded-lg border border-slate-400 bg-slate-50/70 px-3 py-2 text-xs">
+                <span className="font-extrabold text-slate-900">Catatan Proses Projek: </span>
+                <span className="leading-relaxed text-slate-700">{p5ProcessText}</span>
+              </div>
+            )}
+          </div>
+
+          {/* D. Kegiatan Ekstrakurikuler / Pengembangan Diri & Prestasi */}
+          <div className="print-avoid-break mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-900">
+                D. Ekstrakurikuler / Pengembangan Diri
+              </h4>
+              <table className="w-full border-collapse border border-slate-400 text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-extrabold text-slate-900">
+                    <th className="w-8 border border-slate-400 px-2 py-1.5 text-center">No</th>
+                    <th className="w-32 border border-slate-400 px-2.5 py-1.5">Kegiatan</th>
+                    <th className="w-24 border border-slate-400 px-2 py-1.5 text-center">Predikat</th>
+                    <th className="border border-slate-400 px-2.5 py-1.5">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {raportExtra.ekstrakurikuler.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
+                        Belum ada kegiatan ekstrakurikuler pada semester berjalan.
+                      </td>
+                    </tr>
+                  ) : (
+                    raportExtra.ekstrakurikuler.map((item, idx) => (
+                      <tr key={item.id}>
+                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
+                        <td className="border border-slate-400 px-2.5 py-1.5 align-top font-semibold text-slate-900">
+                          {item.kegiatan || "-"}
+                        </td>
+                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top font-bold text-slate-900">
+                          {item.predikat || "Baik"}
+                        </td>
+                        <td className="border border-slate-400 px-2.5 py-1.5 align-top leading-relaxed text-slate-700">
+                          {buildEkskulDescription({
+                            kegiatan: item.kegiatan,
+                            predikat: item.predikat,
+                            customNote: item.keterangan,
+                          })}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-900">
+                E. Prestasi
+              </h4>
+              <table className="w-full border-collapse border border-slate-400 text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-100 font-extrabold text-slate-900">
+                    <th className="w-8 border border-slate-400 px-2 py-1.5 text-center">No</th>
+                    <th className="w-40 border border-slate-400 px-2.5 py-1.5">Jenis Prestasi</th>
+                    <th className="border border-slate-400 px-2.5 py-1.5">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {raportExtra.prestasi.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
+                        Belum ada catatan prestasi pada semester berjalan.
+                      </td>
+                    </tr>
+                  ) : (
+                    raportExtra.prestasi.map((item, idx) => (
+                      <tr key={item.id}>
+                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
+                        <td className="border border-slate-400 px-2.5 py-1.5 align-top font-semibold text-slate-900">
+                          {item.jenis || "-"}
+                        </td>
+                        <td className="border border-slate-400 px-2.5 py-1.5 align-top leading-relaxed text-slate-700">
+                          {item.keterangan || "-"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* Catatan Wali Kelas, Ketidakhadiran & Keputusan */}
@@ -1832,18 +2887,20 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               <p className="text-slate-600">Mengetahui,</p>
               <p className="font-bold text-slate-900">Orang Tua / Wali</p>
               <div className="h-16" />
-              <p className="mx-auto w-40 border-b border-slate-800 pb-0.5 font-semibold text-slate-700">&nbsp;</p>
+              <p className="mx-auto w-40 border-b border-slate-800 pb-0.5 font-semibold text-slate-700">
+                {bio.namaOrangTuaWali?.trim() || "\u00A0"}
+              </p>
             </div>
             <div className="flex flex-col items-center justify-end">
               <QrCodeSvg
-                value={`RAPORT|${data.sekolah.npsn || data.sekolah.nama}|${activeSiswa.nisn}|${activeTahunObj?.nama || "2026"}`}
+                value={`RAPORT|${schoolNpsn || schoolName}|${activeSiswa.nisn}|${activeTahunObj?.nama || "2026"}`}
                 size={70}
                 label="QR Verifikasi E-Raport"
                 className="rounded-lg border border-slate-300 p-1"
               />
               <p className="mt-1 text-[9px] font-semibold text-slate-500">QR Verifikasi E-Raport</p>
               <p className="mt-3 text-slate-600">Mengetahui,</p>
-              <p className="font-bold text-slate-900">Kepala {data.sekolah.nama}</p>
+              <p className="font-bold text-slate-900">Kepala {schoolName}</p>
               <div className="h-14" />
               <p className="font-bold underline">{data.sekolah.kepalaSekolah || "Kepala PKBM"}</p>
             </div>
@@ -1858,7 +2915,8 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             </div>
           </div>
         </article>
-      )}
+        );
+      })()}
 
       {addYearOpen && (
         <SchoolModal

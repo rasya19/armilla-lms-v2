@@ -261,6 +261,7 @@ export function RaportSixSemesterLegerPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lockRaportCells, setLockRaportCells] = useState(true);
+  const [sourceMode, setSourceMode] = useState<"pindahan" | "reguler">("pindahan");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [grid, setGrid] = useState<
@@ -395,6 +396,7 @@ export function RaportSixSemesterLegerPanel({
         body: JSON.stringify({
           siswaId: activeRow.siswa.id,
           allowOverwriteRaport: !lockRaportCells,
+          sourceMode,
           entries,
         }),
       });
@@ -465,6 +467,43 @@ export function RaportSixSemesterLegerPanel({
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200/60 pt-3 text-xs">
+          <span className="font-bold">Sumber Nilai Input:</span>
+          <button
+            type="button"
+            aria-pressed={sourceMode === "pindahan"}
+            onClick={() => setSourceMode("pindahan")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+              sourceMode === "pindahan"
+                ? "bg-amber-600 text-white shadow-xs"
+                : isDark
+                  ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            Leger Pindahan (Sekolah Asal)
+          </button>
+          <button
+            type="button"
+            aria-pressed={sourceMode === "reguler"}
+            onClick={() => setSourceMode("reguler")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-extrabold transition ${
+              sourceMode === "reguler"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : isDark
+                  ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            Leger Arsip Reguler (Sekolah Sendiri)
+          </button>
+          <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+            {sourceMode === "pindahan"
+              ? "Tersimpan sebagai konversi leger pindahan untuk siswa mutasi."
+              : "Tersimpan sebagai nilai rapor reguler untuk siswa lama yang baru melengkapi arsip."}
+          </span>
         </div>
 
         {activeProgram === "PAKET_C" && (

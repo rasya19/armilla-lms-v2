@@ -4,6 +4,199 @@ import { prisma } from "./db.js";
 import { readSchoolKopSurat } from "./kop-surat-helper.js";
 
 const TRANSFER_LEGER_MARKER = "__LEGER_PINDAHAN__";
+const TRANSFER_LEGER_TOKEN_REGEX = /_{2,}LEGER_PINDAHAN_{2,}|\[LEGER_PINDAHAN\]/i;
+const INTERNAL_SENTINEL_REGEX = /_{2,}[A-Z0-9_]+_{2,}|\[(?:LEGER_PINDAHAN|UPK_OVERRIDE)\]/gi;
+
+function sanitizeCompetencyNote(raw: string | null | undefined): { isTransfer: boolean; cleanNote: string | null } {
+  const text = typeof raw === "string" ? raw : "";
+  const isTransfer = text === TRANSFER_LEGER_MARKER || TRANSFER_LEGER_TOKEN_REGEX.test(text);
+  const cleaned = text.replace(INTERNAL_SENTINEL_REGEX, " ").replace(/\s+/g, " ").trim();
+  return { isTransfer, cleanNote: cleaned || null };
+}
+
+type RaportExtraBiodata = {
+  anakKe?: string;
+  tempatLahir?: string;
+  tanggalLahir?: string;
+  jenisKelamin?: string;
+  alamat?: string;
+  namaOrangTuaWali?: string;
+  pekerjaanOrangTuaWali?: string;
+  asalLembaga?: string;
+  tanggalMasuk?: string;
+  semesterMasuk?: string;
+  keteranganPindah?: string;
+  isSiswaPindahan?: boolean;
+};
+
+type RaportP5Item = {
+  id: string;
+  dimensi: string;
+  judulProjek: string;
+  tingkatCapaian: "MB" | "SB" | "BSH" | "SAB";
+  deskripsi: string;
+};
+
+type RaportEkskulItem = {
+  id: string;
+  kegiatan: string;
+  predikat: string;
+  keterangan: string;
+};
+
+type RaportPrestasiItem = {
+  id: string;
+  jenis: string;
+  keterangan: string;
+};
+
+type RaportStudentExtra = {
+  biodata: RaportExtraBiodata;
+  p5: {
+    judulTemaUtama: string;
+    catatanProses: string;
+    items: RaportP5Item[];
+  };
+  ekstrakurikuler: RaportEkskulItem[];
+  prestasi: RaportPrestasiItem[];
+};
+
+const VALID_P5_LEVELS = new Set(["MB", "SB", "BSH", "SAB"]);
+
+function raportBiodataSettingKey(sekolahId: string, siswaId: string): string {
+  return `raport_biodata:${sekolahId}:${siswaId}`;
+}
+
+function raportExtraSettingKey(sekolahId: string, tahunAjaranId: string, siswaId: string): string {
+  return `raport_extra:${sekolahId}:${tahunAjaranId}:${siswaId}`;
+}
+
+function sanitizeRaportBiodata(raw: unknown): RaportExtraBiodata {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const obj = raw as Record<string, unknown>;
+  const out: RaportExtraBiodata = {};
+  const setStr = (key: keyof Omit<RaportExtraBiodata, "isSiswaPindahan">, maxLen = 200) => {
+    const val = cleanText(obj[key], maxLen);
+    if (val) out[key] = val;
+  };
+  setStr("anakKe", 30);
+  setStr("tempatLahir", 100);
+  setStr("tanggalLahir", 30);
+  setStr("jenisKelamin", 30);
+  setStr("alamat", 300);
+  setStr("namaOrangTuaWali", 150);
+  setStr("pekerjaanOrangTuaWali", 150);
+  setStr("asalLembaga", 180);
+  setStr("tanggalMasuk", 30);
+  setStr("semesterMasuk", 60);
+  setStr("keteranganPindah", 350);
+  if (typeof obj.isSiswaPindahan === "boolean") {
+    out.isSiswaPindahan = obj.isSiswaPindahan;
+  }
+  return out;
+}
+
+function sanitizeRaportSemesterExtra(raw: unknown): Omit<RaportStudentExtra, "biodata"> {
+  const empty: Omit<RaportStudentExtra, "biodata"> = {
+    p5: { judulTemaUtama: "", catatanProses: "", items: [] },
+    ekstrakurikuler: [],
+    prestasi: [],
+  };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return empty;
+  const obj = raw as Record<string, unknown>;
+
+  const rawP5 = obj.p5 && typeof obj.p5 === "object" && !Array.isArray(obj.p5) ? (obj.p5 as Record<string, unknown>) : {};
+  const rawP5Items = Array.isArray(rawP5.items) ? rawP5.items : [];
+  const p5Items: RaportP5Item[] = [];
+  for (const item of rawP5Items.slice(0, 12)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const dimensi = cleanText(rec.dimensi, 120);
+    const judulProjek = cleanText(rec.judulProjek, 200);
+    const rawLevel = cleanText(rec.tingkatCapaian, 10).toUpperCase();
+    const tingkatCapaian = (VALID_P5_LEVELS.has(rawLevel) ? rawLevel : "BSH") as RaportP5Item["tingkatCapaian"];
+    const deskripsi = cleanText(rec.deskripsi, 800);
+    if (!dimensi && !judulProjek && !deskripsi) continue;
+    p5Items.push({
+      id: cleanText(rec.id, 60) || randomBytes(6).toString("hex"),
+      dimensi: dimensi || "PEMBERDAYAAN",
+      judulProjek,
+      tingkatCapaian,
+      deskripsi,
+    });
+  }
+
+  const rawEkskul = Array.isArray(obj.ekstrakurikuler) ? obj.ekstrakurikuler : [];
+  const ekstrakurikuler: RaportEkskulItem[] = [];
+  for (const item of rawEkskul.slice(0, 12)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const kegiatan = cleanText(rec.kegiatan, 150);
+    const predikat = cleanText(rec.predikat, 40) || "Baik";
+    const keterangan = cleanText(rec.keterangan, 500);
+    if (!kegiatan && !keterangan) continue;
+    ekstrakurikuler.push({
+      id: cleanText(rec.id, 60) || randomBytes(6).toString("hex"),
+      kegiatan,
+      predikat,
+      keterangan,
+    });
+  }
+
+  const rawPrestasi = Array.isArray(obj.prestasi) ? obj.prestasi : [];
+  const prestasi: RaportPrestasiItem[] = [];
+  for (const item of rawPrestasi.slice(0, 12)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const jenis = cleanText(rec.jenis, 150);
+    const keterangan = cleanText(rec.keterangan, 500);
+    if (!jenis && !keterangan) continue;
+    prestasi.push({
+      id: cleanText(rec.id, 60) || randomBytes(6).toString("hex"),
+      jenis,
+      keterangan,
+    });
+  }
+
+  return {
+    p5: {
+      judulTemaUtama: cleanText(rawP5.judulTemaUtama, 200),
+      catatanProses: cleanText(rawP5.catatanProses, 1000),
+      items: p5Items,
+    },
+    ekstrakurikuler,
+    prestasi,
+  };
+}
+
+async function saveRaportStudentExtra(
+  sekolahId: string,
+  tahunAjaranId: string | null,
+  siswaId: string,
+  rawExtra: unknown,
+): Promise<RaportStudentExtra> {
+  const obj = rawExtra && typeof rawExtra === "object" && !Array.isArray(rawExtra) ? (rawExtra as Record<string, unknown>) : {};
+  const biodata = sanitizeRaportBiodata(obj.biodata);
+  const semesterExtra = sanitizeRaportSemesterExtra(obj);
+
+  const bioKey = raportBiodataSettingKey(sekolahId, siswaId);
+  await prisma.platformSetting.upsert({
+    where: { key: bioKey },
+    create: { key: bioKey, value: JSON.stringify(biodata) },
+    update: { value: JSON.stringify(biodata) },
+  });
+
+  if (tahunAjaranId) {
+    const semKey = raportExtraSettingKey(sekolahId, tahunAjaranId, siswaId);
+    await prisma.platformSetting.upsert({
+      where: { key: semKey },
+      create: { key: semKey, value: JSON.stringify(semesterExtra) },
+      update: { value: JSON.stringify(semesterExtra) },
+    });
+  }
+
+  return { biodata, ...semesterExtra };
+}
 const NOT_UPK_MARKER_FILTER = {
   OR: [{ catatanKompetensi: null }, { catatanKompetensi: { not: UPK_OVERRIDE_MARKER } }],
 };
@@ -450,14 +643,41 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const siswaList = activeKelas
         ? await prisma.siswa.findMany({
             where: { sekolahId, kelasId: activeKelas.id, status: "Aktif" },
-            select: { id: true, nama: true, nisn: true, jenjang: true },
+            select: {
+              id: true,
+              nama: true,
+              nisn: true,
+              jenjang: true,
+              tempatLahir: true,
+              tanggalLahir: true,
+              jenisKelamin: true,
+              alamatLengkap: true,
+              desaKelurahan: true,
+              kecamatan: true,
+              namaAyah: true,
+              pekerjaanAyah: true,
+              namaIbu: true,
+              namaIbuKandung: true,
+              pekerjaanIbu: true,
+              namaWali: true,
+              pekerjaanWali: true,
+              sekolahAsal: true,
+              npsnAsal: true,
+              tanggalMasuk: true,
+              jalurPendaftaran: true,
+              urlSuratPindah: true,
+            },
             orderBy: { nama: "asc" },
             take: 500,
           })
         : [];
 
       const siswaIds = siswaList.map((s) => s.id);
-      const [nilaiRows, catatanRows] = siswaIds.length
+      const extraKeys = siswaIds.flatMap((id) => [
+        raportBiodataSettingKey(sekolahId, id),
+        ...(activeTahun ? [raportExtraSettingKey(sekolahId, activeTahun.id, id)] : []),
+      ]);
+      const [nilaiRows, catatanRows, extraSettings] = siswaIds.length
         ? await Promise.all([
             prisma.nilai.findMany({
               where: {
@@ -475,8 +695,43 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
                   where: { sekolahId, tahunAjaranId: activeTahun.id, siswaId: { in: siswaIds } },
                 }).catch(() => [])
               : Promise.resolve([]),
+            extraKeys.length
+              ? prisma.platformSetting
+                  .findMany({ where: { key: { in: extraKeys } } })
+                  .catch(() => [])
+              : Promise.resolve([]),
           ])
-        : [[], []];
+        : [[], [], []];
+
+      const settingMap = new Map(extraSettings.map((item) => [item.key, item.value]));
+      const raportExtras: Record<string, RaportStudentExtra> = {};
+      for (const sId of siswaIds) {
+        let biodata: RaportExtraBiodata = {};
+        const rawBio = settingMap.get(raportBiodataSettingKey(sekolahId, sId));
+        if (rawBio) {
+          try {
+            biodata = sanitizeRaportBiodata(JSON.parse(rawBio));
+          } catch {
+            biodata = {};
+          }
+        }
+        let semExtra: Omit<RaportStudentExtra, "biodata"> = {
+          p5: { judulTemaUtama: "", catatanProses: "", items: [] },
+          ekstrakurikuler: [],
+          prestasi: [],
+        };
+        if (activeTahun) {
+          const rawSem = settingMap.get(raportExtraSettingKey(sekolahId, activeTahun.id, sId));
+          if (rawSem) {
+            try {
+              semExtra = sanitizeRaportSemesterExtra(JSON.parse(rawSem));
+            } catch {
+              // keep empty default
+            }
+          }
+        }
+        raportExtras[sId] = { biodata, ...semExtra };
+      }
 
       const skkByMapel = new Map<string, number>();
       for (const m of modulList) {
@@ -507,8 +762,16 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           skk: skkByMapel.get(m.id) ?? 4,
         })),
         siswa: siswaList,
-        nilai: nilaiRows,
+        nilai: nilaiRows.map((row) => {
+          const parsed = sanitizeCompetencyNote(row.catatanKompetensi);
+          return {
+            ...row,
+            catatanKompetensi: parsed.cleanNote,
+            sumberNilai: parsed.isTransfer ? ("pindahan" as const) : ("raport" as const),
+          };
+        }),
         catatan: catatanRows,
+        raportExtras,
       });
     } catch (error) {
       console.error("Gagal memuat E-Raport:", error);
@@ -772,12 +1035,18 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         if (!Number.isFinite(mVal) || !Number.isFinite(sVal)) continue;
 
         const nilaiAkhir = Math.round(((mVal + sVal) / 2) * 10) / 10;
-        const catatanKompetensi = cleanText(entry.catatanKompetensi, 500) || null;
+        const incomingNote = sanitizeCompetencyNote(cleanText(entry.catatanKompetensi, 500) || null).cleanNote;
 
         const existing = await prisma.nilai.findFirst({
           where: { sekolahId, siswaId, mapelId, tahunAjaranId, AND: [NOT_UPK_MARKER_FILTER] },
-          select: { id: true },
+          select: { id: true, catatanKompetensi: true },
         });
+        const existingIsTransfer = existing ? sanitizeCompetencyNote(existing.catatanKompetensi).isTransfer : false;
+        const catatanKompetensi = incomingNote
+          ? incomingNote
+          : existingIsTransfer
+            ? TRANSFER_LEGER_MARKER
+            : null;
         if (existing) {
           await prisma.nilai.update({
             where: { id: existing.id },
@@ -821,13 +1090,56 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         }
       }
 
+      if (req.body?.raportExtra && typeof req.body.raportExtra === "object") {
+        await saveRaportStudentExtra(sekolahId, tahunAjaranId, siswaId, req.body.raportExtra);
+      }
+
       return res.json({
         savedCount,
-        message: `${savedCount} nilai mata pelajaran & catatan wali berhasil disimpan.`,
+        message: `${savedCount} nilai mata pelajaran, biodata, P5, ekskul & catatan wali berhasil disimpan.`,
       });
     } catch (error) {
       console.error("Gagal menyimpan nilai raport batch:", error);
       return res.status(503).json({ error: "Nilai raport belum dapat disimpan." });
+    }
+  });
+
+  // PUT /api/sekolah/raport/extra — Simpan biodata tambahan, P5/Pemberdayaan, Ekstrakurikuler & Prestasi
+  router.put("/raport/extra", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const tahunAjaranId = cleanText(req.body?.tahunAjaranId, 100) || null;
+      if (!siswaId) {
+        return res.status(400).json({ error: "Warga belajar wajib dipilih." });
+      }
+
+      const siswa = await prisma.siswa.findFirst({
+        where: { id: siswaId, sekolahId },
+        select: { id: true, kelasId: true },
+      });
+      if (!siswa) {
+        return res.status(404).json({ error: "Warga belajar tidak ditemukan." });
+      }
+
+      if (peran === "GURU" && guruId) {
+        const scope = await resolveTeacherScope(sekolahId, guruId);
+        if (!scope.isWaliKelas && (!siswa.kelasId || !scope.assignedKelasIds.includes(siswa.kelasId))) {
+          return res.status(403).json({ error: "Anda tidak memiliki akses mengubah data rapor untuk kelas ini." });
+        }
+      }
+
+      const saved = await saveRaportStudentExtra(sekolahId, tahunAjaranId, siswaId, req.body?.raportExtra ?? req.body);
+      return res.json({
+        raportExtra: saved,
+        message: "Biodata rapor, capaian P5, ekstrakurikuler, dan prestasi berhasil disimpan.",
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan data tambahan raport:", error);
+      return res.status(503).json({ error: "Data tambahan rapor belum dapat disimpan." });
     }
   });
 
@@ -1353,6 +1665,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
       const siswaId = cleanText(req.body?.siswaId, 100);
       const allowOverwriteRaport = req.body?.allowOverwriteRaport === true;
+      const sourceMode = cleanText(req.body?.sourceMode, 20).toLowerCase() === "reguler" ? "reguler" : "pindahan";
       const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : [];
       if (!siswaId || rawEntries.length === 0) {
         return res.status(400).json({ error: "Pilih warga belajar dan isi minimal satu mata pelajaran." });
@@ -1413,13 +1726,20 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
             if (isRaportRecord && !allowOverwriteRaport) {
               continue;
             }
-            if (existing.nilaiAkhir === rounded) continue;
+            const nextNote =
+              sourceMode === "reguler"
+                ? existing.catatanKompetensi === TRANSFER_LEGER_MARKER
+                  ? null
+                  : existing.catatanKompetensi
+                : existing.catatanKompetensi || TRANSFER_LEGER_MARKER;
+            if (existing.nilaiAkhir === rounded && existing.catatanKompetensi === nextNote) continue;
             await prisma.nilai.update({
               where: { id: existing.id },
               data: {
                 nilaiMandiri: rounded,
                 nilaiSimulasi: rounded,
                 nilaiAkhir: rounded,
+                catatanKompetensi: nextNote,
                 tanggalSimulasi: new Date(),
               },
             });
@@ -1434,7 +1754,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
                 nilaiMandiri: rounded,
                 nilaiSimulasi: rounded,
                 nilaiAkhir: rounded,
-                catatanKompetensi: TRANSFER_LEGER_MARKER,
+                catatanKompetensi: sourceMode === "pindahan" ? TRANSFER_LEGER_MARKER : null,
               },
             });
           }

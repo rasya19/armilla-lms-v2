@@ -37,6 +37,7 @@ import { LmsSchedule } from "./LmsSchedule";
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { PWAInstallButton } from "./PWAInstallButton";
 import { SIDEBAR_THEMES } from "./SchoolAccess";
+import { buildRaportCompetencyNarrative, type RaportScoreSource } from "../utils/raportNarrative";
 import { StudentVervalForm } from "./StudentVervalForm";
 import { useTenantTheme } from "./TenantThemeProvider";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
@@ -194,6 +195,7 @@ type StudentGradesPayload = {
     nilaiSimulasi: number;
     nilaiAkhir: number;
     catatanKompetensi: string | null;
+    sumberNilai?: RaportScoreSource;
     predikat: string;
   }>;
   transkripDiterbitkan?: boolean;
@@ -331,6 +333,67 @@ export function StudentPortal({
     if (hash === "#biodata-dapodik" || hash === "#profil-siswa") return "profil";
     return "kbm";
   });
+
+  // Popup Pengumuman Resmi Sekolah saat siswa login (harus dibaca lalu ditutup)
+  const [popupAnnouncements, setPopupAnnouncements] = useState<DiscussionTopic[]>([]);
+  const [popupIndex, setPopupIndex] = useState(0);
+  const announcementStorageKey = `siput_read_pengumuman_v1:${(nisn || nama || "siswa").trim().toLowerCase()}`;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const headers = sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : undefined;
+    fetchWithTimeout("/api/sekolah/diskusi", {
+      signal: controller.signal,
+      ...(headers ? { headers } : {}),
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as DiscussionPayload | null;
+        if (!body?.topics || !Array.isArray(body.topics)) return;
+        let seenIds = new Set<string>();
+        try {
+          const raw = window.localStorage.getItem(announcementStorageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) seenIds = new Set(parsed.filter((v): v is string => typeof v === "string"));
+          }
+        } catch {
+          // Ignore storage errors
+        }
+        const unread = body.topics
+          .filter(
+            (t) =>
+              t.kategori === "PENGUMUMAN" &&
+              (t.penulisPeran === "ADMIN" || t.penulisPeran === "GURU") &&
+              !seenIds.has(t.id),
+          )
+          .sort((a, b) => {
+            if (a.disematkan !== b.disematkan) return a.disematkan ? -1 : 1;
+            return b.createdAt.localeCompare(a.createdAt);
+          });
+        if (!controller.signal.aborted && unread.length > 0) {
+          setPopupAnnouncements(unread);
+          setPopupIndex(0);
+        }
+      })
+      .catch(() => {
+        // Non-blocking
+      });
+    return () => controller.abort();
+  }, [sandboxRole, announcementStorageKey]);
+
+  function acknowledgePopupAnnouncements() {
+    try {
+      const raw = window.localStorage.getItem(announcementStorageKey);
+      const prev: string[] = raw ? (JSON.parse(raw) as string[]) : [];
+      const merged = Array.from(new Set([...(Array.isArray(prev) ? prev : []), ...popupAnnouncements.map((a) => a.id)])).slice(-200);
+      window.localStorage.setItem(announcementStorageKey, JSON.stringify(merged));
+    } catch {
+      // Ignore storage errors
+    }
+    setPopupAnnouncements([]);
+    setPopupIndex(0);
+  }
 
   const [resolvedKelasNama, setResolvedKelasNama] = useState<string | null>(kelasNama ?? null);
   const [resolvedKelasId, setResolvedKelasId] = useState<string | null>(kelasId ?? null);
@@ -858,6 +921,86 @@ export function StudentPortal({
           );
         })}
       </nav>
+
+      {/* Modal Popup Pengumuman Resmi Sekolah saat Siswa Login */}
+      {popupAnnouncements.length > 0 && (() => {
+        const current = popupAnnouncements[Math.min(popupIndex, popupAnnouncements.length - 1)];
+        const isLast = popupIndex >= popupAnnouncements.length - 1;
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="student-announcement-popup-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"
+          >
+            <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/90 bg-white text-slate-900 shadow-2xl">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 text-white">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider">
+                    <Sparkles size={13} aria-hidden="true" />
+                    Pengumuman Resmi Sekolah
+                  </span>
+                  {popupAnnouncements.length > 1 && (
+                    <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-[11px] font-black text-slate-950 tabular-nums">
+                      {popupIndex + 1} / {popupAnnouncements.length}
+                    </span>
+                  )}
+                </div>
+                <h2 id="student-announcement-popup-title" className="mt-2.5 text-lg font-extrabold leading-snug">
+                  {current.judul}
+                </h2>
+                <p className="mt-1 text-xs text-blue-100">
+                  Dari: <strong>{current.penulisNama}</strong> ({current.penulisPeran}) · {formatShortDate(current.createdAt)}
+                  {current.kelasId ? ` · ${kelasNama || "Khusus Kelas Anda"}` : " · Seluruh Warga Belajar"}
+                </p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-6 py-5">
+                <div className="whitespace-pre-line rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-sm leading-relaxed text-slate-800">
+                  {current.isi}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                {popupAnnouncements.length > 1 ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={popupIndex === 0}
+                      onClick={() => setPopupIndex((i) => Math.max(0, i - 1))}
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                    >
+                      Sebelumnya
+                    </button>
+                    {!isLast && (
+                      <button
+                        type="button"
+                        onClick={() => setPopupIndex((i) => Math.min(popupAnnouncements.length - 1, i + 1))}
+                        className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100"
+                      >
+                        Pengumuman Berikutnya
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Bacalah pengumuman ini sebelum melanjutkan.
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={acknowledgePopupAnnouncements}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-2.5 text-xs font-extrabold text-white shadow-md shadow-emerald-600/20 transition hover:brightness-110"
+                >
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  Saya Sudah Membaca &amp; Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </main>
   );
 }
@@ -2183,7 +2326,14 @@ function StudentGradesTranscriptSection({
                   <tr key={row.id}>
                     <td className="py-2.5 pr-3 font-bold text-slate-900">
                       {row.mapel}
-                      {row.catatanKompetensi && <p className="mt-0.5 text-[11px] font-normal text-slate-500">{row.catatanKompetensi}</p>}
+                      <p className="mt-0.5 text-[11px] font-normal leading-relaxed text-slate-500">
+                        {buildRaportCompetencyNarrative({
+                          mapelNama: row.mapel,
+                          nilaiAkhir: row.nilaiAkhir,
+                          customNote: row.catatanKompetensi,
+                          source: row.sumberNilai,
+                        })}
+                      </p>
                     </td>
                     <td className="py-2.5 pr-3 text-slate-600">{row.tahunAjaran}</td>
                     <td className="py-2.5 pr-3 text-right tabular-nums text-slate-700">{row.nilaiMandiri}</td>

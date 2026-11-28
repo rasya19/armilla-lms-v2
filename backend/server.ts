@@ -1755,16 +1755,25 @@ app.get("/api/lms/siswa/nilai", async (req, res) => {
               row.tahunAjaranId !== null &&
               publishedTahunIds.has(row.tahunAjaranId),
           )
-          .map((row) => ({
-            id: row.id,
-            mapel: mapelMap.get(row.mapelId) ?? "Mata Pelajaran",
-            tahunAjaran: row.tahunAjaranId ? (taMap.get(row.tahunAjaranId) ?? "Semester Aktif") : "Semester Aktif",
-            nilaiMandiri: row.nilaiMandiri,
-            nilaiSimulasi: row.nilaiSimulasi,
-            nilaiAkhir: row.nilaiAkhir,
-            catatanKompetensi: row.catatanKompetensi === "__LEGER_PINDAHAN__" ? null : row.catatanKompetensi,
-            predikat: row.nilaiAkhir >= 90 ? "A" : row.nilaiAkhir >= 80 ? "B" : row.nilaiAkhir >= 70 ? "C" : "D",
-          }))
+          .map((row) => {
+            const rawNote = row.catatanKompetensi ?? "";
+            const isTransfer = /_{2,}LEGER_PINDAHAN_{2,}|\[LEGER_PINDAHAN\]/i.test(rawNote);
+            const cleanNote = rawNote
+              .replace(/_{2,}[A-Z0-9_]+_{2,}|\[(?:LEGER_PINDAHAN|UPK_OVERRIDE)\]/gi, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+            return {
+              id: row.id,
+              mapel: mapelMap.get(row.mapelId) ?? "Mata Pelajaran",
+              tahunAjaran: row.tahunAjaranId ? (taMap.get(row.tahunAjaranId) ?? "Semester Aktif") : "Semester Aktif",
+              nilaiMandiri: row.nilaiMandiri,
+              nilaiSimulasi: row.nilaiSimulasi,
+              nilaiAkhir: row.nilaiAkhir,
+              catatanKompetensi: cleanNote || null,
+              sumberNilai: isTransfer ? ("pindahan" as const) : ("raport" as const),
+              predikat: row.nilaiAkhir >= 90 ? "A" : row.nilaiAkhir >= 80 ? "B" : row.nilaiAkhir >= 70 ? "C" : "D",
+            };
+          })
       : [];
 
     // Hanya bangun data Transkrip Nilai resmi jika admin sudah klik "Terbitkan Transkrip"

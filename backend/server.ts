@@ -53,6 +53,7 @@ import { dinasRoutes, type DinasContext } from "./dinas-routes.js";
 import { tahap2AcademicRoutes } from "./academic-raport-routes.js";
 import { publicGuestbookRoutes, schoolGuestbookRoutes } from "./guestbook-routes.js";
 import { mailAgendaRoutes } from "./mail-agenda-routes.js";
+import { schoolTutorAttendanceRoutes, teacherTutorAttendanceRoutes } from "./tutor-attendance-routes.js";
 import { cbtPublicBankRoutes, tahap2CbtRoutes } from "./cbt-routes.js";
 import { tahap2ProRoutes } from "./pro-admin-routes.js";
 import { tahap2CollabRoutes } from "./collab-asset-routes.js";
@@ -3211,6 +3212,12 @@ app.use("/api/module-bank", moduleBankRoutes(resolveAdminOrTeacherSession));
 app.use("/api/buku-tamu", publicGuestbookRoutes());
 app.use("/api/sekolah", schoolGuestbookRoutes(resolveAdminOrTeacherSession));
 app.use("/api/sekolah", mailAgendaRoutes(resolveAdminOrTeacherSession));
+app.use("/api/sekolah", schoolTutorAttendanceRoutes(async (req) => {
+  const session = await getSession(req, "ADMIN");
+  if (!session?.akun.sekolahId) return null;
+  return { sekolahId: session.akun.sekolahId };
+}));
+app.use("/api/lms/guru", teacherTutorAttendanceRoutes(resolveTeacherPortalContext));
 app.use("/api/verval", vervalRoutes(async (req) => {
   const sandbox = await getDevSandboxLmsContext(req);
   if (sandbox && sandbox.peran === "SISWA" && sandbox.siswaId) {

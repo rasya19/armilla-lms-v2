@@ -48,6 +48,7 @@ import { CardGridSkeleton, DashboardHero, EmptyState, TableSkeleton } from "./Da
 import { PasswordChangeForm } from "./PasswordChangeForm";
 import { PLAN_BADGE_STYLES, SIDEBAR_THEMES } from "./SchoolAccess";
 import { SchoolAttendance } from "./SchoolAttendance";
+import { TeacherTutorAttendanceSection } from "./SchoolTutorAttendanceView";
 import { CbtBankSoalView, CbtImportView, CbtJadwalView, CbtMonitoringView, CbtPublicBanksView } from "./SchoolCbtModules";
 import { AsistenAiView, RuangDiskusiView } from "./SchoolCollabAssetModules";
 import { CekRaportView } from "./SchoolEquivalenceRaport";
@@ -72,6 +73,7 @@ export type TeacherView =
   | "bank-modul"
   | "siswa"
   | "presensi"
+  | "absen-tutor"
   | "cbt"
   | "raport"
   | "diskusi"
@@ -174,6 +176,7 @@ const TEACHER_NAV_SECTIONS: Array<{ title: string; items: TeacherMenuItem[] }> =
       { id: "bank-modul", label: "Bank Modul Belajar", icon: Library },
       { id: "siswa", label: "Data Siswa", icon: Users },
       { id: "presensi", label: "Presensi Siswa", icon: UserCheck },
+      { id: "absen-tutor", label: "Absen Mengajar", icon: CalendarDays },
       { id: "diskusi", label: "Ruang Diskusi", icon: MessageSquare },
     ],
   },
@@ -198,6 +201,7 @@ const HASH_TO_TEACHER_VIEW: Record<string, TeacherView> = {
   "#bank-modul": "bank-modul",
   "#data-siswa": "siswa",
   "#presensi-siswa": "presensi",
+  "#absen-tutor": "absen-tutor",
   "#cbt-guru": "cbt",
   "#raport-guru": "raport",
   "#diskusi-guru": "diskusi",
@@ -624,6 +628,8 @@ export function TeacherPortal({
             {view === "siswa" && <TeacherStudentsSection sandboxRole={sandboxRole} />}
 
             {view === "presensi" && <SchoolAttendance role="GURU" sandboxRole={sandboxRole} />}
+
+            {view === "absen-tutor" && <TeacherTutorAttendanceSection sandboxRole={sandboxRole} />}
 
             {view === "cbt" && hasPlanAccess(effectivePlan, "reguler") && (
               <div className="space-y-4">

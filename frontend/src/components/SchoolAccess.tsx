@@ -77,6 +77,7 @@ import {
 } from "./SchoolEquivalenceRaport";
 import { SchoolGuestbookView } from "./SchoolGuestbookView";
 import { SchoolMailAgendaView } from "./SchoolMailAgendaView";
+import { SchoolTutorAttendanceView } from "./SchoolTutorAttendanceView";
 import {
   CbtBankSoalView,
   CbtImportView,
@@ -151,6 +152,7 @@ type SchoolView =
   | "penempatan-kelas"
   | "verval-dapodik"
   | "presensi"
+  | "absen-tutor"
   | "rekap-akademik"
   | "tema-identitas"
   | "pengaturan-lanjutan"
@@ -205,6 +207,7 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
       { label: "Materi & Tugas Kelas", icon: BookOpen, target: "materi-tugas" },
       { label: "Bank Modul Belajar", icon: Library, target: "bank-modul" },
       { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi" },
+      { label: "Absensi Tutor & Honor", icon: CalendarDays, target: "absen-tutor" },
       { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
     ],
   },
@@ -1053,6 +1056,9 @@ export function SchoolHome() {
           )}
           {view === "presensi" && (
             <SchoolAcademicRecap mode="presensi" onOpenClassroom={() => selectView("materi-tugas")} />
+          )}
+          {view === "absen-tutor" && (
+            <SchoolTutorAttendanceView plan={plan} onRequireUpgrade={openUpgradePrompt} />
           )}
           {view === "rekap-akademik" && hasPlanAccess(plan, "reguler") && (
             <SchoolAcademicRecap mode="rekap" onOpenClassroom={() => selectView("materi-tugas")} />

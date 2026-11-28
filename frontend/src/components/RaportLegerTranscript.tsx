@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Award, CheckCircle2, Download, FileSpreadsheet, GraduationCap, Lock, Printer, Save, Unlock } from "lucide-react";
 import { buildSandboxHeaders } from "../utils/safeUrl";
 import { CardGridSkeleton, EmptyState } from "./DashboardUI";
-import { buildKopSuratProfile, KopSurat } from "./KopSurat";
+import { buildKopSuratProfile, KopSurat, renderKopSuratHtml } from "./KopSurat";
 import { QrCodeSvg } from "./QrCodeSvg";
 import type { SchoolProfile } from "./schoolProfile";
 import { describeFetchError, fetchWithTimeout, isCallerAborted } from "./fetchWithTimeout";
@@ -79,6 +79,114 @@ export function RaportLegerPanel({ data }: { data: LegerRaportData }) {
     XLSX.writeFile(wb, `Leger_Raport_${safeName}.xlsx`);
   }
 
+  function handlePrintLeger() {
+    if (rows.length === 0) return;
+    const esc = (raw: string) =>
+      raw.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] ?? ch));
+
+    const mapelCount = data.mapel.length;
+    const compactFont = mapelCount >= 14 ? "8px" : mapelCount >= 10 ? "9px" : "10px";
+    const headerFont = mapelCount >= 14 ? "7.5px" : mapelCount >= 10 ? "8.5px" : "9.5px";
+    const cellPad = mapelCount >= 14 ? "3px 2px" : "4px 3px";
+
+    const kopHtml = renderKopSuratHtml(buildKopSuratProfile(data.kopSurat, data.sekolah));
+    const mapelHeadersHtml = data.mapel
+      .map(
+        (m) =>
+          `<th style="border:1px solid #334155;padding:${cellPad};text-align:center;font-size:${headerFont};line-height:1.2;word-break:break-word;overflow-wrap:anywhere;">${esc(m.nama)}</th>`,
+      )
+      .join("");
+
+    const rowsHtml = rows
+      .map((row, idx) => {
+        const scoresHtml = row.scores
+          .map((val, i) => {
+            const belowKkm = val !== null && val < data.mapel[i].kkm;
+            return `<td style="border:1px solid #334155;padding:${cellPad};text-align:center;font-variant-numeric:tabular-nums;${belowKkm ? "background:#fff1f2;color:#be123c;font-weight:700;" : ""}">${val !== null ? val : "-"}</td>`;
+          })
+          .join("");
+        return `<tr>
+          <td style="border:1px solid #334155;padding:${cellPad};text-align:center;">${idx + 1}</td>
+          <td style="border:1px solid #334155;padding:${cellPad};font-weight:600;word-break:break-word;">${esc(row.siswa.nama)}</td>
+          <td style="border:1px solid #334155;padding:${cellPad};font-family:monospace;text-align:center;">${esc(row.siswa.nisn || "-")}</td>
+          ${scoresHtml}
+          <td style="border:1px solid #334155;padding:${cellPad};text-align:center;background:#f0f9ff;font-weight:700;">${row.filledCount > 0 ? row.total : "-"}</td>
+          <td style="border:1px solid #334155;padding:${cellPad};text-align:center;background:#f0f9ff;font-weight:800;">${row.avg !== null ? row.avg : "-"}</td>
+          <td style="border:1px solid #334155;padding:${cellPad};text-align:center;background:#fffbeb;font-weight:800;">${row.rank !== null ? `#${row.rank}` : "-"}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+    const schoolName = data.kopSurat?.nama || data.sekolah.nama || "PKBM";
+    const kota = data.kopSurat?.kabupatenKota || data.sekolah.kabupatenKota || "Setempat";
+    const kepala = data.kopSurat?.namaKetuaPkbm || data.sekolah.kepalaSekolah || "Kepala PKBM";
+
+    const html = `<!doctype html><html><head><meta charset="utf-8" />
+      <title>Leger Nilai Raport — ${esc(data.kelasName)} (${esc(data.tahunLabel)})</title>
+      <style>
+        @page { size: 330mm 215mm; margin: 9mm 10mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; padding: 0; background: #fff; }
+        table.leger { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: ${compactFont}; }
+        table.leger thead { display: table-header-group; }
+        table.leger tr { page-break-inside: avoid; }
+      </style>
+    </head><body>
+      ${kopHtml}
+      <div style="text-align:center;margin:8px 0 10px;">
+        <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:0.04em;">LEGER NILAI RAPORT PENDIDIKAN KESETARAAN</div>
+        <div style="font-size:10.5px;color:#334155;margin-top:2px;">
+          Kelas: <strong>${esc(data.kelasName)}</strong> &middot; Tahun Ajaran: <strong>${esc(data.tahunLabel)}</strong> &middot; Wali Kelas: <strong>${esc(data.waliKelasNama || "-")}</strong>
+        </div>
+      </div>
+      <table class="leger">
+        <colgroup>
+          <col style="width:24px;" />
+          <col style="width:132px;" />
+          <col style="width:66px;" />
+          ${data.mapel.map(() => `<col />`).join("")}
+          <col style="width:36px;" />
+          <col style="width:36px;" />
+          <col style="width:30px;" />
+        </colgroup>
+        <thead>
+          <tr style="background:#f1f5f9;font-weight:800;">
+            <th style="border:1px solid #334155;padding:${cellPad};text-align:center;font-size:${headerFont};">No</th>
+            <th style="border:1px solid #334155;padding:${cellPad};text-align:left;font-size:${headerFont};">Nama Warga Belajar</th>
+            <th style="border:1px solid #334155;padding:${cellPad};text-align:center;font-size:${headerFont};">NISN</th>
+            ${mapelHeadersHtml}
+            <th style="border:1px solid #334155;padding:${cellPad};text-align:center;background:#e0f2fe;font-size:${headerFont};">Jml</th>
+            <th style="border:1px solid #334155;padding:${cellPad};text-align:center;background:#e0f2fe;font-size:${headerFont};">Rata</th>
+            <th style="border:1px solid #334155;padding:${cellPad};text-align:center;background:#fef3c7;font-size:${headerFont};">Rank</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <div style="display:flex;justify-content:space-between;margin-top:20px;font-size:10.5px;page-break-inside:avoid;">
+        <div style="text-align:center;width:220px;">
+          <p style="margin:0;">Mengetahui,</p>
+          <p style="margin:2px 0 46px;font-weight:700;">Kepala ${esc(schoolName)}</p>
+          <p style="margin:0;font-weight:700;text-decoration:underline;">${esc(kepala)}</p>
+        </div>
+        <div style="text-align:center;width:220px;">
+          <p style="margin:0;">${esc(kota)}, ${esc(tanggalCetak)}</p>
+          <p style="margin:2px 0 46px;font-weight:700;">Wali Kelas / Tutor</p>
+          <p style="margin:0;font-weight:700;text-decoration:underline;">${esc(data.waliKelasNama || "........................................")}</p>
+        </div>
+      </div>
+      <script>window.onload=function(){window.print();}</script>
+    </body></html>`;
+
+    const win = window.open("", "_blank", "width=1200,height=780");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    } else {
+      window.print();
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
@@ -104,11 +212,11 @@ export function RaportLegerPanel({ data }: { data: LegerRaportData }) {
           <button
             type="button"
             disabled={rows.length === 0}
-            onClick={() => window.print()}
+            onClick={handlePrintLeger}
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
           >
             <Printer size={14} />
-            Cetak Leger
+            Cetak Leger (F4 Landscape)
           </button>
         </div>
       </div>
@@ -236,21 +344,26 @@ type TranscriptPayload = {
 
 export function RaportSixSemesterLegerPanel({
   initialKelasId,
+  initialSiswaId,
   sandboxRole,
   paketCTrack: externalTrack,
   onChangePaketCTrack,
   onOpenTranscript,
+  onSaved,
 }: {
   initialKelasId?: string;
+  initialSiswaId?: string;
   sandboxRole?: "GURU" | "SISWA";
   paketCTrack?: PaketCTrack;
   onChangePaketCTrack?: (next: PaketCTrack) => void;
   onOpenTranscript?: () => void;
+  onSaved?: () => void;
 }) {
   const isDark = useTenantTheme() === "dark";
   const [data, setData] = useState<TranscriptPayload | null>(null);
   const [kelasId, setKelasId] = useState(initialKelasId ?? "");
-  const [selectedSiswaId, setSelectedSiswaId] = useState("");
+  const [selectedSiswaId, setSelectedSiswaId] = useState(initialSiswaId ?? "");
+  const [graduationYear, setGraduationYear] = useState<string>("");
   const [localTrack, setLocalTrack] = useState<PaketCTrack>(() => externalTrack ?? detectDefaultPaketCTrack(""));
   const paketCTrack = externalTrack ?? localTrack;
   const setTrack = (next: PaketCTrack) => {
@@ -276,7 +389,10 @@ export function RaportSixSemesterLegerPanel({
       setLoading(true);
       setError("");
       try {
-        const qs = targetKelasId ? `?kelasId=${encodeURIComponent(targetKelasId)}` : "";
+        const params = new URLSearchParams();
+        if (targetKelasId) params.set("kelasId", targetKelasId);
+        if (graduationYear) params.set("graduationYear", graduationYear);
+        const qs = params.toString() ? `?${params.toString()}` : "";
         const headers = buildSandboxHeaders(sandboxRole === "GURU" ? "GURU" : undefined);
         const res = await fetchWithTimeout(`/api/sekolah/raport/transkrip${qs}`, {
           signal,
@@ -297,7 +413,7 @@ export function RaportSixSemesterLegerPanel({
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [sandboxRole],
+    [sandboxRole, graduationYear],
   );
 
   useEffect(() => {
@@ -397,6 +513,7 @@ export function RaportSixSemesterLegerPanel({
           siswaId: activeRow.siswa.id,
           allowOverwriteRaport: !lockRaportCells,
           sourceMode,
+          graduationYear: graduationYear || undefined,
           entries,
         }),
       });
@@ -404,6 +521,7 @@ export function RaportSixSemesterLegerPanel({
       if (!res.ok) throw new Error(body?.error || "Gagal menyimpan leger raport semester 1–6.");
       setNotice(body?.message || "Leger raport semester 1–6 berhasil disimpan.");
       await loadData(kelasId);
+      onSaved?.();
     } catch (failure) {
       setError(describeFetchError(failure, "Gagal menyimpan leger raport semester 1–6."));
     } finally {
@@ -448,7 +566,7 @@ export function RaportSixSemesterLegerPanel({
           )}
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <label className="block text-xs font-bold">
             Pilih Kelas / Program
             <select value={kelasId} onChange={(e) => setKelasId(e.target.value)} className={fieldCls}>
@@ -465,6 +583,24 @@ export function RaportSixSemesterLegerPanel({
                   {r.siswa.nama} ({r.siswa.nisn})
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="block text-xs font-bold">
+            Tahun Lulus (Patokan Sem 6)
+            <select value={graduationYear} onChange={(e) => setGraduationYear(e.target.value)} className={fieldCls}>
+              <option value="">Otomatis (6 Semester Terakhir)</option>
+              {(() => {
+                const nowY = new Date().getFullYear();
+                const years: string[] = [];
+                for (let y = nowY - 1; y <= nowY + 2; y++) {
+                  years.push(`${y}/${y + 1}`);
+                }
+                return years.map((yr) => (
+                  <option key={yr} value={yr}>
+                    Lulus {yr} (Sem 1–6: {Number(yr.slice(0, 4)) - 2}/{Number(yr.slice(0, 4)) - 1} s.d. {yr})
+                  </option>
+                ));
+              })()}
             </select>
           </label>
         </div>

@@ -1061,6 +1061,14 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
     return () => controller.abort();
   }, [kelasId, tahunId]);
 
+  useEffect(() => {
+    if (raportSubTab === "raport" || raportSubTab === "input" || raportSubTab === "leger") {
+      const controller = new AbortController();
+      void loadRaport(kelasId, tahunId, controller.signal);
+      return () => controller.abort();
+    }
+  }, [raportSubTab]);
+
   const activeSiswa = useMemo(
     () => data?.siswa.find((s) => s.id === selectedSiswaId) ?? data?.siswa[0] ?? null,
     [data, selectedSiswaId],
@@ -1193,6 +1201,34 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       await loadRaport(kelasId, nextYearId);
     } catch (failure) {
       setError(describeFetchError(failure, "Tahun ajaran belum dapat ditambahkan."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteTahunAjaran() {
+    if (busy || !activeYearName) return;
+    if (!window.confirm(`Hapus tahun ajaran ${activeYearName} (Ganjil & Genap) beserta nilai rapor pada tahun ajaran tersebut?`)) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout(
+        `/api/sekolah/raport/tahun-ajaran?nama=${encodeURIComponent(activeYearName)}&force=true`,
+        {
+          method: "DELETE",
+          headers: sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : undefined,
+        },
+      );
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Tahun ajaran belum dapat dihapus.");
+      setNotice(body?.message || `Tahun ajaran ${activeYearName} berhasil dihapus.`);
+      setTahunId("");
+      await loadRaport(kelasId, "");
+    } catch (failure) {
+      setError(describeFetchError(failure, "Tahun ajaran belum dapat dihapus."));
     } finally {
       setBusy(false);
     }
@@ -1415,6 +1451,35 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       ...prev,
       prestasi: prev.prestasi.filter((item) => item.id !== id),
     }));
+  }
+
+  async function switchSemesterSourceMode(targetMode: "raport" | "pindahan") {
+    if (!activeSiswa || !tahunId || busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await fetchWithTimeout("/api/sekolah/raport/sumber-nilai", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(sandboxRole ? { "X-Dev-Sandbox-Role": sandboxRole } : {}),
+        },
+        body: JSON.stringify({
+          siswaId: activeSiswa.id,
+          tahunAjaranId: tahunId,
+          sourceMode: targetMode,
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+      if (!res.ok) throw new Error(body?.error || "Gagal memperbarui sumber nilai semester.");
+      setNotice(body?.message || "Sumber nilai semester berhasil diperbarui.");
+      await loadRaport(kelasId, tahunId);
+    } catch (failure) {
+      setError(describeFetchError(failure, "Sumber nilai semester belum dapat diperbarui."));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function togglePublishRaport(diterbitkan: boolean, publishAllInClass = false) {
@@ -1746,14 +1811,29 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             <div className="block text-xs font-bold">
               <div className="flex items-center justify-between gap-2">
                 <span>Tahun Ajaran</span>
-                <button
-                  type="button"
-                  onClick={() => setAddYearOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-800 hover:bg-sky-100"
-                >
-                  <Plus size={11} />
-                  Tambah
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setAddYearOpen(true)}
+                    title="Tambah Tahun Ajaran"
+                    aria-label="Tambah Tahun Ajaran"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                  >
+                    <Plus size={12} />
+                  </button>
+                  {activeYearName && uniqueYearNames.length > 1 && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void handleDeleteTahunAjaran()}
+                      title={`Hapus Tahun Ajaran ${activeYearName}`}
+                      aria-label={`Hapus Tahun Ajaran ${activeYearName}`}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
+                </div>
               </div>
               <select
                 aria-label="Tahun Ajaran"
@@ -1857,6 +1937,16 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {isAllTransferSemester && (
+                <button
+                  type="button"
+                  disabled={busy || !tahunId}
+                  onClick={() => void switchSemesterSourceMode("raport")}
+                  className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  Ubah ke Rapor Reguler
+                </button>
+              )}
               {(!isAllTransferSemester || isRaportPublished) && (
                 <button
                   type="button"
@@ -2042,7 +2132,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                                   placeholder="-"
                                   className={
                                     gradesLocked
-                                      ? "w-16 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-500"
+                                      ? "w-16 cursor-not-allowed rounded-lg border border-slate-300 bg-slate-200 px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-600"
                                       : "w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
                                   }
                                 />
@@ -2059,7 +2149,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                                   placeholder="-"
                                   className={
                                     gradesLocked
-                                      ? "w-16 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-500"
+                                      ? "w-16 cursor-not-allowed rounded-lg border border-slate-300 bg-slate-200 px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-600"
                                       : "w-16 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center text-xs font-semibold tabular-nums text-slate-900 focus:border-sky-600 focus:outline-none"
                                   }
                                 />
@@ -2077,7 +2167,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                                   placeholder="Kosongkan untuk narasi KKTP otomatis..."
                                   className={
                                     gradesLocked
-                                      ? "w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs text-slate-500"
+                                      ? "w-full cursor-not-allowed rounded-lg border border-slate-300 bg-slate-200 px-2.5 py-1 text-xs text-slate-600"
                                       : "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800 focus:border-sky-600 focus:outline-none"
                                   }
                                 />
@@ -2463,7 +2553,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                     onChange={(e) => setStatusKenaikan(e.target.value)}
                     className={
                       gradesLocked
-                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-500"
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-200 px-3.5 py-2.5 text-sm text-slate-600"
                         : inputClass(isDark)
                     }
                   >
@@ -2482,7 +2572,7 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                     onChange={(e) => setCatatanWali(e.target.value)}
                     className={
                       gradesLocked
-                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-500"
+                        ? "mt-1 w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-200 px-3.5 py-2.5 text-sm text-slate-600"
                         : inputClass(isDark)
                     }
                   />
@@ -2560,10 +2650,12 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       {raportSubTab === "leger-6sem" && (
         <RaportSixSemesterLegerPanel
           initialKelasId={kelasId}
+          initialSiswaId={selectedSiswaId}
           sandboxRole={sandboxRole}
           paketCTrack={paketCTrack}
           onChangePaketCTrack={handleSelectPaketCTrack}
           onOpenTranscript={() => setRaportSubTab("transkrip")}
+          onSaved={() => void loadRaport(kelasId, tahunId)}
         />
       )}
 
@@ -2657,13 +2749,20 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
 
           {/* Tabel Capaian Intrakurikuler Kurikulum Merdeka Kesetaraan */}
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[620px] border-collapse border border-slate-400 text-left text-xs">
+            <table className="w-full min-w-[620px] table-fixed border-collapse border border-slate-400 text-left text-xs">
+              <colgroup>
+                <col className="w-[5%]" />
+                <col className="w-[23%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[55%]" />
+              </colgroup>
               <thead>
                 <tr className="bg-slate-100 font-extrabold text-slate-900">
-                  <th className="w-10 border border-slate-400 px-2.5 py-2 text-center">No</th>
-                  <th className="w-52 border border-slate-400 px-3 py-2">Mata Pelajaran</th>
-                  <th className="w-16 border border-slate-400 px-2 py-2 text-center">Bobot SKK</th>
-                  <th className="w-20 border border-slate-400 px-2 py-2 text-center">Nilai Akhir</th>
+                  <th className="border border-slate-400 px-1.5 py-2 text-center">No</th>
+                  <th className="border border-slate-400 px-2.5 py-2">Mata Pelajaran</th>
+                  <th className="border border-slate-400 px-1.5 py-2 text-center leading-tight">Bobot SKK</th>
+                  <th className="border border-slate-400 px-1.5 py-2 text-center leading-tight">Nilai Akhir</th>
                   <th className="border border-slate-400 px-3 py-2">Capaian Kompetensi</th>
                 </tr>
               </thead>
@@ -2675,13 +2774,13 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                 </tr>
                 {(kelompokUmumScores.length > 0 ? kelompokUmumScores : studentScores).map((row, index) => (
                   <tr key={row.mapel.id}>
-                    <td className="border border-slate-400 px-2.5 py-2 text-center align-top tabular-nums">{index + 1}</td>
-                    <td className="border border-slate-400 px-3 py-2 align-top font-semibold text-slate-900">{row.mapel.nama}</td>
-                    <td className="border border-slate-400 px-2 py-2 text-center align-top tabular-nums">{row.mapel.skk}</td>
-                    <td className="border border-slate-400 px-2 py-2 text-center align-top text-sm font-extrabold tabular-nums text-slate-950">
+                    <td className="border border-slate-400 px-1.5 py-2 text-center align-top tabular-nums">{index + 1}</td>
+                    <td className="break-words border border-slate-400 px-2.5 py-2 align-top font-semibold leading-snug text-slate-900">{row.mapel.nama}</td>
+                    <td className="border border-slate-400 px-1.5 py-2 text-center align-top tabular-nums">{row.mapel.skk}</td>
+                    <td className="border border-slate-400 px-1.5 py-2 text-center align-top text-sm font-extrabold tabular-nums text-slate-950">
                       {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
                     </td>
-                    <td className="border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
+                    <td className="break-words border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
                       {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan, row.sumberNilai)}
                     </td>
                   </tr>
@@ -2696,13 +2795,13 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
                     </tr>
                     {kelompokKeterampilanScores.map((row, index) => (
                       <tr key={row.mapel.id}>
-                        <td className="border border-slate-400 px-2.5 py-2 text-center align-top tabular-nums">{index + 1}</td>
-                        <td className="border border-slate-400 px-3 py-2 align-top font-semibold text-slate-900">{row.mapel.nama}</td>
-                        <td className="border border-slate-400 px-2 py-2 text-center align-top tabular-nums">{row.mapel.skk}</td>
-                        <td className="border border-slate-400 px-2 py-2 text-center align-top text-sm font-extrabold tabular-nums text-slate-950">
+                        <td className="border border-slate-400 px-1.5 py-2 text-center align-top tabular-nums">{index + 1}</td>
+                        <td className="break-words border border-slate-400 px-2.5 py-2 align-top font-semibold leading-snug text-slate-900">{row.mapel.nama}</td>
+                        <td className="border border-slate-400 px-1.5 py-2 text-center align-top tabular-nums">{row.mapel.skk}</td>
+                        <td className="border border-slate-400 px-1.5 py-2 text-center align-top text-sm font-extrabold tabular-nums text-slate-950">
                           {row.nilaiAkhir !== null ? row.nilaiAkhir : "-"}
                         </td>
-                        <td className="border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
+                        <td className="break-words border border-slate-400 px-3 py-2 align-top leading-relaxed text-slate-700">
                           {buildKurikulumMerdekaDescription(row.mapel.nama, row.nilaiAkhir, row.catatan, row.sumberNilai)}
                         </td>
                       </tr>
@@ -2791,87 +2890,86 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             )}
           </div>
 
-          {/* D. Kegiatan Ekstrakurikuler / Pengembangan Diri & Prestasi */}
-          <div className="print-avoid-break mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-900">
-                D. Ekstrakurikuler / Pengembangan Diri
-              </h4>
-              <table className="w-full border-collapse border border-slate-400 text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-100 font-extrabold text-slate-900">
-                    <th className="w-8 border border-slate-400 px-2 py-1.5 text-center">No</th>
-                    <th className="w-32 border border-slate-400 px-2.5 py-1.5">Kegiatan</th>
-                    <th className="w-24 border border-slate-400 px-2 py-1.5 text-center">Predikat</th>
-                    <th className="border border-slate-400 px-2.5 py-1.5">Keterangan</th>
+          {/* D. Kegiatan Ekstrakurikuler / Pengembangan Diri (Full-Width) */}
+          <div className="print-avoid-break mt-4">
+            <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-900">
+              D. Ekstrakurikuler / Pengembangan Diri
+            </h4>
+            <table className="w-full border-collapse border border-slate-400 text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100 font-extrabold text-slate-900">
+                  <th className="w-10 border border-slate-400 px-2.5 py-1.5 text-center">No</th>
+                  <th className="w-52 border border-slate-400 px-3 py-1.5">Kegiatan</th>
+                  <th className="w-28 border border-slate-400 px-2.5 py-1.5 text-center">Predikat</th>
+                  <th className="border border-slate-400 px-3 py-1.5">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {raportExtra.ekstrakurikuler.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
+                      Belum ada kegiatan ekstrakurikuler pada semester berjalan.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {raportExtra.ekstrakurikuler.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
-                        Belum ada kegiatan ekstrakurikuler pada semester berjalan.
+                ) : (
+                  raportExtra.ekstrakurikuler.map((item, idx) => (
+                    <tr key={item.id}>
+                      <td className="border border-slate-400 px-2.5 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
+                      <td className="border border-slate-400 px-3 py-1.5 align-top font-semibold text-slate-900">
+                        {item.kegiatan || "-"}
+                      </td>
+                      <td className="border border-slate-400 px-2.5 py-1.5 text-center align-top font-bold text-slate-900">
+                        {item.predikat || "Baik"}
+                      </td>
+                      <td className="border border-slate-400 px-3 py-1.5 align-top leading-relaxed text-slate-700">
+                        {buildEkskulDescription({
+                          kegiatan: item.kegiatan,
+                          predikat: item.predikat,
+                          customNote: item.keterangan,
+                        })}
                       </td>
                     </tr>
-                  ) : (
-                    raportExtra.ekstrakurikuler.map((item, idx) => (
-                      <tr key={item.id}>
-                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
-                        <td className="border border-slate-400 px-2.5 py-1.5 align-top font-semibold text-slate-900">
-                          {item.kegiatan || "-"}
-                        </td>
-                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top font-bold text-slate-900">
-                          {item.predikat || "Baik"}
-                        </td>
-                        <td className="border border-slate-400 px-2.5 py-1.5 align-top leading-relaxed text-slate-700">
-                          {buildEkskulDescription({
-                            kegiatan: item.kegiatan,
-                            predikat: item.predikat,
-                            customNote: item.keterangan,
-                          })}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
-            <div>
-              <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-900">
-                E. Prestasi
-              </h4>
-              <table className="w-full border-collapse border border-slate-400 text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-100 font-extrabold text-slate-900">
-                    <th className="w-8 border border-slate-400 px-2 py-1.5 text-center">No</th>
-                    <th className="w-40 border border-slate-400 px-2.5 py-1.5">Jenis Prestasi</th>
-                    <th className="border border-slate-400 px-2.5 py-1.5">Keterangan</th>
+          {/* E. Prestasi (Full-Width, di bawah Ekstrakurikuler) */}
+          <div className="print-avoid-break mt-4">
+            <h4 className="mb-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-900">
+              E. Prestasi
+            </h4>
+            <table className="w-full border-collapse border border-slate-400 text-left text-xs">
+              <thead>
+                <tr className="bg-slate-100 font-extrabold text-slate-900">
+                  <th className="w-10 border border-slate-400 px-2.5 py-1.5 text-center">No</th>
+                  <th className="w-60 border border-slate-400 px-3 py-1.5">Jenis Prestasi</th>
+                  <th className="border border-slate-400 px-3 py-1.5">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {raportExtra.prestasi.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
+                      Belum ada catatan prestasi pada semester berjalan.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {raportExtra.prestasi.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="border border-slate-400 px-3 py-2 text-center italic text-slate-500">
-                        Belum ada catatan prestasi pada semester berjalan.
+                ) : (
+                  raportExtra.prestasi.map((item, idx) => (
+                    <tr key={item.id}>
+                      <td className="border border-slate-400 px-2.5 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
+                      <td className="border border-slate-400 px-3 py-1.5 align-top font-semibold text-slate-900">
+                        {item.jenis || "-"}
+                      </td>
+                      <td className="border border-slate-400 px-3 py-1.5 align-top leading-relaxed text-slate-700">
+                        {item.keterangan || "-"}
                       </td>
                     </tr>
-                  ) : (
-                    raportExtra.prestasi.map((item, idx) => (
-                      <tr key={item.id}>
-                        <td className="border border-slate-400 px-2 py-1.5 text-center align-top tabular-nums">{idx + 1}</td>
-                        <td className="border border-slate-400 px-2.5 py-1.5 align-top font-semibold text-slate-900">
-                          {item.jenis || "-"}
-                        </td>
-                        <td className="border border-slate-400 px-2.5 py-1.5 align-top leading-relaxed text-slate-700">
-                          {item.keterangan || "-"}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
           {/* Catatan Wali Kelas, Ketidakhadiran & Keputusan */}

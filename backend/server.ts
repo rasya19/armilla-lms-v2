@@ -3996,18 +3996,45 @@ app.delete("/api/sekolah/kelas/:id", async (req, res) => {
   try {
     const sekolahId = (await getSession(req, "ADMIN"))?.akun.sekolahId;
     if (!sekolahId) return res.status(401).json({ error: "Sesi tidak valid." });
+    const kelasId = req.params.id;
     const result = await prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Kelas" WHERE "id" = ${req.params.id} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
-      if (!locked.length) return "missing";
-      if (await tx.siswa.count({ where: { kelasId: req.params.id } })) return "used";
-      await tx.kelas.deleteMany({ where: { id: req.params.id, sekolahId } });
-      return "deleted";
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Kelas" WHERE "id" = ${kelasId} AND "sekolahId" = ${sekolahId} FOR UPDATE`;
+      if (!locked.length) return { status: "missing" as const, studentCount: 0 };
+      const studentCount = await tx.siswa.count({ where: { sekolahId, kelasId } });
+      if (studentCount > 0) return { status: "used" as const, studentCount };
+
+      // Kelas sudah kosong (0 siswa): bersihkan relasi akademik terkait kelas agar penghapusan tidak terhalang FK
+      const tugasIds = (await tx.tugas.findMany({ where: { sekolahId, kelasId }, select: { id: true } })).map((t) => t.id);
+      if (tugasIds.length > 0) {
+        await tx.pengumpulanTugas.deleteMany({ where: { tugasId: { in: tugasIds } } });
+      }
+      await tx.tugas.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.ujian.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.materiAjar.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.presensi.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.agendaMengajar.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.jadwalPelajaran.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.catatanRaport.deleteMany({ where: { sekolahId, kelasId } });
+      await tx.topikDiskusi.updateMany({ where: { sekolahId, kelasId }, data: { kelasId: null } });
+
+      await tx.kelas.deleteMany({ where: { id: kelasId, sekolahId } });
+      return { status: "deleted" as const, studentCount: 0 };
     });
-    if (result === "missing") return res.status(404).json({ error: "Kelas tidak ditemukan." });
-    if (result === "used") return res.status(409).json({ error: "Kelas masih digunakan siswa dan tidak dapat dihapus." });
-    return res.json({ message: "Kelas dihapus." });
+    if (result.status === "missing") return res.status(404).json({ error: "Kelas tidak ditemukan." });
+    if (result.status === "used") {
+      return res.status(409).json({
+        error: `Kelas masih memiliki ${result.studentCount} siswa. Pindahkan atau keluarkan siswa terlebih dahulu sebelum menghapus kelas.`,
+      });
+    }
+    return res.json({ message: "Kelas berhasil dihapus." });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2003" || error.code === "P2014")) return res.status(409).json({ error: "Kelas masih digunakan data akademik dan tidak dapat dihapus." });
+    const pgCode = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : "";
+    if (
+      (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === "P2003" || error.code === "P2014")) ||
+      pgCode === "23503"
+    ) {
+      return res.status(409).json({ error: "Kelas masih terkait data akademik lain dan tidak dapat dihapus." });
+    }
     console.error("Gagal menghapus kelas:", error);
     return res.status(503).json({ error: "Kelas belum dapat dihapus." });
   }

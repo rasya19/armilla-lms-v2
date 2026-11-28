@@ -796,14 +796,29 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           skk: skkByMapel.get(m.id) ?? 4,
         })),
         siswa: siswaList,
-        nilai: nilaiRows.map((row) => {
-          const parsed = sanitizeCompetencyNote(row.catatanKompetensi);
-          return {
+        nilai: (() => {
+          const deduped = new Map<string, (typeof nilaiRows)[number] & { parsed: ReturnType<typeof sanitizeCompetencyNote> }>();
+          const sorted = [...nilaiRows].sort((a, b) => {
+            const aExact = activeTahun && a.tahunAjaranId === activeTahun.id ? 1 : 0;
+            const bExact = activeTahun && b.tahunAjaranId === activeTahun.id ? 1 : 0;
+            if (aExact !== bExact) return bExact - aExact;
+            const aReg = sanitizeCompetencyNote(a.catatanKompetensi).isTransfer ? 0 : 1;
+            const bReg = sanitizeCompetencyNote(b.catatanKompetensi).isTransfer ? 0 : 1;
+            if (aReg !== bReg) return bReg - aReg;
+            return b.tanggalSimulasi.getTime() - a.tanggalSimulasi.getTime();
+          });
+          for (const row of sorted) {
+            const key = `${row.siswaId}::${row.mapelId}`;
+            if (!deduped.has(key)) {
+              deduped.set(key, { ...row, parsed: sanitizeCompetencyNote(row.catatanKompetensi) });
+            }
+          }
+          return Array.from(deduped.values()).map(({ parsed, ...row }) => ({
             ...row,
             catatanKompetensi: parsed.cleanNote,
             sumberNilai: parsed.isTransfer ? ("pindahan" as const) : ("raport" as const),
-          };
-        }),
+          }));
+        })(),
         catatan: catatanRows,
         raportExtras,
       });
@@ -877,6 +892,74 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menambah tahun ajaran:", error);
       return res.status(503).json({ error: "Tahun ajaran belum dapat ditambahkan." });
+    }
+  });
+
+  // DELETE /api/sekolah/raport/tahun-ajaran — Hapus tahun ajaran (Ganjil & Genap) yang belum terpakai
+  router.delete("/raport/tahun-ajaran", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+
+      const nama = cleanText(req.query.nama ?? req.body?.nama, 40);
+      const forceDeleteNilai = String(req.query.force ?? req.body?.force ?? "") === "true";
+      if (!nama) {
+        return res.status(400).json({ error: "Nama tahun ajaran wajib ditentukan." });
+      }
+
+      const targets = await prisma.tahunAjaran.findMany({
+        where: { sekolahId, nama },
+        select: { id: true, nama: true, semester: true },
+      });
+      if (targets.length === 0) {
+        return res.status(404).json({ error: `Tahun ajaran ${nama} tidak ditemukan.` });
+      }
+      const targetIds = targets.map((t) => t.id);
+
+      const [nilaiCount, jadwalCount, agendaCount, presensiCount, materiCount, tugasCount, ujianCount] =
+        await Promise.all([
+          prisma.nilai.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+          prisma.jadwalPelajaran.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+          prisma.agendaMengajar.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+          prisma.presensi.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+          prisma.materiAjar.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+          prisma.tugas.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+          prisma.ujian.count({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }),
+        ]);
+
+      const reasons: string[] = [];
+      if (nilaiCount > 0 && !forceDeleteNilai) reasons.push(`${nilaiCount} nilai`);
+      if (jadwalCount > 0) reasons.push(`${jadwalCount} jadwal`);
+      if (agendaCount > 0) reasons.push(`${agendaCount} agenda`);
+      if (presensiCount > 0) reasons.push(`${presensiCount} presensi`);
+      if (materiCount > 0) reasons.push(`${materiCount} materi`);
+      if (tugasCount > 0) reasons.push(`${tugasCount} tugas`);
+      if (ujianCount > 0) reasons.push(`${ujianCount} ujian`);
+
+      if (reasons.length > 0) {
+        return res.status(409).json({
+          error: `Tahun ajaran ${nama} masih digunakan (${reasons.join(", ")}). Kosongkan data terkait terlebih dahulu sebelum menghapus.`,
+        });
+      }
+
+      if (nilaiCount > 0 && forceDeleteNilai) {
+        await prisma.nilai.deleteMany({ where: { sekolahId, tahunAjaranId: { in: targetIds } } });
+      }
+      await prisma.catatanRaport.deleteMany({ where: { sekolahId, tahunAjaranId: { in: targetIds } } }).catch(() => null);
+      await prisma.tahunAjaran.deleteMany({ where: { sekolahId, id: { in: targetIds } } });
+
+      return res.json({
+        deletedCount: targets.length,
+        deletedNilaiCount: forceDeleteNilai ? nilaiCount : 0,
+        message:
+          nilaiCount > 0 && forceDeleteNilai
+            ? `Tahun ajaran ${nama} beserta ${nilaiCount} nilai di dalamnya berhasil dihapus.`
+            : `Tahun ajaran ${nama} berhasil dihapus.`,
+      });
+    } catch (error) {
+      console.error("Gagal menghapus tahun ajaran:", error);
+      return res.status(503).json({ error: "Tahun ajaran belum dapat dihapus." });
     }
   });
 
@@ -1062,7 +1145,14 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         const rawSimulasi = entry.nilaiSimulasi;
         const hasMandiri = rawMandiri !== null && rawMandiri !== undefined && String(rawMandiri).trim() !== "";
         const hasSimulasi = rawSimulasi !== null && rawSimulasi !== undefined && String(rawSimulasi).trim() !== "";
-        if (!hasMandiri && !hasSimulasi) continue;
+        if (!hasMandiri && !hasSimulasi) {
+          // Jika kolom Mandiri & Simulasi dikosongkan, hapus nilai yang sebelumnya tersimpan pada mapel ini
+          const deleted = await prisma.nilai.deleteMany({
+            where: { sekolahId, siswaId, mapelId, tahunAjaranId, AND: [NOT_UPK_MARKER_FILTER] },
+          });
+          if (deleted.count > 0) savedCount += deleted.count;
+          continue;
+        }
 
         const mVal = hasMandiri ? Math.max(0, Math.min(100, Number(rawMandiri))) : Math.max(0, Math.min(100, Number(rawSimulasi)));
         const sVal = hasSimulasi ? Math.max(0, Math.min(100, Number(rawSimulasi))) : mVal;
@@ -1070,15 +1160,15 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
         const nilaiAkhir = Math.round(((mVal + sVal) / 2) * 10) / 10;
         const incomingNote = sanitizeCompetencyNote(cleanText(entry.catatanKompetensi, 500) || null).cleanNote;
+        const batchSourceMode = cleanText(req.body?.sourceMode, 20).toLowerCase() === "pindahan" ? "pindahan" : "raport";
 
         const existing = await prisma.nilai.findFirst({
           where: { sekolahId, siswaId, mapelId, tahunAjaranId, AND: [NOT_UPK_MARKER_FILTER] },
           select: { id: true, catatanKompetensi: true },
         });
-        const existingIsTransfer = existing ? sanitizeCompetencyNote(existing.catatanKompetensi).isTransfer : false;
         const catatanKompetensi = incomingNote
           ? incomingNote
-          : existingIsTransfer
+          : batchSourceMode === "pindahan"
             ? TRANSFER_LEGER_MARKER
             : null;
         if (existing) {
@@ -1135,6 +1225,71 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     } catch (error) {
       console.error("Gagal menyimpan nilai raport batch:", error);
       return res.status(503).json({ error: "Nilai raport belum dapat disimpan." });
+    }
+  });
+
+  // PATCH /api/sekolah/raport/sumber-nilai — Ubah sumber nilai semester siswa antara Rapor Reguler & Leger Pindahan
+  router.patch("/raport/sumber-nilai", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "reguler");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId, peran, guruId } = auth.session;
+
+      const siswaId = cleanText(req.body?.siswaId, 100);
+      const tahunAjaranId = cleanText(req.body?.tahunAjaranId, 100);
+      const sourceMode = cleanText(req.body?.sourceMode, 20).toLowerCase() === "pindahan" ? "pindahan" : "raport";
+      if (!siswaId || !tahunAjaranId) {
+        return res.status(400).json({ error: "Warga belajar dan tahun ajaran wajib dipilih." });
+      }
+
+      const siswa = await prisma.siswa.findFirst({
+        where: { id: siswaId, sekolahId },
+        select: { id: true, kelasId: true },
+      });
+      if (!siswa) {
+        return res.status(404).json({ error: "Warga belajar tidak ditemukan." });
+      }
+      if (peran === "GURU" && guruId) {
+        const scope = await resolveTeacherScope(sekolahId, guruId);
+        if (!scope.isWaliKelas && (!siswa.kelasId || !scope.assignedKelasIds.includes(siswa.kelasId))) {
+          return res.status(403).json({ error: "Anda tidak memiliki akses mengubah sumber nilai pada kelas ini." });
+        }
+      }
+
+      const rows = await prisma.nilai.findMany({
+        where: { sekolahId, siswaId, tahunAjaranId, AND: [NOT_UPK_MARKER_FILTER] },
+        select: { id: true, catatanKompetensi: true },
+      });
+
+      let updatedCount = 0;
+      for (const row of rows) {
+        const parsed = sanitizeCompetencyNote(row.catatanKompetensi);
+        const nextNote =
+          sourceMode === "raport"
+            ? parsed.cleanNote
+            : parsed.cleanNote
+              ? parsed.cleanNote
+              : TRANSFER_LEGER_MARKER;
+        if (row.catatanKompetensi !== nextNote) {
+          await prisma.nilai.update({
+            where: { id: row.id },
+            data: { catatanKompetensi: nextNote },
+          });
+          updatedCount += 1;
+        }
+      }
+
+      return res.json({
+        updatedCount,
+        sourceMode,
+        message:
+          sourceMode === "raport"
+            ? `Sumber nilai semester ini diubah ke Rapor Reguler (${updatedCount} mapel diperbarui).`
+            : `Sumber nilai semester ini ditandai sebagai Leger Pindahan (${updatedCount} mapel diperbarui).`,
+      });
+    } catch (error) {
+      console.error("Gagal mengubah sumber nilai raport:", error);
+      return res.status(503).json({ error: "Sumber nilai rapor belum dapat diperbarui." });
     }
   });
 
@@ -1430,7 +1585,69 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
     }
   });
 
-  async function ensureSixSemesters(sekolahId: string) {
+  async function ensureSixSemesters(sekolahId: string, graduationYear?: string) {
+    const gradMatch = graduationYear ? graduationYear.match(/(20\d{2})/) : null;
+    if (gradMatch) {
+      const gradStartYear = Number(gradMatch[1]);
+      const desiredSlots: Array<{ nama: string; semester: string; mulai: Date; selesai: Date }> = [];
+      for (let offset = 2; offset >= 0; offset--) {
+        const y = gradStartYear - offset;
+        const nama = `${y}/${y + 1}`;
+        desiredSlots.push(
+          {
+            nama,
+            semester: "Ganjil",
+            mulai: new Date(`${y}-07-01T00:00:00.000Z`),
+            selesai: new Date(`${y}-12-31T23:59:59.000Z`),
+          },
+          {
+            nama,
+            semester: "Genap",
+            mulai: new Date(`${y + 1}-01-01T00:00:00.000Z`),
+            selesai: new Date(`${y + 1}-06-30T23:59:59.000Z`),
+          },
+        );
+      }
+      const existing = await prisma.tahunAjaran.findMany({
+        where: { sekolahId, nama: { in: desiredSlots.map((s) => s.nama) } },
+        select: { id: true, nama: true, semester: true },
+      });
+      const byKey = new Map(existing.map((e) => [`${e.nama}::${e.semester}`, e]));
+      const result: Array<{ id: string; label: string; nama: string }> = [];
+      for (let idx = 0; idx < desiredSlots.length; idx++) {
+        const slot = desiredSlots[idx];
+        let found = byKey.get(`${slot.nama}::${slot.semester}`);
+        if (!found) {
+          found =
+            (await prisma.tahunAjaran
+              .create({
+                data: {
+                  sekolahId,
+                  nama: slot.nama,
+                  semester: slot.semester,
+                  mulai: slot.mulai,
+                  selesai: slot.selesai,
+                },
+                select: { id: true, nama: true, semester: true },
+              })
+              .catch(() => undefined)) ??
+            (await prisma.tahunAjaran.findFirst({
+              where: { sekolahId, nama: slot.nama, semester: slot.semester },
+              select: { id: true, nama: true, semester: true },
+            })) ??
+            undefined;
+        }
+        if (found) {
+          result.push({
+            id: found.id,
+            label: `Sem ${idx + 1}`,
+            nama: `${found.nama} (${found.semester})`,
+          });
+        }
+      }
+      if (result.length === 6) return result;
+    }
+
     let tahunList = await prisma.tahunAjaran.findMany({
       where: { sekolahId },
       select: { id: true, nama: true, semester: true, mulai: true },
@@ -1502,6 +1719,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const { sekolahId, peran, guruId } = auth.session;
 
       const requestedKelasId = cleanText(req.query.kelasId, 100);
+      const requestedGraduationYear = cleanText(req.query.graduationYear, 40) || undefined;
       const teacherScope = peran === "GURU" && guruId ? await resolveTeacherScope(sekolahId, guruId) : null;
       const restrictToAssigned = Boolean(teacherScope && !teacherScope.isWaliKelas);
 
@@ -1543,9 +1761,10 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const finalClassFallback = kelasList.find((k) => /\b(kelas\s*)?(6|9|12|vi|ix|xii)\b/i.test(k.nama));
       const activeKelas = kelasList.find((k) => k.id === requestedKelasId) ?? finalClassFallback ?? kelasList[0] ?? null;
 
-      // Keep 6 chronological semesters (Semester 1..6), auto-seeding missing slots so labels stay consistent
-      const sixSemesters =
-        tahunList.length >= 6
+      // Keep 6 chronological semesters (Semester 1..6), aligned to requested graduationYear if specified
+      const sixSemesters = requestedGraduationYear
+        ? await ensureSixSemesters(sekolahId, requestedGraduationYear)
+        : tahunList.length >= 6
           ? tahunList.slice(-6).map((t, idx) => ({
               id: t.id,
               label: `Sem ${idx + 1}`,
@@ -1845,6 +2064,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const siswaId = cleanText(req.body?.siswaId, 100);
       const allowOverwriteRaport = req.body?.allowOverwriteRaport === true;
       const sourceMode = cleanText(req.body?.sourceMode, 20).toLowerCase() === "reguler" ? "reguler" : "pindahan";
+      const graduationYear = cleanText(req.body?.graduationYear, 40) || undefined;
       const rawEntries = Array.isArray(req.body?.entries) ? req.body.entries : [];
       if (!siswaId || rawEntries.length === 0) {
         return res.status(400).json({ error: "Pilih warga belajar dan isi minimal satu mata pelajaran." });
@@ -1870,7 +2090,7 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         select: { id: true },
       });
       const validMapelIds = new Set(validMapels.map((m) => m.id));
-      const sixSemesters = await ensureSixSemesters(sekolahId);
+      const sixSemesters = await ensureSixSemesters(sekolahId, graduationYear);
 
       let savedCells = 0;
       const semKeys = ["sem1", "sem2", "sem3", "sem4", "sem5", "sem6"] as const;
@@ -1883,11 +2103,33 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
 
         for (let i = 0; i < Math.min(semKeys.length, sixSemesters.length); i++) {
           const valRaw = entry[semKeys[i]];
-          if (valRaw === null || valRaw === undefined || valRaw === "") continue;
+          const tahunAjaranId = sixSemesters[i].id;
+
+          // Jika sel dikosongkan (null / ""), hapus record nilai yang ada bila diizinkan
+          if (valRaw === null || valRaw === undefined || valRaw === "") {
+            if (valRaw === undefined) continue;
+            const existingToDelete = await prisma.nilai.findMany({
+              where: {
+                sekolahId,
+                siswaId,
+                mapelId,
+                tahunAjaranId,
+                AND: [NOT_UPK_MARKER_FILTER],
+              },
+              select: { id: true, catatanKompetensi: true },
+            });
+            for (const row of existingToDelete) {
+              const isRaportRecord = !sanitizeCompetencyNote(row.catatanKompetensi).isTransfer;
+              if (isRaportRecord && !allowOverwriteRaport) continue;
+              await prisma.nilai.delete({ where: { id: row.id } });
+              savedCells += 1;
+            }
+            continue;
+          }
+
           const num = Number(valRaw);
           if (!Number.isFinite(num) || num < 0 || num > 100) continue;
           const rounded = round2(num);
-          const tahunAjaranId = sixSemesters[i].id;
 
           const existing = await prisma.nilai.findFirst({
             where: {
@@ -1901,16 +2143,15 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
           });
 
           if (existing) {
-            const isRaportRecord = existing.catatanKompetensi !== TRANSFER_LEGER_MARKER;
+            const parsedExisting = sanitizeCompetencyNote(existing.catatanKompetensi);
+            const isRaportRecord = !parsedExisting.isTransfer;
             if (isRaportRecord && !allowOverwriteRaport) {
               continue;
             }
             const nextNote =
               sourceMode === "reguler"
-                ? existing.catatanKompetensi === TRANSFER_LEGER_MARKER
-                  ? null
-                  : existing.catatanKompetensi
-                : existing.catatanKompetensi || TRANSFER_LEGER_MARKER;
+                ? parsedExisting.cleanNote
+                : parsedExisting.cleanNote || TRANSFER_LEGER_MARKER;
             if (existing.nilaiAkhir === rounded && existing.catatanKompetensi === nextNote) continue;
             await prisma.nilai.update({
               where: { id: existing.id },
@@ -1941,7 +2182,12 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
         }
 
         const upkRaw = entry.nilaiUpk;
-        if (upkRaw !== null && upkRaw !== undefined && upkRaw !== "") {
+        if (upkRaw === null || upkRaw === "") {
+          const deletedUpk = await prisma.nilai.deleteMany({
+            where: { sekolahId, siswaId, mapelId, catatanKompetensi: UPK_OVERRIDE_MARKER },
+          });
+          savedCells += deletedUpk.count;
+        } else if (upkRaw !== undefined) {
           const upkNum = Number(upkRaw);
           if (Number.isFinite(upkNum) && upkNum >= 0 && upkNum <= 100) {
             const roundedUpk = round2(upkNum);

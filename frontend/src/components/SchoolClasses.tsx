@@ -240,8 +240,11 @@ export function SchoolClasses(_props: {
   const [rosterStudents, setRosterStudents] = useState<ClassRosterStudent[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [rosterError, setRosterError] = useState("");
+  const [rosterNotice, setRosterNotice] = useState("");
   const [rosterSearch, setRosterSearch] = useState("");
   const [rosterBusyId, setRosterBusyId] = useState<string | null>(null);
+  const [movingStudentId, setMovingStudentId] = useState<string | null>(null);
+  const [moveTargetKelasId, setMoveTargetKelasId] = useState("");
   const [rosterVersion, setRosterVersion] = useState(0);
 
   useEffect(() => {
@@ -323,11 +326,36 @@ export function SchoolClasses(_props: {
     return () => controller.abort();
   }, [rosterClass, rosterVersion]);
 
+  async function moveStudentToClass(student: ClassRosterStudent, targetKelasId: string) {
+    if (!rosterClass || !targetKelasId) return;
+    const targetObj = data?.kelas.find((k) => k.id === targetKelasId);
+    setRosterBusyId(student.id);
+    setRosterError("");
+    setRosterNotice("");
+    try {
+      await request(`/api/sekolah/siswa/${encodeURIComponent(student.id)}/kelas`, "PATCH", {
+        kelasId: targetKelasId,
+        expectedKelasId: rosterClass.id,
+      });
+      invalidateCache(["/api/sekolah/kelas", "/api/sekolah/siswa", "/api/sekolah/kenaikan-kelas", "/api/sekolah/raport"]);
+      setMovingStudentId(null);
+      setMoveTargetKelasId("");
+      setRosterNotice(`${student.nama} berhasil dipindahkan ke ${targetObj?.nama ?? "kelas tujuan"}.`);
+      setRosterVersion((v) => v + 1);
+      setVersion((v) => v + 1);
+    } catch (failure) {
+      setRosterError(describeFetchError(failure, "Siswa belum dapat dipindahkan ke kelas tujuan."));
+    } finally {
+      setRosterBusyId(null);
+    }
+  }
+
   async function removeStudentFromClass(student: ClassRosterStudent) {
     if (!rosterClass) return;
     if (!await confirm(`Keluarkan ${student.nama} (${student.nisn}) dari kelas ${rosterClass.nama}? Siswa tetap aktif tanpa kelas.`)) return;
     setRosterBusyId(student.id);
     setRosterError("");
+    setRosterNotice("");
     try {
       await request(`/api/sekolah/siswa/${encodeURIComponent(student.id)}/kelas`, "PATCH", {
         kelasId: null,
@@ -686,6 +714,9 @@ export function SchoolClasses(_props: {
           onClose={() => {
             setRosterClass(null);
             setRosterError("");
+            setRosterNotice("");
+            setMovingStudentId(null);
+            setMoveTargetKelasId("");
           }}
         >
           <div className="space-y-4 overflow-y-auto px-5 pb-6 pt-3 sm:px-7">
@@ -706,6 +737,12 @@ export function SchoolClasses(_props: {
                 />
               </label>
             </div>
+
+            {rosterNotice && (
+              <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">
+                {rosterNotice}
+              </p>
+            )}
 
             {rosterError && (
               <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800">
@@ -770,19 +807,80 @@ export function SchoolClasses(_props: {
                             </span>
                           </td>
                           <td className="px-3 py-2.5 text-right">
-                            <button
-                              type="button"
-                              disabled={rosterBusyId === student.id}
-                              onClick={() => void removeStudentFromClass(student)}
-                              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-bold disabled:opacity-50 ${
-                                isDark
-                                  ? "border-rose-500/35 bg-rose-950/40 text-rose-300 hover:bg-rose-950/70"
-                                  : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                              }`}
-                            >
-                              <UserMinus size={12} aria-hidden="true" />
-                              Keluarkan
-                            </button>
+                            {movingStudentId === student.id ? (
+                              <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                <select
+                                  aria-label={`Pilih kelas tujuan untuk ${student.nama}`}
+                                  value={moveTargetKelasId}
+                                  onChange={(e) => setMoveTargetKelasId(e.target.value)}
+                                  className="rounded-lg border border-indigo-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-900"
+                                >
+                                  <option value="">-- Pilih kelas --</option>
+                                  {(data?.kelas ?? [])
+                                    .filter((k) => k.id !== rosterClass.id)
+                                    .map((k) => (
+                                      <option key={k.id} value={k.id}>
+                                        {k.nama}
+                                      </option>
+                                    ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={!moveTargetKelasId || rosterBusyId === student.id}
+                                  onClick={() => void moveStudentToClass(student, moveTargetKelasId)}
+                                  className="rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+                                >
+                                  {rosterBusyId === student.id ? "..." : "Pindah"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={rosterBusyId === student.id}
+                                  onClick={() => {
+                                    setMovingStudentId(null);
+                                    setMoveTargetKelasId("");
+                                  }}
+                                  className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                >
+                                  Batal
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                {(data?.kelas.length ?? 0) > 1 && (
+                                  <button
+                                    type="button"
+                                    disabled={rosterBusyId === student.id}
+                                    onClick={() => {
+                                      setMovingStudentId(student.id);
+                                      setMoveTargetKelasId("");
+                                      setRosterError("");
+                                      setRosterNotice("");
+                                    }}
+                                    className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-bold disabled:opacity-50 ${
+                                      isDark
+                                        ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25"
+                                        : "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+                                    }`}
+                                  >
+                                    <ArrowRight size={12} aria-hidden="true" />
+                                    Pindah Kelas
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={rosterBusyId === student.id}
+                                  onClick={() => void removeStudentFromClass(student)}
+                                  className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-bold disabled:opacity-50 ${
+                                    isDark
+                                      ? "border-rose-500/35 bg-rose-950/40 text-rose-300 hover:bg-rose-950/70"
+                                      : "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                  }`}
+                                >
+                                  <UserMinus size={12} aria-hidden="true" />
+                                  Keluarkan
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}

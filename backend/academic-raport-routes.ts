@@ -27,6 +27,9 @@ type RaportExtraBiodata = {
   semesterMasuk?: string;
   keteranganPindah?: string;
   isSiswaPindahan?: boolean;
+  pasFotoUrl?: string;
+  tandaTanganUrl?: string;
+  tandaTanganTanggal?: string;
 };
 
 type RaportP5Item = {
@@ -71,11 +74,24 @@ function raportExtraSettingKey(sekolahId: string, tahunAjaranId: string, siswaId
   return `raport_extra:${sekolahId}:${tahunAjaranId}:${siswaId}`;
 }
 
+function sanitizeSafeImageUrl(raw: unknown, maxLen: number): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > maxLen) return undefined;
+  if (/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^https?:\/\/\S+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return undefined;
+}
+
 function sanitizeRaportBiodata(raw: unknown): RaportExtraBiodata {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const obj = raw as Record<string, unknown>;
   const out: RaportExtraBiodata = {};
-  const setStr = (key: keyof Omit<RaportExtraBiodata, "isSiswaPindahan">, maxLen = 200) => {
+  const setStr = (key: keyof Omit<RaportExtraBiodata, "isSiswaPindahan" | "pasFotoUrl" | "tandaTanganUrl">, maxLen = 200) => {
     const val = cleanText(obj[key], maxLen);
     if (val) out[key] = val;
   };
@@ -90,9 +106,14 @@ function sanitizeRaportBiodata(raw: unknown): RaportExtraBiodata {
   setStr("tanggalMasuk", 30);
   setStr("semesterMasuk", 60);
   setStr("keteranganPindah", 350);
+  setStr("tandaTanganTanggal", 30);
   if (typeof obj.isSiswaPindahan === "boolean") {
     out.isSiswaPindahan = obj.isSiswaPindahan;
   }
+  const pasFoto = sanitizeSafeImageUrl(obj.pasFotoUrl, 600_000);
+  if (pasFoto) out.pasFotoUrl = pasFoto;
+  const ttd = sanitizeSafeImageUrl(obj.tandaTanganUrl, 350_000);
+  if (ttd) out.tandaTanganUrl = ttd;
   return out;
 }
 
@@ -176,15 +197,28 @@ async function saveRaportStudentExtra(
   rawExtra: unknown,
 ): Promise<RaportStudentExtra> {
   const obj = rawExtra && typeof rawExtra === "object" && !Array.isArray(rawExtra) ? (rawExtra as Record<string, unknown>) : {};
-  const biodata = sanitizeRaportBiodata(obj.biodata);
+  const hasBiodataPayload = obj.biodata !== undefined && obj.biodata !== null && typeof obj.biodata === "object";
   const semesterExtra = sanitizeRaportSemesterExtra(obj);
 
   const bioKey = raportBiodataSettingKey(sekolahId, siswaId);
-  await prisma.platformSetting.upsert({
-    where: { key: bioKey },
-    create: { key: bioKey, value: JSON.stringify(biodata) },
-    update: { value: JSON.stringify(biodata) },
-  });
+  let biodata: RaportExtraBiodata = {};
+  if (hasBiodataPayload) {
+    biodata = sanitizeRaportBiodata(obj.biodata);
+    await prisma.platformSetting.upsert({
+      where: { key: bioKey },
+      create: { key: bioKey, value: JSON.stringify(biodata) },
+      update: { value: JSON.stringify(biodata) },
+    });
+  } else {
+    const existingBio = await prisma.platformSetting.findUnique({ where: { key: bioKey } }).catch(() => null);
+    if (existingBio?.value) {
+      try {
+        biodata = sanitizeRaportBiodata(JSON.parse(existingBio.value));
+      } catch {
+        biodata = {};
+      }
+    }
+  }
 
   if (tahunAjaranId) {
     const semKey = raportExtraSettingKey(sekolahId, tahunAjaranId, siswaId);
@@ -1135,11 +1169,156 @@ export function tahap2AcademicRoutes(getSchoolSession: SchoolContextResolver) {
       const saved = await saveRaportStudentExtra(sekolahId, tahunAjaranId, siswaId, req.body?.raportExtra ?? req.body);
       return res.json({
         raportExtra: saved,
-        message: "Biodata rapor, capaian P5, ekstrakurikuler, dan prestasi berhasil disimpan.",
+        message: "Capaian P5, ekstrakurikuler, dan prestasi berhasil disimpan.",
       });
     } catch (error) {
       console.error("Gagal menyimpan data tambahan raport:", error);
       return res.status(503).json({ error: "Data tambahan rapor belum dapat disimpan." });
+    }
+  });
+
+  // GET /api/sekolah/siswa/:id/biodata — Biodata lengkap siswa (identitas, ortu/wali, mutasi, pas foto, TTD)
+  router.get("/siswa/:id/biodata", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+      const siswaId = cleanText(req.params.id, 100);
+      if (!siswaId) return res.status(400).json({ error: "ID siswa tidak valid." });
+
+      const [siswa, school, settings, kopSurat, bioSetting, transferCount] = await Promise.all([
+        prisma.siswa.findFirst({
+          where: { id: siswaId, sekolahId },
+          select: {
+            id: true,
+            nama: true,
+            nisn: true,
+            nik: true,
+            jenjang: true,
+            kelasId: true,
+            email: true,
+            telepon: true,
+            tempatLahir: true,
+            tanggalLahir: true,
+            jenisKelamin: true,
+            alamatLengkap: true,
+            desaKelurahan: true,
+            kecamatan: true,
+            namaAyah: true,
+            pekerjaanAyah: true,
+            namaIbu: true,
+            namaIbuKandung: true,
+            pekerjaanIbu: true,
+            namaWali: true,
+            pekerjaanWali: true,
+            sekolahAsal: true,
+            npsnAsal: true,
+            tanggalMasuk: true,
+            jalurPendaftaran: true,
+            urlFotoIjazah: true,
+            urlSuratPindah: true,
+          },
+        }),
+        prisma.sekolah.findUnique({
+          where: { id: sekolahId },
+          select: { nama: true, npsn: true, alamatSekolah: true, kabupatenKota: true, namaKepalaSekolah: true },
+        }),
+        prisma.websiteSettings.findUnique({ where: { school_id: sekolahId }, select: { logo_url: true } }).catch(() => null),
+        readSchoolKopSurat(sekolahId),
+        prisma.platformSetting.findUnique({ where: { key: raportBiodataSettingKey(sekolahId, siswaId) } }).catch(() => null),
+        prisma.nilai.count({ where: { sekolahId, siswaId, catatanKompetensi: TRANSFER_LEGER_MARKER } }).catch(() => 0),
+      ]);
+
+      if (!siswa) {
+        return res.status(404).json({ error: "Data siswa tidak ditemukan." });
+      }
+
+      const kelas = siswa.kelasId
+        ? await prisma.kelas.findFirst({ where: { id: siswa.kelasId, sekolahId }, select: { nama: true } })
+        : null;
+
+      let biodata: RaportExtraBiodata = {};
+      if (bioSetting?.value) {
+        try {
+          biodata = sanitizeRaportBiodata(JSON.parse(bioSetting.value));
+        } catch {
+          biodata = {};
+        }
+      }
+
+      return res.json({
+        siswa,
+        kelasNama: kelas?.nama ?? null,
+        sekolah: {
+          nama: school?.nama ?? "PKBM",
+          npsn: school?.npsn ?? null,
+          alamat: school?.alamatSekolah ?? null,
+          kabupatenKota: school?.kabupatenKota ?? null,
+          kepalaSekolah: school?.namaKepalaSekolah ?? null,
+          logoUrl: settings?.logo_url ?? null,
+        },
+        kopSurat,
+        biodata,
+        hasTransferScores: transferCount > 0,
+      });
+    } catch (error) {
+      console.error("Gagal memuat biodata siswa:", error);
+      return res.status(503).json({ error: "Biodata siswa belum dapat dimuat." });
+    }
+  });
+
+  // PUT /api/sekolah/siswa/:id/biodata — Simpan biodata lengkap siswa, pas foto & tanda tangan
+  router.put("/siswa/:id/biodata", async (req, res) => {
+    try {
+      const auth = await resolveAuthorizedSchool(req, getSchoolSession, "basic");
+      if ("error" in auth) return res.status(auth.status).json({ error: auth.error });
+      const { sekolahId } = auth.session;
+      const siswaId = cleanText(req.params.id, 100);
+      if (!siswaId) return res.status(400).json({ error: "ID siswa tidak valid." });
+
+      const existingSiswa = await prisma.siswa.findFirst({
+        where: { id: siswaId, sekolahId },
+        select: { id: true },
+      });
+      if (!existingSiswa) {
+        return res.status(404).json({ error: "Data siswa tidak ditemukan." });
+      }
+
+      const biodata = sanitizeRaportBiodata(req.body?.biodata ?? req.body);
+      const bioKey = raportBiodataSettingKey(sekolahId, siswaId);
+      await prisma.platformSetting.upsert({
+        where: { key: bioKey },
+        create: { key: bioKey, value: JSON.stringify(biodata) },
+        update: { value: JSON.stringify(biodata) },
+      });
+
+      // Sinkronkan field induk dasar siswa jika diisi agar selaras dengan Data Induk & E-Raport
+      const siswaUpdate: Record<string, unknown> = {};
+      if (biodata.tempatLahir) siswaUpdate.tempatLahir = biodata.tempatLahir;
+      if (biodata.tanggalLahir && /^\d{4}-\d{2}-\d{2}$/.test(biodata.tanggalLahir)) {
+        const dt = new Date(`${biodata.tanggalLahir}T00:00:00.000Z`);
+        if (!Number.isNaN(dt.getTime())) siswaUpdate.tanggalLahir = dt;
+      }
+      if (biodata.jenisKelamin) siswaUpdate.jenisKelamin = biodata.jenisKelamin;
+      if (biodata.alamat) siswaUpdate.alamatLengkap = biodata.alamat;
+      if (biodata.asalLembaga) siswaUpdate.sekolahAsal = biodata.asalLembaga;
+      if (biodata.tanggalMasuk && /^\d{4}-\d{2}-\d{2}$/.test(biodata.tanggalMasuk)) {
+        const dt = new Date(`${biodata.tanggalMasuk}T00:00:00.000Z`);
+        if (!Number.isNaN(dt.getTime())) siswaUpdate.tanggalMasuk = dt;
+      }
+      if (biodata.pasFotoUrl) siswaUpdate.urlFotoIjazah = biodata.pasFotoUrl;
+
+      if (Object.keys(siswaUpdate).length > 0) {
+        await prisma.siswa.update({ where: { id: siswaId }, data: siswaUpdate }).catch(() => null);
+      }
+
+      return res.json({
+        biodata,
+        message: "Biodata lengkap peserta didik, pas foto, dan tanda tangan berhasil disimpan.",
+      });
+    } catch (error) {
+      console.error("Gagal menyimpan biodata siswa:", error);
+      return res.status(503).json({ error: "Biodata siswa belum dapat disimpan." });
     }
   });
 

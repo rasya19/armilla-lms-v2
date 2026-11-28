@@ -61,15 +61,15 @@ export function renderKopSuratHtml(profile: SchoolProfile): string {
     ? `<div style="width:92px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><img src="${escapeHtmlText(profile.logoYayasanUrl)}" alt="Logo Yayasan" style="width:84px;height:84px;object-fit:contain;" /></div>`
     : `<div style="width:92px;flex-shrink:0;"></div>`;
 
-  return `<div style="border-bottom:4px double #0f172a;padding:0 6px 12px 6px;margin-bottom:16px;">
-    <div style="display:grid;grid-template-columns:92px 1fr 92px;align-items:center;gap:18px;width:100%;">
+  return `<div style="border-bottom:4px double #0f172a;padding:2px 8px 16px 8px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:92px 1fr 92px;align-items:center;gap:20px;width:100%;">
       <div style="width:92px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">${logoMarkup}</div>
-      <div style="text-align:center;min-width:0;">
-        ${profile.namaYayasan ? `<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#334155;">${escapeHtmlText(profile.namaYayasan)}</div>` : ""}
-        <div style="font-size:19px;font-weight:900;text-transform:uppercase;letter-spacing:0.02em;color:#0f172a;margin-top:2px;">${escapeHtmlText(profile.nama)}</div>
-        ${metaParts.length > 0 ? `<div style="font-size:11px;color:#334155;margin-top:2px;">${escapeHtmlText(metaParts.join(" | "))}</div>` : ""}
-        ${address ? `<div style="font-size:11px;color:#334155;margin-top:1px;">${escapeHtmlText(address)}</div>` : ""}
-        ${contacts ? `<div style="font-size:10.5px;color:#475569;margin-top:1px;">${escapeHtmlText(contacts)}</div>` : ""}
+      <div style="text-align:center;min-width:0;line-height:1.5;">
+        ${profile.namaYayasan ? `<div style="font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#334155;margin-bottom:3px;">${escapeHtmlText(profile.namaYayasan)}</div>` : ""}
+        <div style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:0.03em;color:#0f172a;line-height:1.25;margin-bottom:5px;">${escapeHtmlText(profile.nama)}</div>
+        ${metaParts.length > 0 ? `<div style="font-size:11px;font-weight:600;color:#334155;margin-top:4px;line-height:1.45;">${escapeHtmlText(metaParts.join(" | "))}</div>` : ""}
+        ${address ? `<div style="font-size:11px;color:#334155;margin-top:3px;line-height:1.45;">${escapeHtmlText(address)}</div>` : ""}
+        ${contacts ? `<div style="font-size:10.5px;color:#475569;margin-top:3px;line-height:1.45;">${escapeHtmlText(contacts)}</div>` : ""}
       </div>
       ${rightLogoMarkup}
     </div>
@@ -93,8 +93,8 @@ export function KopSurat({ profile }: { profile: SchoolProfile }) {
     .join(" | ");
 
   return (
-    <div className="kop-surat w-full border-b-4 border-double border-slate-900 bg-white px-2 pb-3.5 text-slate-900">
-      <div className="grid w-full grid-cols-[80px_1fr_80px] items-center gap-4 sm:grid-cols-[96px_1fr_96px] sm:gap-6">
+    <div className="kop-surat w-full border-b-4 border-double border-slate-900 bg-white px-3 pb-4 pt-1 text-slate-900">
+      <div className="grid w-full grid-cols-[76px_1fr_76px] items-center gap-4 sm:grid-cols-[96px_1fr_96px] sm:gap-6">
         <div className="flex h-20 w-20 items-center justify-center sm:h-24 sm:w-24">
           {profile.logoUrl ? (
             <img
@@ -109,18 +109,20 @@ export function KopSurat({ profile }: { profile: SchoolProfile }) {
             </span>
           )}
         </div>
-        <div className="min-w-0 text-center">
+        <div className="min-w-0 space-y-1.5 text-center">
           {profile.namaYayasan && (
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-700 sm:text-sm">
+            <p className="text-xs font-bold uppercase tracking-[0.08em] leading-snug text-slate-700 sm:text-sm">
               {profile.namaYayasan}
             </p>
           )}
-          <p className="text-base font-black uppercase tracking-tight text-slate-950 sm:text-xl">
+          <p className="text-base font-black uppercase tracking-wide leading-tight text-slate-950 sm:text-xl">
             {profile.nama}
           </p>
-          {metaLine && <p className="mt-0.5 text-[11px] font-medium text-slate-700">{metaLine}</p>}
-          {address && <p className="text-[11px] text-slate-700">{address}</p>}
-          {contacts && <p className="break-words text-[10.5px] text-slate-600">{contacts}</p>}
+          <div className="space-y-1 pt-0.5 leading-relaxed">
+            {metaLine && <p className="text-[11px] font-semibold leading-relaxed text-slate-700">{metaLine}</p>}
+            {address && <p className="text-[11px] leading-relaxed text-slate-700">{address}</p>}
+            {contacts && <p className="break-words text-[10.5px] leading-relaxed text-slate-600">{contacts}</p>}
+          </div>
         </div>
         <div className="flex h-20 w-20 items-center justify-center justify-self-end sm:h-24 sm:w-24">
           {profile.logoYayasanUrl ? (

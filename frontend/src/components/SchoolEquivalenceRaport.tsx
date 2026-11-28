@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { CardGridSkeleton, DashboardHero, EmptyState } from "./DashboardUI";
 import { buildKopSuratProfile, KopSurat } from "./KopSurat";
-import { QrCodeSvg } from "./QrCodeSvg";
 import { RaportLegerPanel, RaportSixSemesterLegerPanel, RaportTranscriptPanel } from "./RaportLegerTranscript";
 import { SchoolModal } from "./SchoolModal";
 import type { SchoolProfile } from "./schoolProfile";
@@ -898,21 +897,6 @@ function formatDateInputValue(raw?: string | null): string {
   return parsed.toISOString().slice(0, 10);
 }
 
-function formatTanggalIndo(raw?: string | null): string {
-  if (!raw || !raw.trim()) return "";
-  const parsed = new Date(raw.trim());
-  if (Number.isNaN(parsed.getTime())) return raw.trim();
-  return parsed.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
-}
-
-function formatJenisKelaminLabel(raw?: string | null): string {
-  const val = (raw ?? "").trim().toLowerCase();
-  if (!val) return "-";
-  if (val === "l" || val.startsWith("laki")) return "Laki-laki";
-  if (val === "p" || val.startsWith("perempuan") || val.startsWith("wanita")) return "Perempuan";
-  return raw!.trim();
-}
-
 function buildDefaultStudentBiodata(siswa: RaportSiswaItem, saved?: RaportExtraBiodata, hasTransferScores = false): RaportExtraBiodata {
   const alamatParts = [siswa.alamatLengkap, siswa.desaKelurahan, siswa.kecamatan]
     .map((p) => (p ?? "").trim())
@@ -1193,7 +1177,11 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
           entries,
           catatanWali,
           statusKenaikan,
-          raportExtra,
+          raportExtra: {
+            p5: raportExtra.p5,
+            ekstrakurikuler: raportExtra.ekstrakurikuler,
+            prestasi: raportExtra.prestasi,
+          },
         }),
       });
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
@@ -1225,25 +1213,22 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
         body: JSON.stringify({
           siswaId: activeSiswa.id,
           tahunAjaranId: tahunId || undefined,
-          raportExtra,
+          raportExtra: {
+            p5: raportExtra.p5,
+            ekstrakurikuler: raportExtra.ekstrakurikuler,
+            prestasi: raportExtra.prestasi,
+          },
         }),
       });
       const body = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
-      if (!res.ok) throw new Error(body?.error || "Gagal menyimpan biodata, P5, dan ekstrakurikuler.");
-      setNotice(body?.message || "Biodata, P5, ekstrakurikuler, dan prestasi tersimpan.");
+      if (!res.ok) throw new Error(body?.error || "Gagal menyimpan capaian P5 dan ekstrakurikuler.");
+      setNotice(body?.message || "Capaian P5, ekstrakurikuler, dan prestasi tersimpan.");
       await loadRaport(kelasId, tahunId);
     } catch (failure) {
       setError(describeFetchError(failure, "Data tambahan rapor belum dapat disimpan."));
     } finally {
       setBusy(false);
     }
-  }
-
-  function updateExtraBiodata<K extends keyof RaportExtraBiodata>(field: K, value: RaportExtraBiodata[K]) {
-    setRaportExtra((prev) => ({
-      ...prev,
-      biodata: { ...prev.biodata, [field]: value },
-    }));
   }
 
   function addP5Item() {
@@ -1973,155 +1958,20 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               </div>
             </div>
 
-            {/* Biodata Lengkap Peserta Didik, Orang Tua/Wali & Mutasi Pindahan */}
-            <div className={`space-y-4 rounded-2xl p-5 ${panelClass(isDark)}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
-                    <FileText size={17} className="text-indigo-600" />
-                    Biodata Peserta Didik, Orang Tua/Wali &amp; Mutasi Pindahan
-                  </h3>
-                  <p className={`mt-0.5 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                    Terisi otomatis dari data induk peserta didik bila tersedia. Lengkapi atau sesuaikan untuk ditampilkan rapi pada halaman identitas rapor cetak.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void saveRaportExtraOnly()}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
-                >
-                  <Save size={13} />
-                  Simpan Biodata, P5 &amp; Ekskul
-                </button>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="block text-xs font-bold">
-                  Tempat Lahir
-                  <input
-                    type="text"
-                    value={raportExtra.biodata.tempatLahir ?? ""}
-                    onChange={(e) => updateExtraBiodata("tempatLahir", e.target.value)}
-                    placeholder="Contoh: Bandung"
-                    className={inputClass(isDark)}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Tanggal Lahir
-                  <input
-                    type="date"
-                    value={raportExtra.biodata.tanggalLahir ?? ""}
-                    onChange={(e) => updateExtraBiodata("tanggalLahir", e.target.value)}
-                    className={inputClass(isDark)}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Jenis Kelamin
-                  <select
-                    value={raportExtra.biodata.jenisKelamin ?? ""}
-                    onChange={(e) => updateExtraBiodata("jenisKelamin", e.target.value)}
-                    className={inputClass(isDark)}
-                  >
-                    <option value="">-- Pilih --</option>
-                    <option value="Laki-laki">Laki-laki</option>
-                    <option value="Perempuan">Perempuan</option>
-                  </select>
-                </label>
-                <label className="block text-xs font-bold">
-                  Anak ke-berapa
-                  <input
-                    type="text"
-                    value={raportExtra.biodata.anakKe ?? ""}
-                    onChange={(e) => updateExtraBiodata("anakKe", e.target.value)}
-                    placeholder="Contoh: 2 (Kedua)"
-                    className={inputClass(isDark)}
-                  />
-                </label>
-                <label className="block text-xs font-bold sm:col-span-2">
-                  Alamat Peserta Didik
-                  <input
-                    type="text"
-                    value={raportExtra.biodata.alamat ?? ""}
-                    onChange={(e) => updateExtraBiodata("alamat", e.target.value)}
-                    placeholder="Alamat domisili peserta didik"
-                    className={inputClass(isDark)}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Nama Orang Tua / Wali
-                  <input
-                    type="text"
-                    value={raportExtra.biodata.namaOrangTuaWali ?? ""}
-                    onChange={(e) => updateExtraBiodata("namaOrangTuaWali", e.target.value)}
-                    placeholder="Nama Ayah / Ibu / Wali"
-                    className={inputClass(isDark)}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Pekerjaan Orang Tua / Wali
-                  <input
-                    type="text"
-                    value={raportExtra.biodata.pekerjaanOrangTuaWali ?? ""}
-                    onChange={(e) => updateExtraBiodata("pekerjaanOrangTuaWali", e.target.value)}
-                    placeholder="Contoh: Wiraswasta / Petani / Karyawan"
-                    className={inputClass(isDark)}
-                  />
-                </label>
-              </div>
-
-              <div className={`space-y-3 rounded-xl border p-3.5 ${isDark ? "border-slate-700 bg-slate-950/50" : "border-slate-200 bg-slate-50/80"}`}>
-                <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-extrabold">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(raportExtra.biodata.isSiswaPindahan)}
-                    onChange={(e) => updateExtraBiodata("isSiswaPindahan", e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                  />
-                  Peserta Didik Pindahan / Mutasi (tampilkan informasi lembaga asal &amp; keterangan pindah pada rapor)
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="block text-xs font-bold">
-                    Asal Satuan Pendidikan / Lembaga
-                    <input
-                      type="text"
-                      value={raportExtra.biodata.asalLembaga ?? ""}
-                      onChange={(e) => updateExtraBiodata("asalLembaga", e.target.value)}
-                      placeholder="Contoh: SMPN 1 ... / PKBM ..."
-                      className={inputClass(isDark)}
-                    />
-                  </label>
-                  <label className="block text-xs font-bold">
-                    Tanggal Masuk
-                    <input
-                      type="date"
-                      value={raportExtra.biodata.tanggalMasuk ?? ""}
-                      onChange={(e) => updateExtraBiodata("tanggalMasuk", e.target.value)}
-                      className={inputClass(isDark)}
-                    />
-                  </label>
-                  <label className="block text-xs font-bold">
-                    Semester / Tingkat Masuk
-                    <input
-                      type="text"
-                      value={raportExtra.biodata.semesterMasuk ?? ""}
-                      onChange={(e) => updateExtraBiodata("semesterMasuk", e.target.value)}
-                      placeholder="Contoh: Kelas 8 / Semester Ganjil"
-                      className={inputClass(isDark)}
-                    />
-                  </label>
-                  <label className="block text-xs font-bold">
-                    Keterangan Pindah / Leger Pindahan
-                    <input
-                      type="text"
-                      value={raportExtra.biodata.keteranganPindah ?? ""}
-                      onChange={(e) => updateExtraBiodata("keteranganPindah", e.target.value)}
-                      placeholder="Contoh: Pindahan semester 3, nilai dikonversi dari leger asal"
-                      className={inputClass(isDark)}
-                    />
-                  </label>
-                </div>
-              </div>
+            {/* Info Pemisahan Biodata ke Menu Data Siswa */}
+            <div className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-xs ${isDark ? "border-sky-500/30 bg-sky-950/30 text-sky-200" : "border-sky-200 bg-sky-50/80 text-sky-900"}`}>
+              <span>
+                <strong>Biodata Lengkap, Pas Foto &amp; Riwayat Mutasi</strong> kini dikelola terpisah pada menu <strong>Data Siswa → tombol Biodata</strong> agar halaman rapor lebih ringkas.
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void saveRaportExtraOnly()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-extrabold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+              >
+                <Save size={13} />
+                Simpan P5 &amp; Ekskul
+              </button>
             </div>
 
             {/* Capaian Projek / Karakter (P5 / Pemberdayaan & Keterampilan) + Generator Narasi Otomatis */}
@@ -2500,17 +2350,6 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
       {raportSubTab === "raport" && activeSiswa && data && (() => {
         const schoolName = data.kopSurat?.nama || data.sekolah.nama || "-";
         const schoolNpsn = data.kopSurat?.npsn || data.sekolah.npsn || "-";
-        const schoolAddress = data.kopSurat?.alamatLengkap || data.sekolah.alamat || "-";
-        const bio = raportExtra.biodata;
-        const ttlText = [bio.tempatLahir?.trim(), formatTanggalIndo(bio.tanggalLahir)].filter(Boolean).join(", ") || "-";
-        const hasTransferScores = studentScores.some((row) => row.sumberNilai === "pindahan");
-        const showTransferBlock = Boolean(
-          bio.isSiswaPindahan ||
-            hasTransferScores ||
-            bio.asalLembaga?.trim() ||
-            bio.keteranganPindah?.trim() ||
-            bio.semesterMasuk?.trim(),
-        );
         const overallP5Level = computeOverallP5Level(raportExtra.p5.items.map((item) => item.tingkatCapaian));
         const p5ProcessText =
           raportExtra.p5.items.length > 0 || raportExtra.p5.catatanProses.trim()
@@ -2547,88 +2386,34 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
             </p>
           </div>
 
-          {/* Identitas Satuan Pendidikan, Biodata Lengkap Peserta Didik, Orang Tua/Wali & Mutasi Pindahan */}
-          <div className="print-avoid-break mt-4 space-y-2.5 rounded-xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-xs">
-            <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Satuan Pendidikan</span>
-                <span className="font-bold text-slate-950">: {schoolName}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">NPSN</span>
-                <span className="font-mono font-semibold text-slate-900">: {schoolNpsn}</span>
-              </div>
-              <div className="flex gap-2 sm:col-span-2">
-                <span className="w-36 shrink-0 text-slate-600">Alamat Lembaga</span>
-                <span className="font-medium text-slate-900">: {schoolAddress}</span>
-              </div>
+          {/* Identitas Pokok Rapor (Ringkas & Bersih — Biodata Lengkap di Menu Data Siswa) */}
+          <div className="print-avoid-break mt-4 grid gap-x-6 gap-y-1.5 rounded-xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-xs sm:grid-cols-2">
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">Nama Peserta Didik</span>
+              <span className="font-bold text-slate-950">: {activeSiswa.nama}</span>
             </div>
-
-            <div className="grid gap-x-6 gap-y-1.5 border-t border-slate-200 pt-2 sm:grid-cols-2">
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Nama Peserta Didik</span>
-                <span className="font-bold text-slate-950">: {activeSiswa.nama}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Kelas / Fase</span>
-                <span className="font-bold text-slate-950">: {activeKelasName} / {phaseInfo.fase}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
-                <span className="font-mono font-bold text-slate-950">: {activeSiswa.nisn || "-"}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Semester / TA</span>
-                <span className="font-semibold text-slate-900">
-                  : {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Tempat, Tgl Lahir</span>
-                <span className="font-medium text-slate-900">: {ttlText}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Jenis Kelamin</span>
-                <span className="font-medium text-slate-900">: {formatJenisKelaminLabel(bio.jenisKelamin)}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Anak ke-berapa</span>
-                <span className="font-medium text-slate-900">: {bio.anakKe?.trim() || "-"}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Alamat Peserta Didik</span>
-                <span className="font-medium text-slate-900">: {bio.alamat?.trim() || "-"}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Nama Orang Tua / Wali</span>
-                <span className="font-medium text-slate-900">: {bio.namaOrangTuaWali?.trim() || "-"}</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="w-36 shrink-0 text-slate-600">Pekerjaan Ortu / Wali</span>
-                <span className="font-medium text-slate-900">: {bio.pekerjaanOrangTuaWali?.trim() || "-"}</span>
-              </div>
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">Kelas / Fase</span>
+              <span className="font-bold text-slate-950">: {activeKelasName} / {phaseInfo.fase}</span>
             </div>
-
-            {showTransferBlock && (
-              <div className="grid gap-x-6 gap-y-1.5 border-t border-slate-200 pt-2 sm:grid-cols-2">
-                <div className="flex gap-2">
-                  <span className="w-36 shrink-0 text-slate-600">Asal Lembaga / Sekolah</span>
-                  <span className="font-semibold text-slate-900">: {bio.asalLembaga?.trim() || "-"}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="w-36 shrink-0 text-slate-600">Tgl / Semester Masuk</span>
-                  <span className="font-medium text-slate-900">
-                    : {[formatTanggalIndo(bio.tanggalMasuk), bio.semesterMasuk?.trim()].filter(Boolean).join(" · ") || "-"}
-                  </span>
-                </div>
-                <div className="flex gap-2 sm:col-span-2">
-                  <span className="w-36 shrink-0 text-slate-600">Keterangan Pindahan</span>
-                  <span className="font-medium text-slate-900">
-                    : {bio.keteranganPindah?.trim() || (hasTransferScores ? "Peserta didik pindahan dengan konversi nilai leger pindahan dari satuan pendidikan asal." : "-")}
-                  </span>
-                </div>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">NISN / No. Induk</span>
+              <span className="font-mono font-bold text-slate-950">: {activeSiswa.nisn || "-"}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">Semester / TA</span>
+              <span className="font-semibold text-slate-900">
+                : {activeTahunObj ? `${activeTahunObj.semester} / ${activeTahunObj.nama}` : "-"}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">Satuan Pendidikan</span>
+              <span className="font-semibold text-slate-900">: {schoolName}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-36 shrink-0 text-slate-600">NPSN</span>
+              <span className="font-mono font-semibold text-slate-900">: {schoolNpsn}</span>
+            </div>
           </div>
 
           {/* Tabel Capaian Intrakurikuler Kurikulum Merdeka Kesetaraan */}
@@ -2887,21 +2672,12 @@ export function CekRaportView({ sandboxRole }: { sandboxRole?: "GURU" | "SISWA" 
               <p className="text-slate-600">Mengetahui,</p>
               <p className="font-bold text-slate-900">Orang Tua / Wali</p>
               <div className="h-16" />
-              <p className="mx-auto w-40 border-b border-slate-800 pb-0.5 font-semibold text-slate-700">
-                {bio.namaOrangTuaWali?.trim() || "\u00A0"}
-              </p>
+              <p className="mx-auto w-40 border-b border-slate-800 pb-0.5 font-semibold text-slate-700">&nbsp;</p>
             </div>
             <div className="flex flex-col items-center justify-end">
-              <QrCodeSvg
-                value={`RAPORT|${schoolNpsn || schoolName}|${activeSiswa.nisn}|${activeTahunObj?.nama || "2026"}`}
-                size={70}
-                label="QR Verifikasi E-Raport"
-                className="rounded-lg border border-slate-300 p-1"
-              />
-              <p className="mt-1 text-[9px] font-semibold text-slate-500">QR Verifikasi E-Raport</p>
-              <p className="mt-3 text-slate-600">Mengetahui,</p>
+              <p className="text-slate-600">Mengetahui,</p>
               <p className="font-bold text-slate-900">Kepala {schoolName}</p>
-              <div className="h-14" />
+              <div className="h-16" />
               <p className="font-bold underline">{data.sekolah.kepalaSekolah || "Kepala PKBM"}</p>
             </div>
             <div>

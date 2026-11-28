@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Eye,
   Printer,
   QrCode,
   RefreshCw,
@@ -74,6 +75,7 @@ export function SchoolGuestbookView() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [printMode, setPrintMode] = useState<"rekap" | "poster">("rekap");
+  const [showPosterPreview, setShowPosterPreview] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -187,6 +189,15 @@ export function SchoolGuestbookView() {
           description="Sediakan QR Code di meja resepsionis PKBM. Tamu cukup memindai QR untuk mengisi nama, alamat, nomor HP, dan tujuan kunjungan — tanggal & waktu otomatis tercatat realtime dan siap diunduh bulanan/tahunan."
           action={
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!guestbookUrl}
+                onClick={() => setShowPosterPreview((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-sky-300 bg-sky-50 px-3.5 py-2 text-xs font-extrabold text-sky-900 shadow-xs hover:bg-sky-100 disabled:opacity-50"
+              >
+                <Eye size={15} />
+                {showPosterPreview ? "Tutup Pratinjau Poster" : "Pratinjau Poster"}
+              </button>
               <button
                 type="button"
                 disabled={!guestbookUrl}
@@ -335,28 +346,82 @@ export function SchoolGuestbookView() {
         </div>
       </div>
 
-      {/* Mode Cetak Poster QR Code Buku Tamu */}
-      {printMode === "poster" && guestbookUrl && data && (
-        <article className="print-only print-sheet rounded-2xl border border-slate-300 bg-white p-10 text-center text-slate-900">
-          <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
-          <div className="mt-10 space-y-4">
-            <p className="text-sm font-extrabold uppercase tracking-widest text-sky-800">
-              LAYANAN RESEPSIONIS DIGITAL
-            </p>
-            <h2 className="text-3xl font-black uppercase text-slate-950">BUKU TAMU DIGITAL</h2>
-            <p className="mx-auto max-w-md text-sm text-slate-700">
-              Silakan pindai (scan) QR Code di bawah menggunakan kamera HP Anda untuk mengisi buku tamu kunjungan secara cepat dan <em>realtime</em>.
-            </p>
-            <div className="my-8 inline-flex flex-col items-center rounded-3xl border-4 border-sky-800 bg-white p-6">
-              <QrCodeSvg value={guestbookUrl} size={280} label="QR Poster Buku Tamu Digital" />
-              <p className="mt-4 font-mono text-xs font-bold text-slate-700">{guestbookUrl}</p>
+      {/* Mode Pratinjau & Cetak Poster QR Code Buku Tamu (Berbingkai Resmi & Print-Exact) */}
+      {(printMode === "poster" || showPosterPreview) && guestbookUrl && data && (() => {
+        const footerAddress = [data.kopSurat?.alamatLengkap || data.sekolah.alamat, data.kopSurat?.kabupatenKota || data.sekolah.kabupatenKota]
+          .filter(Boolean)
+          .join(", ");
+        const schoolTitle = data.kopSurat?.nama || data.sekolah.nama;
+
+        return (
+        <article
+          className={`${printMode === "poster" ? "print-sheet" : "no-print"} ${showPosterPreview ? "shadow-md" : "print-only"} relative mx-auto max-w-[760px] overflow-hidden bg-white text-center text-slate-900`}
+          style={{ WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}
+        >
+          {/* Bingkai Luar Navy + Strip Aksen Cyan */}
+          <div className="relative border-[10px] border-[#0f2b4c] bg-gradient-to-b from-[#0284c7] via-[#0369a1] to-[#0f2b4c] p-[5px]">
+            {/* Aksen Sudut Geometris Navy */}
+            <span aria-hidden="true" className="pointer-events-none absolute left-0 top-0 h-10 w-10 border-l-[6px] border-t-[6px] border-[#0f2b4c]" />
+            <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 h-10 w-10 border-r-[6px] border-t-[6px] border-[#0f2b4c]" />
+            <span aria-hidden="true" className="pointer-events-none absolute bottom-0 left-0 h-10 w-10 border-b-[6px] border-l-[6px] border-[#0f2b4c]" />
+            <span aria-hidden="true" className="pointer-events-none absolute bottom-0 right-0 h-10 w-10 border-b-[6px] border-r-[6px] border-[#0f2b4c]" />
+
+            {/* Bingkai Dalam Silver/Slate Ganda */}
+            <div className="relative border-2 border-[#0f2b4c] bg-slate-100 p-2">
+              <div className="relative border-[3px] border-double border-slate-400 bg-white px-7 py-7 sm:px-10 sm:py-9">
+                {/* Ornamen Sudut Dalam */}
+                <span aria-hidden="true" className="pointer-events-none absolute left-2 top-2 h-5 w-5 border-l-[3px] border-t-[3px] border-[#0f4c75]" />
+                <span aria-hidden="true" className="pointer-events-none absolute right-2 top-2 h-5 w-5 border-r-[3px] border-t-[3px] border-[#0f4c75]" />
+                <span aria-hidden="true" className="pointer-events-none absolute bottom-2 left-2 h-5 w-5 border-b-[3px] border-l-[3px] border-[#0f4c75]" />
+                <span aria-hidden="true" className="pointer-events-none absolute bottom-2 right-2 h-5 w-5 border-b-[3px] border-r-[3px] border-[#0f4c75]" />
+
+                {/* Kop Surat Resmi Lembaga (Lega & Tidak Berdempetan) */}
+                <KopSurat profile={buildKopSuratProfile(data.kopSurat, data.sekolah)} />
+
+                {/* Konten Utama Poster Buku Tamu */}
+                <div className="mt-8 space-y-4">
+                  <div className="flex items-center justify-center gap-3">
+                    <span className="h-[2px] w-10 bg-[#0284c7]" />
+                    <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-[#0369a1]">
+                      LAYANAN RESEPSIONIS DIGITAL
+                    </p>
+                    <span className="h-[2px] w-10 bg-[#0284c7]" />
+                  </div>
+
+                  <h2 className="text-3xl font-black uppercase tracking-wide text-[#0f2b4c]">
+                    BUKU TAMU DIGITAL
+                  </h2>
+
+                  <p className="mx-auto max-w-md text-sm leading-relaxed text-slate-700">
+                    Silakan pindai (<em>scan</em>) QR Code di bawah menggunakan kamera HP Anda untuk mengisi buku tamu kunjungan secara cepat dan <em>realtime</em>.
+                  </p>
+
+                  {/* Kotak QR Code Tegas & Kontras */}
+                  <div className="py-4">
+                    <div className="inline-flex flex-col items-center rounded-3xl border-[3px] border-[#0f4c75] bg-white px-8 py-7 shadow-xs">
+                      <QrCodeSvg value={guestbookUrl} size={260} label="QR Poster Buku Tamu Digital" />
+                      <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-1.5 font-mono text-xs font-bold text-[#0f2b4c]">
+                        {guestbookUrl}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Resmi Lembaga */}
+                <div className="mt-6 border-t-2 border-slate-200 pt-4">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-[#0f2b4c]">
+                    {schoolTitle}
+                  </p>
+                  {footerAddress && (
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-600">{footerAddress}</p>
+                  )}
+                </div>
+              </div>
             </div>
-            <p className="text-xs font-semibold text-slate-600">
-              {data.sekolah.nama} · {data.sekolah.alamat || data.sekolah.kabupatenKota || ""}
-            </p>
           </div>
         </article>
-      )}
+        );
+      })()}
 
       {/* Tabel Rekap Kunjungan Tamu (Layar + Cetak Rekap) */}
       <div className={printMode === "poster" ? "no-print" : ""}>

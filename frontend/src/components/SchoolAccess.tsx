@@ -160,6 +160,7 @@ type SchoolView =
 
 type SchoolMenuItem = {
   label: string;
+  tooltip?: string;
   icon: LucideIcon;
   target: SchoolView;
   requiredPlan?: Exclude<PlanSlug, "basic">;
@@ -182,6 +183,9 @@ function isSchoolDataKind(view: SchoolView): view is ActiveDataKind {
 
 const SIDEBAR_TOP_LEVEL_ITEMS: SchoolMenuItem[] = [
   { label: "Dashboard Utama", icon: LayoutDashboard, target: "dashboard" },
+];
+
+const SIDEBAR_BOTTOM_STANDALONE_ITEMS: SchoolMenuItem[] = [
   { label: "PPDB Online", icon: ClipboardList, target: "ppdb" },
   { label: "Tagihan & Langganan", icon: CreditCard, target: "langganan" },
 ];
@@ -192,47 +196,47 @@ const SIDEBAR_NAV_GROUPS: SchoolNavGroup[] = [
     label: "Master Data",
     icon: Database,
     items: [
-      { label: "Data Siswa (Warga Belajar)", icon: Users, target: "siswa" },
-      { label: "Verval Siswa / Dapodik", icon: ClipboardCheck, target: "verval-dapodik" },
-      { label: "Data Guru / Tutor", icon: GraduationCap, target: "guru" },
-      { label: "Manajemen Kelas (Rombel)", icon: Building2, target: "kelas" },
-      { label: "Kelola Mapel & Bobot SKK", icon: Layers, target: "mapel" },
+      { label: "Data Siswa", tooltip: "Data Siswa (Warga Belajar)", icon: Users, target: "siswa" },
+      { label: "Verval Siswa", tooltip: "Verval Siswa / Dapodik", icon: ClipboardCheck, target: "verval-dapodik" },
+      { label: "Data Tutor", tooltip: "Data Guru / Tutor", icon: GraduationCap, target: "guru" },
+      { label: "Rombel", tooltip: "Manajemen Kelas (Rombel)", icon: Building2, target: "kelas" },
+      { label: "Mapel & SKK", tooltip: "Kelola Mapel & Bobot SKK", icon: Layers, target: "mapel" },
     ],
   },
   {
     id: "kbm",
-    label: "Ruang Belajar (KBM)",
+    label: "KBM",
     icon: BookOpen,
     items: [
-      { label: "Materi & Tugas Kelas", icon: BookOpen, target: "materi-tugas" },
-      { label: "Bank Modul Belajar", icon: Library, target: "bank-modul" },
-      { label: "Presensi Warga Belajar", icon: UserCheck, target: "presensi" },
-      { label: "Absensi Tutor & Honor", icon: CalendarDays, target: "absen-tutor" },
+      { label: "Materi & Tugas", tooltip: "Materi & Tugas Kelas", icon: BookOpen, target: "materi-tugas" },
+      { label: "Bank Modul", tooltip: "Bank Modul Belajar", icon: Library, target: "bank-modul" },
+      { label: "Presensi Siswa", tooltip: "Presensi Warga Belajar", icon: UserCheck, target: "presensi" },
+      { label: "Absensi Tutor", tooltip: "Absensi Tutor & Honor", icon: CalendarDays, target: "absen-tutor" },
       { label: "Ruang Diskusi", icon: MessageSquare, target: "ruang-diskusi" },
     ],
   },
   {
     id: "cbt",
-    label: "Ujian Online (CBT)",
+    label: "Ujian CBT",
     icon: MonitorCheck,
     items: [
-      { label: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler" },
-      { label: "Impor Soal & Tugas", icon: UploadCloud, target: "cbt-impor", requiredPlan: "reguler" },
-      { label: "Jadwal & Token Ujian", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler" },
-      { label: "Monitoring & Hasil CBT", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler" },
+      { label: "Bank Soal", tooltip: "Kelola Bank Soal & Ujian", icon: Database, target: "cbt-bank-soal", requiredPlan: "reguler" },
+      { label: "Impor Soal", tooltip: "Impor Soal & Tugas", icon: UploadCloud, target: "cbt-impor", requiredPlan: "reguler" },
+      { label: "Jadwal & Token", tooltip: "Jadwal & Token Ujian", icon: CalendarDays, target: "cbt-jadwal", requiredPlan: "reguler" },
+      { label: "Hasil CBT", tooltip: "Monitoring & Hasil CBT", icon: MonitorCheck, target: "cbt-monitoring", requiredPlan: "reguler" },
     ],
   },
   {
     id: "rapor",
-    label: "Rapor & Administrasi",
+    label: "Administrasi",
     icon: Award,
     items: [
-      { label: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler" },
-      { label: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "reguler" },
-      { label: "Buku Tamu Digital QR", icon: QrCode, target: "buku-tamu-qr", requiredPlan: "reguler" },
-      { label: "Agenda Surat (Masuk & Keluar)", icon: FileText, target: "agenda-surat", requiredPlan: "reguler" },
-      { label: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
-      { label: "Data Alumni & Tracer Study", icon: Briefcase, target: "data-alumni", requiredPlan: "pro" },
+      { label: "E-Raport", tooltip: "Cek & Cetak E-Raport", icon: ClipboardCheck, target: "cek-raport", requiredPlan: "reguler" },
+      { label: "Kartu QR", tooltip: "Kartu Pelajar Digital QR", icon: QrCode, target: "kartu-digital-qr", requiredPlan: "reguler" },
+      { label: "Buku Tamu", tooltip: "Buku Tamu Digital QR", icon: QrCode, target: "buku-tamu-qr", requiredPlan: "reguler" },
+      { label: "Agenda Surat", tooltip: "Agenda Surat (Masuk & Keluar)", icon: FileText, target: "agenda-surat", requiredPlan: "reguler" },
+      { label: "Keuangan", tooltip: "Keuangan & SPP", icon: Wallet, target: "keuangan-spp", requiredPlan: "pro" },
+      { label: "Alumni", tooltip: "Data Alumni & Tracer Study", icon: Briefcase, target: "data-alumni", requiredPlan: "pro" },
       { label: "Manajemen Aset & Sarpras", icon: Package, target: "manajemen-aset", requiredPlan: "pro" },
       { label: "Akreditasi 8 SNP", icon: ShieldCheck, target: "akreditasi-snp", requiredPlan: "pro" },
     ],
@@ -1226,7 +1230,7 @@ function SchoolSidebar({
       <button
         key={item.target}
         type="button"
-        title={item.label}
+        title={item.tooltip ?? item.label}
         data-sidebar-nav="true"
         aria-current={active ? "page" : undefined}
         onMouseEnter={() => {
@@ -1331,7 +1335,7 @@ function SchoolSidebar({
               <button
                 key={item.target}
                 type="button"
-                title={item.label}
+                title={item.tooltip ?? item.label}
                 data-sidebar-nav="true"
                 aria-current={active ? "page" : undefined}
                 onMouseEnter={() => prefetchForView(item.target)}
@@ -1359,6 +1363,37 @@ function SchoolSidebar({
             const isOpen = openGroups[group.id];
             return (
               <div key={group.id}>
+                {group.id === "pengaturan" && (
+                  <div className={`mb-2 space-y-1 border-t pt-2 ${palette.standaloneDivider}`}>
+                    {SIDEBAR_BOTTOM_STANDALONE_ITEMS.map((item) => {
+                      const Icon = item.icon;
+                      const active = view === item.target;
+                      return (
+                        <button
+                          key={item.target}
+                          type="button"
+                          title={item.tooltip ?? item.label}
+                          data-sidebar-nav="true"
+                          aria-current={active ? "page" : undefined}
+                          onMouseEnter={() => prefetchForView(item.target)}
+                          onClick={() => onSelectView(item.target, item.requiredPlan, item.label)}
+                          className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-bold transition-colors duration-200 ${
+                            active ? palette.dashboardActive : palette.dashboardInactive
+                          }`}
+                        >
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                              active ? palette.dashboardActiveIcon : palette.dashboardInactiveIcon
+                            }`}
+                          >
+                            <Icon size={15} />
+                          </span>
+                          <span className="truncate leading-snug">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <button
                   type="button"
                   aria-expanded={isOpen}
